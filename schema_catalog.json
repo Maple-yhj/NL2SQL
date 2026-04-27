@@ -1,0 +1,257 @@
+[
+  {
+    "table": "orders",
+    "comment": "订单主表，记录每笔交易",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('orders_id_seq'::regclass)",
+        "comment": "订单唯一ID，主键"
+      },
+      {
+        "name": "tenant_id",
+        "type": "character varying",
+        "nullable": false,
+        "default": "'demo'::character varying",
+        "comment": "租户ID，用于多租户隔离"
+      },
+      {                                                                                                                                                                                                                                                                                                                                                                          
+        "name": "user_id",
+        "type": "integer",
+        "nullable": false,
+        "default": null,
+        "comment": "标识订单所属的用户ID，外键"
+      },
+      {
+        "name": "product_id",
+        "type": "integer",
+        "nullable": false,
+        "default": null,
+        "comment": "表示订单购买的商品ID，外键"
+      },
+      {
+        "name": "region",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "订单所属的区域"
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "nullable": false,
+        "default": null,
+        "comment": "订单金额，单位：人民币"
+      },
+      {
+        "name": "quantity",
+        "type": "integer",
+        "nullable": false,
+        "default": "1",
+        "comment": "下单的商品数量"
+      },
+      {
+        "name": "status",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "订单状态：paid/pending/cancelled/refunded"
+      },
+      {
+        "name": "paid_at",
+        "type": "timestamp with time zone",
+        "nullable": true,
+        "default": null,
+        "comment": "订单的支付时间"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()",
+        "comment": "订单的创建时间"
+      }
+    ]
+  },
+  {
+    "table": "products",
+    "comment": "产品信息表，记录每个产品的详细信息",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('products_id_seq'::regclass)",
+        "comment": "商品唯一ID，主键"
+      },
+      {
+        "name": "tenant_id",
+        "type": "character varying",
+        "nullable": false,
+        "default": "'demo'::character varying",
+        "comment": "租户ID，用于多租户隔离"
+      },
+      {
+        "name": "name",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "商品名称"
+      },
+      {
+        "name": "category",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "商品品类，如家居、运动等类别"
+      },
+      {
+        "name": "price",
+        "type": "numeric",
+        "nullable": false,
+        "default": null,
+        "comment": "商品售价"
+      },
+      {
+        "name": "cost",
+        "type": "numeric",
+        "nullable": false,
+        "default": null,
+        "comment": "商品成本"
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "nullable": false,
+        "default": "true",
+        "comment": "商品是否上架"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()",
+        "comment": "商品创建时间"
+      }
+    ]
+  },
+  {
+    "table": "users",
+    "comment": "用户账户表",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('users_id_seq'::regclass)",
+        "comment": "用户唯一ID，主键"
+      },
+      {
+        "name": "tenant_id",
+        "type": "character varying",
+        "nullable": false,
+        "default": "'demo'::character varying",
+        "comment": "租户ID，用于多租户隔离"
+      },
+      {
+        "name": "username",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "用户名称"
+      },
+      {
+        "name": "email",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "用户邮箱"
+      },
+      {
+        "name": "region",
+        "type": "character varying",
+        "nullable": false,
+        "default": null,
+        "comment": "用户所在地区"
+      },
+      {
+        "name": "user_type",
+        "type": "character varying",
+        "nullable": false,
+        "default": "'normal'::character varying",
+        "comment": "用户类型"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()",
+        "comment": "用户注册时间"
+      }
+    ]
+  },
+  {
+    "table": "refunds",
+    "comment": "退款订单信息表，记录每笔退款的交易",
+    "columns": [
+      {
+        "name": "id",
+        "type": "integer",
+        "nullable": false,
+        "default": "nextval('refunds_id_seq'::regclass)",
+        "comment": "退款记录id"
+      },
+      {
+        "name": "tenant_id",
+        "type": "character varying",
+        "nullable": false,
+        "default": "'demo'::character varying",
+        "comment": "租户ID，用于多租户隔离"
+      },
+      {
+        "name": "order_id",
+        "type": "integer",
+        "nullable": false,
+        "default": null,
+        "comment": "退款订单id，外键"
+      },
+      {
+        "name": "user_id",
+        "type": "integer",
+        "nullable": false,
+        "default": null,
+        "comment": "退款用户id，外键"
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "nullable": false,
+        "default": null,
+        "comment": "退款金额"
+      },
+      {
+        "name": "reason",
+        "type": "character varying",
+        "nullable": true,
+        "default": null,
+        "comment": "退款原因"
+      },
+      {
+        "name": "status",
+        "type": "character varying",
+        "nullable": false,
+        "default": "'approved'::character varying",
+        "comment": "退款状态：pending,approved,rejected"
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "nullable": false,
+        "default": "now()",
+        "comment": "退款记录创建时间"
+      }
+    ]
+  }
+]
