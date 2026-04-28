@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from core.google_client import get_client, get_model_name
 
@@ -47,9 +48,13 @@ class GeminiLLM:
                 "google-genai is not installed. Install it with: pip install google-genai"
             ) from exc
 
+        # config_kwargs: dict[str, Any] = {"maxOutputTokens": max_output_tokens}
+        # if system:
+            # config_kwargs["systemInstruction"] = system
+        # config = types.GenerateContentConfig(**config_kwargs)
         config = types.GenerateContentConfig(
-            system_instruction=system or None,
             max_output_tokens=max_output_tokens,
+            system_instruction=system,
         )
 
         parts: list[str] = []
