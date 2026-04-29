@@ -1,9 +1,10 @@
 import unittest
+from datetime import datetime, timezone, timedelta
 
 from catalog.loader import load_schema_catalog, load_schema_snippet
 from core.structured_output import extract_json_object
 from engine.executor import assert_readonly_sql, ensure_limit
-from engine.intent_parser import parse_intent
+from engine.intent_parser import build_intent_system, parse_intent
 from engine.metrics import MetricRegistry
 from engine.sql_generator import generate_sql
 
@@ -39,6 +40,15 @@ class P1EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(intent.dimensions, ["region"])
         self.assertEqual(intent.time_range["start"], "2026-04-01")
         self.assertIn("JSON", llm.calls[0]["system"])
+
+    def test_intent_system_uses_local_time_as_relative_date_base(self):
+        now = datetime(2026, 4, 28, 9, 30, tzinfo=timezone(timedelta(hours=8)))
+
+        system = build_intent_system(now)
+
+        self.assertIn("Local system datetime: 2026-04-28T09:30:00+08:00", system)
+        self.assertIn("Local system date: 2026-04-28", system)
+        self.assertIn("relative dates", system)
 
     async def test_generate_sql_uses_metrics_and_schema_context(self):
         catalog = load_schema_catalog("schema_catalog.json")
