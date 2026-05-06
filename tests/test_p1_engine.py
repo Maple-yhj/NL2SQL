@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timezone, timedelta
+from unittest.mock import patch
 
 from catalog.loader import load_schema_catalog, load_schema_snippet
 from core.structured_output import extract_json_object
@@ -72,6 +73,14 @@ class P1EngineTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("gmv", llm.calls[0]["prompt"])
         self.assertIn("orders", llm.calls[0]["prompt"])
+
+    def test_metric_registry_default_falls_back_when_db_query_encoding_fails(self):
+        error = UnicodeDecodeError("utf-8", bytes([0xD6]), 0, 1, "invalid continuation byte")
+
+        with patch("engine.metrics.execute_query", side_effect=error):
+            registry = MetricRegistry.default()
+
+        self.assertIsNotNone(registry.get("gmv"))
 
     def test_readonly_sql_validator_blocks_dml(self):
         assert_readonly_sql("select * from orders limit 10")
