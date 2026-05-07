@@ -36,7 +36,7 @@
         "type": "character varying",
         "nullable": false,
         "default": null,
-        "comment": "订单所属的区域"
+        "comment": "订单所属的区域,具体值只有[华南,华东,华中,华北,西南,港澳]"
       },
       {
         "name": "amount",
@@ -174,7 +174,7 @@
         "type": "character varying",
         "nullable": false,
         "default": null,
-        "comment": "用户所在地区"
+        "comment": "用户所在地区,具体值只有[华南,华东,华中,华北,西南,港澳]"
       },
       {
         "name": "user_type",

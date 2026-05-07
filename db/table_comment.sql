@@ -9,7 +9,7 @@ COMMENT ON COLUMN orders.id   IS '订单唯一ID，主键';
 COMMENT ON COLUMN orders.tenant_id  IS '租户ID，用于多租户隔离';
 COMMENT ON COLUMN orders.user_id  IS '标识订单所属的用户ID，外键';
 COMMENT ON COLUMN orders.product_id  IS '表示订单购买的商品ID，外键';
-COMMENT ON COLUMN orders.region     IS '订单所属的区域';
+COMMENT ON COLUMN orders.region     IS '订单所属的区域,具体值只有[华南,华东,华中,华北,西南,港澳]';
 COMMENT ON COLUMN orders.quantity     IS '下单的商品数量';
 COMMENT ON COLUMN orders.amount     IS '订单金额，单位：人民币';
 COMMENT ON COLUMN orders.status     IS '订单状态：paid/pending/cancelled/refunded';
@@ -20,7 +20,7 @@ COMMENT ON COLUMN users.id   IS '用户唯一ID，主键';
 COMMENT ON COLUMN users.tenant_id  IS '租户ID，用于多租户隔离';
 COMMENT ON COLUMN users.username  IS '用户名称';
 COMMENT ON COLUMN users.email  IS '用户邮箱';
-COMMENT ON COLUMN users.region  IS '用户所在地区';
+COMMENT ON COLUMN users.region  IS '用户所在地区,具体值只有[华南,华东,华中,华北,西南,港澳]';
 COMMENT ON COLUMN users.user_type  IS '用户类型';
 COMMENT ON COLUMN users.created_at  IS '用户注册时间';
 
