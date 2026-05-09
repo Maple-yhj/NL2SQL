@@ -60,18 +60,13 @@ async def upsert_documents(
     embedding_model: str,
     embedding_dim: int = DEFAULT_EMBEDDING_DIM,
     dsn: str | None = None,
-) -> int | None:
+) -> int:
     """Insert or update semantic_index rows. Return affected document count."""
-    # 1. len(docs) must equal len(embeddings)
-    # 2. validate each embedding
-    # 3. connect
-    # 4. use transaction
-    # 5. executemany INSERT ... ON CONFLICT ... DO UPDATE
-    # 6. close connection in finally
+
     if len(docs) != len(embeddings):
         raise ValueError(f"EmbeddingDocument's length is {len(docs)} and embeddings' length is {len(embeddings)}")
     
-    conn = await connect_vector_store()
+    conn = await connect_vector_store(dsn=dsn)
     
     try:
         async with conn.transaction():
@@ -120,6 +115,7 @@ async def upsert_documents(
                     len(embedding),
                     doc.content_hash(),
                 )
+            return len(docs)    
     finally:
         await conn.close()
     
