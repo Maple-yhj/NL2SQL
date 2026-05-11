@@ -5,14 +5,14 @@
 - [x] PostgreSQL 启用 pgvector
 
 - [x] 创建 semantic_index 表
-- [ ] 在 rag/documents.py 中定义 EmbeddingDocument 概念
-- [ ] 将 MetricRegistry.default() 转成 metric documents
-- [ ] 将 schema_catalog.json 转成 table / column documents
-- [ ] 封装 Gemini embedding client，固定 gemini-embedding-2 + 768 维
-- [ ] 封装 vector_store，支持 upsert
-- [ ] 编写 scripts/rebuild_embeddings.py
-- [ ] 执行脚本，确认 semantic_index 中有 metric/table/column 数据
-- [ ] 手工用“销售额”“退款率”“地区”等问题做相似度查询验证
+- [x] 在 rag/documents.py 中定义 EmbeddingDocument 概念
+- [x] 将 MetricRegistry.default() 转成 metric documents
+- [x] 将 schema_catalog.json 转成 table / column documents
+- [x] 封装 Gemini embedding client，固定 gemini-embedding-2 + 768 维
+- [x] 封装 vector_store，支持 upsert
+- [x] 编写 scripts/rebuild_embeddings.py
+- [x] 执行脚本，确认 semantic_index 中有 metric/table/column 数据
+- [x] 手工用“销售额”“退款率”“地区”等问题做相似度查询验证
 
 #### PostgreSQL 启用 pgvector
 
@@ -78,4 +78,23 @@ CREATE TABLE IF NOT EXISTS public.semantic_index
 | `created_at`      | `timestamptz`  | 创建时间                                                     |
 | `updated_at`      | `timestamptz`  | 更新时间                                                     |
 
-3、
+## Embedding
+
+### 1、核心
+
+embedding 的核心是将离散的、人类可读的对象映射到一个连续的高维向量空间，使得语义相似的对象在这个空间中的距离也相近。比如：
+"心跳过快"和"心率偏高"的向量很近，即便没有共同词汇，因为它们的语义相近
+
+### 2、相似度搜索运算符
+
+| **操作符** | **名称**     | **物理意义**                             | **常见场景**                           |
+| ---------- | ------------ | ---------------------------------------- | -------------------------------------- |
+| `<->`      | **L2 距离**  | 两点之间的**直线距离**（欧几里得距离）。 | 图片搜索、通用特征匹配。               |
+| `<=>`      | **余弦距离** | 衡量两个向量**方向**的差异，忽略长度。   | **自然语言处理 (NLP)**、文档相似度。   |
+| `<#>`      | **负内积**   | 结合了方向和长度的度量。                 | 推荐系统（如计算用户偏好与商品特征）。 |
+
+
+
+## Function Calling/Tool
+
+1、函数的提示词应该包括:  函数的作用、什么时候调用该函数、什么时候不能调用该函数、函数参数的含义、函数的返回值以及类型

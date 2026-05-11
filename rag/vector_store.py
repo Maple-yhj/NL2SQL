@@ -120,10 +120,6 @@ async def upsert_documents(
         await conn.close()
     
 
-
-    
-
-
 async def search_semantic_index(
     query_embedding: Sequence[float],
     *,
@@ -190,8 +186,8 @@ async def search_semantic_index(
                     object_key=row["object_key"],
                     content=row["content"],
                     metadata=_decode_metadata(row["metadata"]),
-                    distance=distance,
-                    similarity=1 - distance,
+                    distance = distance,
+                    similarity = 1 - distance,
                 )
             )
         return hits
