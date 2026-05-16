@@ -129,13 +129,6 @@ async def search_semantic_index(
     dsn: str | None = None,
 ) -> list[SearchHit]:
     """Return nearest semantic_index documents for one query embedding."""
-    # 1. validate query embedding
-    # 2. validate object_types against VALID_OBJECT_TYPES
-    # 3. clamp top_k, for example 1..20
-    # 4. SELECT rows WHERE tenant_id=$1 AND is_active=true
-    # 5. optional object_type filter
-    # 6. ORDER BY embedding <=> $query_embedding
-    # 7. convert rows to SearchHit
 
     hits : list[SearchHit] = []
     validate_embedding(query_embedding)
@@ -192,4 +185,4 @@ async def search_semantic_index(
             )
         return hits
     finally:
-        conn.close()
+        await conn.close()

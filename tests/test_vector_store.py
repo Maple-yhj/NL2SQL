@@ -47,6 +47,40 @@ class ConnectVectorStoreTests(unittest.TestCase):
             ],
         )
 
+    def test_search_semantic_index_awaits_connection_close(self):
+        calls = []
+
+        class FakeConnection:
+            async def fetch(self, *args):
+                calls.append(("fetch", args[1], args[2], args[3], args[4]))
+                return []
+
+            async def close(self):
+                calls.append(("close",))
+
+        async def fake_connect_vector_store(dsn=None):
+            calls.append(("connect", dsn))
+            return FakeConnection()
+
+        with mock.patch.object(
+            vector_store,
+            "connect_vector_store",
+            side_effect=fake_connect_vector_store,
+        ):
+            result = asyncio.run(
+                vector_store.search_semantic_index(
+                    [0.0] * vector_store.DEFAULT_EMBEDDING_DIM,
+                    tenant_id="demo",
+                    object_types=["metric"],
+                    top_k=3,
+                    dsn="postgresql://example/db",
+                )
+            )
+
+        self.assertEqual(result, [])
+        self.assertEqual(calls[0], ("connect", "postgresql://example/db"))
+        self.assertEqual(calls[-1], ("close",))
+
 
 if __name__ == "__main__":
     unittest.main()

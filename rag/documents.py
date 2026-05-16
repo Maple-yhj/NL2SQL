@@ -52,18 +52,18 @@ def build_metric_metadata(metric: Metric) -> dict[str, Any]:
 
 def build_metric_content(metric: Metric) -> str:
     content = f"""
-Metric: {metric.name}
-Display name: {metric.display_name}
-Business definition: {metric.business_def}
-SQL expression: {metric.sql_expr}
-Base table: {metric.base_table}
-Join tables: {join_text(metric.join_tables)}
-Time column: {metric.time_column}
-Dimensions: {join_text(metric.dimensions)}
-Default filters: {join_text(metric.filters)}
-Forbidden conditions: {join_text(metric.forbidden)}
-Synonyms: {join_text(metric.synonyms)}
-""".strip()
+        Metric: {metric.name}
+        Display name: {metric.display_name}
+        Business definition: {metric.business_def}
+        SQL expression: {metric.sql_expr}
+        Base table: {metric.base_table}
+        Join tables: {join_text(metric.join_tables)}
+        Time column: {metric.time_column}
+        Dimensions: {join_text(metric.dimensions)}
+        Default filters: {join_text(metric.filters)}
+        Forbidden conditions: {join_text(metric.forbidden)}
+        Synonyms: {join_text(metric.synonyms)}
+        """.strip()
 
     return content
 
