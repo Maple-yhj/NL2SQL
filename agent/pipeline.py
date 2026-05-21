@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 from typing import Any
-
-from catalog.loader import load_schema_catalog
+import re
 from core.stream_chat import GeminiLLM
-from engine.executor import execute_readonly_sql
+from agent.sql_generator import generate_sql
 from engine.intent_parser import parse_intent
-from engine.metrics import MetricRegistry
-from engine.sql_generator import generate_sql
 
 from agent.tools.sql_store import search_metrics, search_schema
+from agent.tools.execute_sql import execute_sql
+from agent.tools.explain_result import explain_result
 from agent.tools.validate_sql import validate_sql
 
 
@@ -51,6 +50,8 @@ def _failed_result(
     schema_result: dict[str, Any] | None = None,
     sql: str = "",
     validation: dict[str, Any] | None = None,
+    execution: dict[str, Any] | None = None,
+    explanation_result: dict[str, Any] | None = None,
     message: str,
 ) -> dict[str, Any]:
     return {
@@ -61,10 +62,78 @@ def _failed_result(
         "schema": schema_result or {},
         "sql": sql,
         "validation": validation or {},
+        "execution": execution or {},
+        "explanation_result": explanation_result or {},
+        "explanation": "",
         "executed_sql": "",
         "rows": [],
         "message": message,
     }
+
+
+def _build_retry_feedback(sql: str, validation: dict[str, Any]) -> str:
+    violations = validation.get("violations", [])
+    warnings = validation.get("warnings", [])
+
+    violation_lines = [
+        f"- {item.get('code')}: {item.get('message')}"
+        for item in violations
+    ]
+
+    warning_lines = [f"- {warning}" for warning in warnings]
+
+    return f"""
+Previous SQL:
+{sql}
+
+Validation message:
+{validation.get("message", "")}
+
+Violations:
+{chr(10).join(violation_lines) or "- none"}
+
+Warnings:
+{chr(10).join(warning_lines) or "- none"}
+""".strip()
+
+
+def _extract_base_table(base_table: str) -> str | None:
+    if not base_table:
+        return None
+
+    first_token = base_table.strip().split()[0]
+    return first_token.split(".")[-1]
+
+def _extract_join_tables(join_tables) -> list[str]:
+    JOIN_TABLE_RE = re.compile(
+    r"\bJOIN\s+([A-Za-z_][A-Za-z0-9_\.]*)",
+    re.IGNORECASE,
+    )
+
+    if not join_tables:
+        return []
+
+    result = []
+
+    for join_clause in join_tables:
+        for match in JOIN_TABLE_RE.finditer(join_clause):
+            table_name = match.group(1).split(".")[-1]
+            result.append(table_name)
+
+    return result
+
+def _extract_metric_table_names(metrics_result: dict) -> list[str]:
+    table_names = []
+
+    for metric in metrics_result.get("metrics", []):
+        base_table = _extract_base_table(metric.get("base_table"))
+        if base_table:
+            table_names.append(base_table)
+
+        table_names.extend(_extract_join_tables(metric.get("join_tables")))
+
+    return list(dict.fromkeys(table_names))
+
 
 
 async def run_agent_nl2sql(
@@ -72,8 +141,7 @@ async def run_agent_nl2sql(
     tenant_id: str = "demo",
     *,
     execute: bool = False,
-    catalog_path: str = "schema_catalog.json",
-    llm=None,
+    llm = None,
     dsn: str | None = None,
     max_limit: int = 1000,
 ) -> dict[str, Any]:
@@ -91,12 +159,15 @@ async def run_agent_nl2sql(
         top_k=3,
     )
 
+    table_names = _extract_metric_table_names(metrics_result)
+
     #获取涉及的表格和字段
     schema_query = _build_schema_query(question, metrics_result)
 
     schema_result = await search_schema(
-        query=schema_query,
-        tenant_id=tenant_id,
+        query = schema_query,
+        tenant_id = tenant_id,
+        table_names = table_names,
         top_k=8,
     )
 
@@ -111,24 +182,34 @@ async def run_agent_nl2sql(
             message="No allowed tables were found from schema retrieval.",
         )
 
-    catalog = load_schema_catalog(catalog_path)
-    metric_registry = MetricRegistry.default()
     intent = await parse_intent(question, llm=llm)
 
-    sql = await generate_sql(
-        question=question,
-        intent=intent,
-        catalog=catalog,
-        metrics=metric_registry,
-        llm=llm,
-    )
+    sql = ""
+    validation = {}
+    retry_feedback = None
 
-    validation = await validate_sql(
-        sql=sql,
-        tenant_id=tenant_id,
-        allowed_tables=allowed_tables,
-        max_limit=max_limit,
-    )
+    for attempt in range(2):
+        sql = await generate_sql(
+            question=question,
+            intent=intent,
+            metrics_result=metrics_result,
+            schema_result=schema_result,
+            llm=llm,
+            retry_feedback=retry_feedback,
+        )
+
+        validation = await validate_sql(
+            sql=sql,
+            tenant_id=tenant_id,
+            allowed_tables=allowed_tables,
+            max_limit=max_limit,
+        )
+
+        if validation["ok"]:
+            break
+
+        retry_feedback = _build_retry_feedback(sql, validation)
+    
 
     if not validation["ok"]:
         return _failed_result(
@@ -143,7 +224,51 @@ async def run_agent_nl2sql(
 
     executed_sql = validation["normalized_sql"]
 
-    rows = await execute_readonly_sql(executed_sql, dsn=dsn) if execute else []
+    execution_result: dict[str, Any] = {}
+    explanation_result: dict[str, Any] = {}
+    explanation = ""
+    rows = []
+
+    if execute:
+        execution_result = await execute_sql(
+            sql=executed_sql,
+            tenant_id=tenant_id,
+            dsn=dsn,
+            max_limit=max_limit,
+            allowed_tables=allowed_tables,
+        )
+        if not execution_result["ok"]:
+            return _failed_result(
+                question=question,
+                tenant_id=tenant_id,
+                metrics_result=metrics_result,
+                schema_result=schema_result,
+                sql=sql,
+                validation=validation,
+                execution=execution_result,
+                message=execution_result.get("message", "SQL execution failed."),
+            )
+        rows = execution_result["rows"]
+        explanation_result = await explain_result(
+            question=question,
+            sql=executed_sql,
+            rows=rows,
+            metrics_result=metrics_result,
+            llm=llm,
+        )
+        if not explanation_result["ok"]:
+            return _failed_result(
+                question=question,
+                tenant_id=tenant_id,
+                metrics_result=metrics_result,
+                schema_result=schema_result,
+                sql=sql,
+                validation=validation,
+                execution=execution_result,
+                explanation_result=explanation_result,
+                message=explanation_result.get("message", "SQL result explanation failed."),
+            )
+        explanation = explanation_result["explanation"]
 
     return {
         "ok": True,
@@ -154,6 +279,9 @@ async def run_agent_nl2sql(
         "intent": intent,
         "sql": sql,
         "validation": validation,
+        "execution": execution_result,
+        "explanation_result": explanation_result,
+        "explanation": explanation,
         "executed_sql": executed_sql,
         "rows": rows,
         "message": "success",

@@ -45,6 +45,10 @@ async def run_once_agent(question: str, execute: bool = False) -> None:
         if isinstance(rows, list):
             for row in rows:
                 print(row)
+        explanation = result.get("explanation")
+        if explanation:
+            print("\n[explanation]")
+            print(explanation)
 
 async def run_repl_agent(execute: bool = False) -> None:
     print("NL2SQL Assistant Agent")

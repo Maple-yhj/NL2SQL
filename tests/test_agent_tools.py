@@ -1,9 +1,14 @@
+import importlib
 import types
 import unittest
 from unittest import mock
 
 from agent.tools import sql_store
+from agent.tools.descriptions import get_tool_description
 from agent.tools.validate_sql import validate_sql
+
+execute_sql_tool = importlib.import_module("agent.tools.execute_sql")
+explain_result_tool = importlib.import_module("agent.tools.explain_result")
 
 
 class FakeEmbeddingClient:
@@ -185,6 +190,159 @@ class AgentToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(result["violations"][0]["code"], "multiple_statements")
+
+    async def test_execute_sql_runs_normalized_sql_and_reports_row_count(self):
+        class FakeConn:
+            def __init__(self):
+                self.executed = []
+                self.fetched_sql = None
+                self.closed = False
+
+            async def execute(self, sql):
+                self.executed.append(sql)
+
+            async def fetch(self, sql):
+                self.fetched_sql = sql
+                return [{"id": 1}, {"id": 2}]
+
+            async def close(self):
+                self.closed = True
+
+        conn = FakeConn()
+
+        with mock.patch.object(
+            execute_sql_tool,
+            "_connect",
+            new=mock.AsyncMock(return_value=conn),
+        ):
+            result = await execute_sql_tool.execute_sql(
+                "select * from orders",
+                "demo",
+                dsn="postgres://example",
+                allowed_tables=["orders"],
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["normalized_sql"], "SELECT * FROM orders LIMIT 1000")
+        self.assertEqual(conn.fetched_sql, "SELECT * FROM orders LIMIT 1000")
+        self.assertEqual(result["rows"], [{"id": 1}, {"id": 2}])
+        self.assertEqual(result["row_count"], 2)
+        self.assertTrue(conn.closed)
+
+    async def test_execute_sql_returns_failure_when_db_connection_fails(self):
+        with mock.patch.object(
+            execute_sql_tool,
+            "_connect",
+            new=mock.AsyncMock(side_effect=RuntimeError("database unavailable")),
+        ):
+            result = await execute_sql_tool.execute_sql(
+                "select * from orders",
+                "demo",
+                dsn="postgres://example",
+                allowed_tables=["orders"],
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["normalized_sql"], "SELECT * FROM orders LIMIT 1000")
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["row_count"], 0)
+        self.assertIn("SQL execution failed", result["message"])
+        self.assertIn("database unavailable", result["message"])
+
+    async def test_execute_sql_returns_failure_and_closes_connection_when_fetch_fails(self):
+        class FakeConn:
+            def __init__(self):
+                self.closed = False
+                self.fetched_sql = None
+
+            async def execute(self, sql):
+                return None
+
+            async def fetch(self, sql):
+                self.fetched_sql = sql
+                raise RuntimeError("fetch failed")
+
+            async def close(self):
+                self.closed = True
+
+        conn = FakeConn()
+
+        with mock.patch.object(
+            execute_sql_tool,
+            "_connect",
+            new=mock.AsyncMock(return_value=conn),
+        ):
+            result = await execute_sql_tool.execute_sql(
+                "select * from orders",
+                "demo",
+                dsn="postgres://example",
+                allowed_tables=["orders"],
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["normalized_sql"], "SELECT * FROM orders LIMIT 1000")
+        self.assertEqual(conn.fetched_sql, "SELECT * FROM orders LIMIT 1000")
+        self.assertTrue(conn.closed)
+        self.assertEqual(result["rows"], [])
+        self.assertEqual(result["row_count"], 0)
+        self.assertIn("SQL execution failed", result["message"])
+        self.assertIn("fetch failed", result["message"])
+
+    async def test_execute_sql_has_tool_description(self):
+        description = get_tool_description("execute_sql")
+
+        self.assertIn("execute_sql", description)
+        self.assertIn("validate_sql", description)
+        self.assertIn("rows", description)
+        self.assertIn("row_count", description)
+
+    async def test_explain_result_summarizes_rows(self):
+        result = await explain_result_tool.explain_result(
+            question="各地区 GMV 是多少？",
+            sql="select region, gmv from orders",
+            rows=[
+                {"region": "华东", "gmv": 100},
+                {"region": "华南", "gmv": 80},
+            ],
+            metrics_result={
+                "metrics": [
+                    {
+                        "metric_name": "gmv",
+                        "display_name": "GMV",
+                    }
+                ]
+            },
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual(result["columns"], ["region", "gmv"])
+        self.assertEqual(result["preview_rows"], [{"region": "华东", "gmv": 100}, {"region": "华南", "gmv": 80}])
+        self.assertIn("返回 2 行", result["explanation"])
+        self.assertIn("GMV", result["explanation"])
+        self.assertIn("region=华东", result["explanation"])
+        self.assertIn("gmv=100", result["explanation"])
+
+    async def test_explain_result_handles_empty_rows(self):
+        result = await explain_result_tool.explain_result(
+            question="今日订单数是多少？",
+            sql="select count(*) as order_count from orders",
+            rows=[],
+            metrics_result={},
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["row_count"], 0)
+        self.assertEqual(result["columns"], [])
+        self.assertEqual(result["preview_rows"], [])
+        self.assertIn("没有返回数据", result["explanation"])
+
+    async def test_explain_result_has_tool_description(self):
+        description = get_tool_description("explain_result")
+
+        self.assertIn("explain_result", description)
+        self.assertIn("rows", description)
+        self.assertIn("explanation", description)
 
 
 if __name__ == "__main__":

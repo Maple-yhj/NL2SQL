@@ -3,13 +3,17 @@ from importlib import import_module
 from .descriptions import TOOL_DESCRIPTIONS, get_tool_description
 from .validate_sql import validate_sql
 from .sql_store import search_metrics,search_schema
+from .execute_sql import execute_sql
+from .explain_result import explain_result
 
 __all__ = [
     "TOOL_DESCRIPTIONS",
     "get_tool_description",
     "search_metrics",
     "search_schema",
-    "validate_sql"
+    "validate_sql",
+    "execute_sql",
+    "explain_result"
 ]
 
 

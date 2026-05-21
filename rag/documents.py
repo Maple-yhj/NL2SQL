@@ -91,7 +91,6 @@ def build_table_metadata(table: dict) -> dict[str, Any]:
         "columns": [col.get("name") for col in columns if col.get("name")],
     }
 
-
 def build_table_content(table: dict) -> str:
     columns = table.get("columns") or []
     column_lines = []
@@ -108,7 +107,6 @@ Comment: {table.get("comment") or ""}
 Columns:
 {chr(10).join(column_lines)}
 """.strip()
-
 
 def build_table_document(table: dict, tenant_id: str = "demo") -> EmbeddingDocument:
     table_name = table["table"]
@@ -132,7 +130,6 @@ def build_column_metadata(table: dict, column: dict) -> dict[str, Any]:
         "comment": column.get("comment") or "",
         "sample_values": safe_list(column.get("sample_values")),
     }
-
 
 def build_column_content(table: dict, column: dict) -> str:
     sample_values = join_text(column.get("sample_values"))

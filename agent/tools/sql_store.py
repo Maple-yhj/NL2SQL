@@ -3,7 +3,6 @@ from rag.vector_store import SearchHit
 from rag.vector_store import search_semantic_index
 
 
-
 async def search_metrics(
     query: str,
     tenant_id: str,
@@ -12,6 +11,10 @@ async def search_metrics(
 ) -> dict:
     '''
     '''
+
+    if top_k <= 0 or top_k >20:
+        top_k = 5
+
     result : dict = {
         "ok": True,
         "query": query,

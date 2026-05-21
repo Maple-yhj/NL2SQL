@@ -117,10 +117,93 @@ violations 中每个对象的字段含义:
 """.strip()
 
 
+EXECUTE_SQL_DESCRIPTION = """
+工具名称: execute_sql
+
+工具用途:
+执行已经生成并校验过的只读 SQL，返回真实数据库查询结果。该工具面向 P2 agent 的最终执行阶段，通常在 generate_sql 和 validate_sql 之后使用。
+
+使用时机:
+- 当 validate_sql 返回 ok=true，并且用户或 pipeline 明确要求 execute=true 时使用。
+- 优先传入 validate_sql 返回的 normalized_sql，确保补充 LIMIT 或收缩 LIMIT 后的 SQL 被真正执行。
+- 当需要把 SQL 查询结果交给 explain_result 或最终回答用户时使用。
+
+安全边界:
+- execute_sql 内部会再次调用 validate_sql，作为执行前的兜底校验。
+- 可以传入 allowed_tables，限制 SQL 只能访问 search_schema 返回的表。
+- 只允许 SELECT / WITH 查询，不允许 DDL、DML、多语句或危险操作。
+- 不负责生成 SQL；SQL 生成应使用 generate_sql。
+- 不负责解释查询结果；结果解释应交给 explain_result。
+- 当前 tenant_id 主要用于结果追踪和校验上下文，不等价于强租户隔离。
+
+输入参数:
+- sql: 要执行的 SQL。推荐传入 normalized_sql。
+- tenant_id: 租户 ID。
+- dsn: 可选数据库连接串；为空时读取 DATABASE_URL 或 POSTGRES_DSN。
+- timeout_ms: 可选语句超时时间，默认 10000。
+- max_limit: 可选最大 LIMIT，默认 1000。
+- allowed_tables: 可选允许访问的表名列表，通常来自 search_schema。
+
+返回字段:
+- ok: 执行是否成功。
+- sql: 原始传入 SQL。
+- normalized_sql: validate_sql 规范化后的 SQL。
+- tenant_id: 租户 ID。
+- rows: 查询结果行列表，每行是 dict。
+- row_count: rows 的数量。
+- validation: 执行前 validate_sql 的完整结果。
+- violations: 当 SQL 校验失败时返回违规项。
+- message: 成功或失败说明。
+
+失败场景:
+- 缺少 DATABASE_URL / POSTGRES_DSN。
+- SQL 没有通过 validate_sql。
+- 数据库连接失败、执行超时、SQL 运行时报错。
+""".strip()
+
+
+EXPLAIN_RESULT_DESCRIPTION = """
+工具名称: explain_result
+
+工具用途:
+将 execute_sql 返回的 rows 转成面向用户的简短解释。当前版本是规则版解释器，不调用 LLM；后续可以在同一接口下升级为 LLM 解释。
+
+使用时机:
+- 当 SQL 已通过 validate_sql，且 execute_sql 已成功返回 rows 后使用。
+- 当 pipeline 或 ReAct loop 需要把结构化查询结果转换为自然语言回答时使用。
+- 适合解释聚合结果、分组结果和少量明细预览。
+
+输入参数:
+- question: 用户原始问题。
+- sql: 实际执行或规范化后的 SQL。
+- rows: 查询结果行列表，每行是 dict。
+- metrics_result: search_metrics 返回的指标上下文，用于补充指标名称。
+- llm: 可选参数，当前规则版不使用。
+- max_preview_rows: 可选预览行数，默认 5。
+
+返回字段:
+- ok: 是否成功生成解释。
+- question: 用户原始问题。
+- sql: 输入 SQL。
+- row_count: 查询结果行数。
+- columns: 结果字段列表。
+- preview_rows: 用于解释的前几行结果。
+- explanation: 生成的自然语言解释。
+- message: 成功或失败说明。
+
+边界:
+- 不执行 SQL；执行应使用 execute_sql。
+- 不校验 SQL；校验应使用 validate_sql。
+- 不尝试推断查询结果之外的业务结论，只解释 rows 中真实存在的数据。
+""".strip()
+
+
 TOOL_DESCRIPTIONS = {
     "search_metrics": SEARCH_METRICS_DESCRIPTION,
     "search_schema": SEARCH_SCHEMA_DESCRIPTION,
     "validate_sql": VALIDATE_SQL_DESCRIPTION,
+    "execute_sql": EXECUTE_SQL_DESCRIPTION,
+    "explain_result": EXPLAIN_RESULT_DESCRIPTION,
 }
 
 
