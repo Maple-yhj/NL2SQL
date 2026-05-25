@@ -60,6 +60,7 @@ async def validate_sql(
     try:
         statements = [stmt for stmt in sqlglot.parse(raw_sql, read="postgres") if stmt]
     except ParseError as exc:
+        
         result["violations"].append(_violation("parse_error", str(exc)))
         result["message"] = "SQL parse failed."
         return result
