@@ -80,6 +80,25 @@ columns 中每个对象的字段含义:
 """.strip()
 
 
+GENERATE_SQL_DESCRIPTION = """
+工具作用:
+根据当前请求中受控保存的用户问题、解析意图、指标上下文、schema 上下文和最近一次校验反馈生成一条候选只读 SQL。该工具调用现有 SQL generator，并将候选 SQL 写回状态供后续安全校验使用。
+
+什么时候使用:
+- 当 search_metrics 与 search_schema 已返回生成 SQL 所需的业务和字段上下文时使用。
+- 当上一次候选 SQL 未通过 validate_sql，需要依据校验反馈重新生成时使用。
+
+安全边界:
+- planner 不提供 SQL、意图、schema、授权表或重试反馈；这些输入均由状态上下文注入。
+- 生成的 SQL 仍必须经过 validate_sql，不能直接执行。
+
+返回参数含义:
+- ok: 是否成功生成候选 SQL。
+- sql: 最新生成、等待校验的候选 SQL。
+- message: 工具执行结果说明。
+""".strip()
+
+
 VALIDATE_SQL_DESCRIPTION = """
 工具作用:
 校验模型生成的 SQL 是否安全、可控，并符合只读查询要求。该工具会解析 SQL AST，阻止多语句、非 SELECT 查询、DDL/DML、危险操作和未授权表访问，并补充缺失的 LIMIT 或降低过大的 LIMIT。该工具只做校验和规范化，不执行 SQL。
@@ -201,6 +220,7 @@ EXPLAIN_RESULT_DESCRIPTION = """
 TOOL_DESCRIPTIONS = {
     "search_metrics": SEARCH_METRICS_DESCRIPTION,
     "search_schema": SEARCH_SCHEMA_DESCRIPTION,
+    "generate_sql": GENERATE_SQL_DESCRIPTION,
     "validate_sql": VALIDATE_SQL_DESCRIPTION,
     "execute_sql": EXECUTE_SQL_DESCRIPTION,
     "explain_result": EXPLAIN_RESULT_DESCRIPTION,

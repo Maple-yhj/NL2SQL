@@ -1,15 +1,17 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
-from pydantic import Field
-from tools.registry import ToolContext
+from agent.tools.registry import ToolContext
 from copy import deepcopy
 import re
+
+from engine.models import QueryIntent
 
 
 _SUPPORTED_TOOLS = {
     "search_metrics",
     "search_schema",
+    "generate_sql",
     "validate_sql",
     "execute_sql",
     "explain_result",
@@ -46,6 +48,32 @@ def _extract_allowed_tables(schema_result: dict[str, Any]) -> list[str]:
 
     return allowed_tables
 
+
+def _build_retry_feedback(sql: str, validation: dict[str, Any]) -> str:
+    violations = validation.get("violations", []) or []
+    warnings = validation.get("warnings", []) or []
+    violation_lines = [
+        f"- {item.get('code')}: {item.get('message')}"
+        for item in violations
+    ]
+    warning_lines = [f"- {warning}" for warning in warnings]
+    return "\n".join(
+        [
+            "Previous SQL:",
+            sql,
+            "",
+            "Validation message:",
+            str(validation.get("message", "")),
+            "",
+            "Violations:",
+            "\n".join(violation_lines) or "- none",
+            "",
+            "Warnings:",
+            "\n".join(warning_lines) or "- none",
+        ]
+    )
+
+
 @dataclass(frozen=True)
 class ReactRuntimeConfig:
     tenant_id: str
@@ -70,21 +98,22 @@ class ReactState:
     question: str
     config: ReactRuntimeConfig
 
-    intent: dict[str, Any] | None = None
+    intent: QueryIntent | None = None
     metrics_result: dict[str, Any] | None = None
     schema_result: dict[str, Any] | None = None
 
-    raw_sql: str = ""
+    raw_sql: str | None = None
+    retry_feedback: str | None = None
     validation_result: dict[str, Any] | None = None
     execution_result: dict[str, Any] | None = None
     explanation_result: dict[str, Any] | None = None
 
-    table_names: list[str] = Field(default_factory=list)
-    allowed_tables: list[str] = Field(default_factory=list)
+    table_names: list[str] = field(default_factory=list)
+    allowed_tables: list[str] = field(default_factory=list)
 
     step_count: int = 0
-    tool_call_counts: dict[str, int] = Field(default_factory=dict)
-    trace: list["ToolTraceItem"] = Field(default_factory=list)
+    tool_call_counts: dict[str, int] = field(default_factory=dict)
+    trace: list["ToolTraceItem"] = field(default_factory=list)
 
 
     @property
@@ -109,7 +138,11 @@ class ReactState:
             tenant_id=self.config.tenant_id,
             table_names=self.table_names or None,
             allowed_tables=self.allowed_tables or None,
+            intent=self.intent,
             metrics_result=self.metrics_result,
+            schema_result=self.schema_result,
+            retry_feedback=self.retry_feedback,
+            candidate_sql=self.raw_sql,
             validated_sql=self.validated_sql,
             execution_rows=self.execution_rows,
             execute_enabled=self.config.execute_enabled,
@@ -119,8 +152,6 @@ class ReactState:
             llm=self.config.llm,
         )
     
-    
-
     def apply_observation(
         self,
         tool_name: str,
@@ -169,6 +200,7 @@ class ReactState:
             self.schema_result = None
             self.allowed_tables = []
             self.raw_sql = ""
+            self.retry_feedback = None
             self.validation_result = None
             self.execution_result = None
             self.explanation_result = None
@@ -182,17 +214,33 @@ class ReactState:
                 else []
             )
 
+            self.raw_sql = ""
+            self.retry_feedback = None
+            self.validation_result = None
+            self.execution_result = None
+            self.explanation_result = None
+
+        elif tool_name == "generate_sql":
+            sql = stored_result.get("sql")
+            if succeeded and (not isinstance(sql, str) or not sql.strip()):
+                raise ValueError("generate_sql observation requires result['sql']")
+
+            self.raw_sql = sql if succeeded else ""
+            self.retry_feedback = None
             self.validation_result = None
             self.execution_result = None
             self.explanation_result = None
 
         elif tool_name == "validate_sql":
-            sql = arguments.get("sql")
-            if not isinstance(sql, str) or not sql.strip():
-                raise ValueError("validate_sql observation requires arguments['sql']")
+            if not self.raw_sql:
+                raise ValueError("validate_sql observation requires generated SQL")
 
-            self.raw_sql = sql
             self.validation_result = stored_result
+            self.retry_feedback = (
+                None
+                if succeeded
+                else _build_retry_feedback(self.raw_sql, stored_result)
+            )
 
             # 无论本次校验成功或失败，旧执行结果都不能继续使用。
             self.execution_result = None

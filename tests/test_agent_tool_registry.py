@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 from agent.tools import registry
+from engine.models import QueryIntent
 
 
 class AgentToolRegistryTests(unittest.IsolatedAsyncioTestCase):
@@ -13,6 +14,7 @@ class AgentToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             [
                 "search_metrics",
                 "search_schema",
+                "generate_sql",
                 "validate_sql",
                 "execute_sql",
                 "explain_result",
@@ -84,6 +86,43 @@ class AgentToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             table_names=["orders"],
         )
 
+    async def test_generate_sql_uses_controlled_generation_context(self):
+        intent = QueryIntent(metrics=["gmv"])
+        context = registry.ToolContext(
+            question="查询 GMV",
+            tenant_id="tenant-a",
+            intent=intent,
+            metrics_result={"metrics": [{"metric_name": "gmv"}]},
+            schema_result={"schema": [{"table_name": "orders"}]},
+            retry_feedback="Previous SQL failed validation.",
+            llm=object(),
+        )
+
+        with mock.patch.object(
+            registry,
+            "generate_sql",
+            new=mock.AsyncMock(return_value="SELECT amount FROM orders"),
+            create=True,
+        ) as generate_sql:
+            actual = await registry.call_tool("generate_sql", {}, context)
+
+        self.assertEqual(
+            actual,
+            {
+                "ok": True,
+                "sql": "SELECT amount FROM orders",
+                "message": "success",
+            },
+        )
+        generate_sql.assert_awaited_once_with(
+            question="查询 GMV",
+            intent=intent,
+            metrics_result={"metrics": [{"metric_name": "gmv"}]},
+            schema_result={"schema": [{"table_name": "orders"}]},
+            retry_feedback="Previous SQL failed validation.",
+            llm=context.llm,
+        )
+
     async def test_execute_sql_requires_explicit_execution_permission(self):
         context = registry.ToolContext(
             question="查询 GMV",
@@ -100,6 +139,7 @@ class AgentToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             question="查询 GMV",
             tenant_id="tenant-a",
             allowed_tables=["orders"],
+            candidate_sql="select amount from orders",
             max_limit=100,
         )
 
@@ -110,7 +150,7 @@ class AgentToolRegistryTests(unittest.IsolatedAsyncioTestCase):
         ) as validate_sql:
             actual = await registry.call_tool(
                 "validate_sql",
-                {"sql": "select amount from orders"},
+                {},
                 context,
             )
 
@@ -121,6 +161,20 @@ class AgentToolRegistryTests(unittest.IsolatedAsyncioTestCase):
             allowed_tables=["orders"],
             max_limit=100,
         )
+
+    async def test_validate_sql_rejects_model_supplied_sql(self):
+        context = registry.ToolContext(
+            question="查询 GMV",
+            tenant_id="tenant-a",
+            candidate_sql="select amount from orders",
+        )
+
+        with self.assertRaisesRegex(ValueError, "sql"):
+            await registry.call_tool(
+                "validate_sql",
+                {"sql": "select secret from users"},
+                context,
+            )
 
     async def test_execute_sql_uses_validated_sql_and_execution_context(self):
         result = {"ok": True, "rows": [{"amount": 100}]}

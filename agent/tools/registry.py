@@ -4,11 +4,13 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
+from agent.sql_generator import generate_sql
 from agent.tools.descriptions import get_tool_description
 from agent.tools.execute_sql import execute_sql
 from agent.tools.explain_result import explain_result
 from agent.tools.sql_store import search_metrics, search_schema
 from agent.tools.validate_sql import validate_sql
+from engine.models import QueryIntent
 
 
 ToolExecutor = Callable[[dict[str, Any], "ToolContext"], Awaitable[dict[str, Any]]]
@@ -20,8 +22,12 @@ class ToolContext:
     tenant_id: str
     table_names: list[str] | None = None
     allowed_tables: list[str] | None = None
+    intent: QueryIntent | None = None
     metrics_result: dict[str, Any] | None = None
-    validated_sql: str = ""
+    schema_result: dict[str, Any] | None = None
+    retry_feedback: str | None = None
+    candidate_sql: str | None = None
+    validated_sql: str | None = None
     execution_rows: list[dict[str, Any]] | None = None
     execute_enabled: bool = False
     dsn: str | None = None
@@ -64,12 +70,30 @@ async def _execute_search_schema(
     )
 
 
+async def _execute_generate_sql(
+    args: dict[str, Any],
+    context: ToolContext,
+) -> dict[str, Any]:
+    sql = await generate_sql(
+        question=context.question,
+        intent=context.intent,
+        metrics_result=context.metrics_result or {},
+        schema_result=context.schema_result or {},
+        retry_feedback=context.retry_feedback,
+        llm=context.llm,
+    )
+    return {"ok": True, "sql": sql, "message": "success"}
+
+
 async def _execute_validate_sql(
     args: dict[str, Any],
     context: ToolContext,
 ) -> dict[str, Any]:
+    if not context.candidate_sql:
+        raise ValueError("Tool[validate_sql] requires context.candidate_sql")
+
     return await validate_sql(
-        sql=args["sql"],
+        sql=context.candidate_sql,
         tenant_id=context.tenant_id,
         allowed_tables=context.allowed_tables,
         max_limit=context.max_limit,
@@ -149,15 +173,27 @@ SEARCH_SCHEMA_SPEC = ToolSpec(
 )
 
 
+GENERATE_SQL_SPEC = ToolSpec(
+    name="generate_sql",
+    description=get_tool_description("generate_sql"),
+    input_schema={
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    },
+    executor=_execute_generate_sql,
+    max_calls=2,
+)
+
+
 VALIDATE_SQL_SPEC = ToolSpec(
     name="validate_sql",
     description=get_tool_description("validate_sql"),
     input_schema={
         "type": "object",
-        "properties": {
-            "sql": {"type": "string", "description": "待校验的只读 SQL。"},
-        },
-        "required": ["sql"],
+        "properties": {},
+        "required": [],
         "additionalProperties": False,
     },
     executor=_execute_validate_sql,
@@ -203,6 +239,7 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
     for spec in (
         SEARCH_METRICS_SPEC,
         SEARCH_SCHEMA_SPEC,
+        GENERATE_SQL_SPEC,
         VALIDATE_SQL_SPEC,
         EXECUTE_SQL_SPEC,
         EXPLAIN_RESULT_SPEC,
