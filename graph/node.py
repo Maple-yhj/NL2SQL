@@ -1,22 +1,24 @@
 from langgraph.graph import StateGraph
-from graph.tools import InputState,ParseState,SearchIntentState,GenSQLState,ValidateSQLState,ExecuteSQLState
+from graph.tools import InputState,OutputState,GraphState
 
 
-def InputNode(state: InputState):
+def InputNode(state: InputState) -> GraphState:
     ...
 
-def ParseIntentNode(state: InputState) -> ParseState:
+def ParseIntentNode(state: GraphState) -> GraphState:
     ...
 
-def SearchIntentNode(state: ParseState) -> SearchIntentState:
+def SearchIntentNode(state: GraphState) -> GraphState:
     ...
 
-def GenerateSQLNode(state: SearchIntentState) -> GenSQLState:
+def GenerateSQLNode(state: GraphState) -> GraphState:
     ...
 
-def ValidateSQLNode(state: GenSQLState) -> ValidateSQLState:
+def ValidateSQLNode(state: GraphState) -> GraphState:
     ...
 
-def ExecuteSQLNode(state: ValidateSQLState) -> ExecuteSQLState:
+def ExecuteSQLNode(state: GraphState) -> GraphState:
     ...
 
+def ExplainSQLNode(state: GraphState) -> OutputState:
+    ...
