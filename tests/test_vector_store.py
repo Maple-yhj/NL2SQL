@@ -34,11 +34,11 @@ class ConnectVectorStoreTests(unittest.TestCase):
             os.environ,
             {"POSTGRES_DSN": "postgresql://example/db"},
             clear=True,
-        ), mock.patch.object(vector_store, "load_env_file") as load_env_file:
+        ), mock.patch.object(vector_store, "load_dotenv") as load_dotenv:
             result = asyncio.run(vector_store.connect_vector_store())
 
         self.assertIs(result, conn)
-        load_env_file.assert_called_once_with()
+        load_dotenv.assert_called_once_with()
         self.assertEqual(
             calls,
             [

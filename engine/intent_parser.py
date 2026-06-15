@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from core.llm import LLMProtocol
 from core.structured_output import extract_json_object
 from engine.models import QueryIntent
 
@@ -29,6 +30,10 @@ def build_intent_system(now: datetime | None = None) -> str:
     )
 
 
-async def parse_intent(question: str, llm, now: datetime | None = None) -> QueryIntent:
+async def parse_intent(
+    question: str,
+    llm: LLMProtocol,
+    now: datetime | None = None,
+) -> QueryIntent:
     raw = await llm.complete(prompt=question, system=build_intent_system(now), max_output_tokens=1024)
     return QueryIntent.from_dict(extract_json_object(raw))

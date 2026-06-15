@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nl2sql-langgraph"
+version = "0.1.0"
+description = "A secure NL2SQL workflow built with LangChain and LangGraph"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "asyncpg>=0.30",
+  "langchain>=1.2",
+  "langchain-google-genai>=4.2",
+  "langchain-openai>=1.1",
+  "langgraph>=1.2",
+  "pgvector>=0.4",
+  "psycopg2-binary>=2.9",
+  "python-dotenv>=1.1",
+  "sqlglot>=30.0",
+]
+
+[project.optional-dependencies]
+dev = ["langgraph-cli[inmem]>=0.4"]
+
+[tool.setuptools.packages.find]
+include = ["catalog*", "core*", "db*", "engine*", "graph*", "rag*"]

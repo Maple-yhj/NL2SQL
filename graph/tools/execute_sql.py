@@ -1,6 +1,6 @@
 from typing import Any
 
-from core.google_client import load_env_file
+from dotenv import load_dotenv
 from graph.tools.validate_sql import validate_sql
 
 
@@ -49,7 +49,7 @@ async def execute_sql(
     if dsn is None:
         import os
 
-        load_env_file()
+        load_dotenv()
         dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN")
 
     if not dsn:

@@ -1,11 +1,10 @@
-# agent/sql_generator.py
-
 from __future__ import annotations
+
 import re
 from typing import Any
 
+from core.llm import LLMProtocol
 from engine.models import QueryIntent
-
 
 
 SQL_SYSTEM = """
@@ -27,16 +26,25 @@ async def generate_sql(
     metrics_result: dict[str, Any],
     schema_result: dict[str, Any],
     retry_feedback: str | None,
-    llm,
+    llm: LLMProtocol,
     max_output_tokens: int = 2048,
 ) -> str:
-    if not intent:
-        raise ValueError("parse intent error, intent is null")
+    if intent is None:
+        raise ValueError("Tool[generate_sql]: intent is required")
 
-    prompt = build_sql_prompt(question = question, intent = intent, metrics_result = metrics_result, schema_result = schema_result, retry_feedback = retry_feedback)
-    raw = await llm.complete(prompt=prompt, system=SQL_SYSTEM, max_output_tokens = max_output_tokens)
-    sql = _extract_sql(raw)
-    return sql
+    prompt = build_sql_prompt(
+        question=question,
+        intent=intent,
+        metrics_result=metrics_result,
+        schema_result=schema_result,
+        retry_feedback=retry_feedback,
+    )
+    raw = await llm.complete(
+        prompt=prompt,
+        system=SQL_SYSTEM,
+        max_output_tokens=max_output_tokens,
+    )
+    return _extract_sql(raw)
 
 
 def build_sql_prompt(
@@ -45,30 +53,16 @@ def build_sql_prompt(
     intent: QueryIntent,
     metrics_result: dict[str, Any],
     schema_result: dict[str, Any],
-    retry_feedback: str | None
+    retry_feedback: str | None,
 ) -> str:
-    """
-    把自然语言问题、意图、指标检索结果、schema 检索结果拼成 prompt。
-    """
-    
-    metrics_content = []
-    schemas_content = []
-
-    metrics = metrics_result.get("metrics")
-    schemas= schema_result.get("schema")
-
-    if isinstance(metrics, (list)):
-       for metric in metrics:
-           metric_content = format_metrics_context(metric)
-           metrics_content.append(metric_content)
-
-    if isinstance(schemas, (list)):
-       for schema in schemas:
-           schema_content = format_schema_context(schema)
-           schemas_content.append(schema_content)
-
-    metrics_content_str = "\n\n".join(metrics_content)
-    schemas_content_str = "\n\n".join(schemas_content)
+    metrics_content = "\n\n".join(
+        format_metrics_context(metric)
+        for metric in metrics_result.get("metrics", []) or []
+    )
+    schema_content = "\n\n".join(
+        format_schema_context(schema)
+        for schema in schema_result.get("schema", []) or []
+    )
 
     prompt = f"""
 Question:
@@ -81,65 +75,60 @@ dimensions: {intent.dimensions}
 filters: {intent.filters}
 
 [METRIC CONTEXT]
-{metrics_content_str}
+{metrics_content}
 
 [SCHEMA CONTEXT]
-{schemas_content_str}
-"""
-    
+{schema_content}
+""".strip()
     if retry_feedback:
-        prompt = prompt + retry_feedback
-
+        prompt += f"\n\n[VALIDATION FEEDBACK]\n{retry_feedback}"
     return prompt
 
 
-def format_metrics_context(metrics_result: dict[str, Any]) -> str:
-    content = f"""
-Metric: {metrics_result.get("metric_name")}
-Display name: {metrics_result.get("display_name")}
-Business definition: {metrics_result.get("business_def")}
-SQL expression: {metrics_result.get("sql_expr")}
-Base table: {metrics_result.get("base_table")}
-Time column: {metrics_result.get("time_column")}
-Default filters: {metrics_result.get("filters")}
-Supported dimensions: {metrics_result.get("dimensions")}
-Join tables: {metrics_result.get("join_tables")}
-Forbidden: {metrics_result.get("forbidden")}
-Synonyms: {metrics_result.get("synonyms")}
-Retrieval score: {metrics_result.get("score")}
-    """
-    return content
+def format_metrics_context(metric: dict[str, Any]) -> str:
+    return f"""
+Metric: {metric.get('metric_name')}
+Display name: {metric.get('display_name')}
+Business definition: {metric.get('business_def')}
+SQL expression: {metric.get('sql_expr')}
+Base table: {metric.get('base_table')}
+Time column: {metric.get('time_column')}
+Default filters: {metric.get('filters')}
+Supported dimensions: {metric.get('dimensions')}
+Join tables: {metric.get('join_tables')}
+Forbidden: {metric.get('forbidden')}
+Synonyms: {metric.get('synonyms')}
+Retrieval score: {metric.get('score')}
+""".strip()
 
 
-def format_schema_context(schema_result: dict[str, Any]) -> str:
-    columns = schema_result.get("columns")
-    columns_str = ""
-    if columns:
-        for column in columns:
-            nullable = "nullable"  if column.get("nullable") else "not null"
-            column_line = f"-{column.get("column_name")}|{column.get("data_type")}|{nullable}|{column.get("comment")}|{column.get("sample_values")}\n"
-            columns_str = columns_str + column_line
-
-
-    content = f"""
-Table:{schema_result.get("table_name")}
-Table Comment: {schema_result.get("table_comment")}
-Allowed columns:
-{columns_str}
-"""
-    return content
+def format_schema_context(schema: dict[str, Any]) -> str:
+    columns = []
+    for column in schema.get("columns", []) or []:
+        nullable = "nullable" if column.get("nullable") else "not null"
+        columns.append(
+            "- {name} | {data_type} | {nullable} | {comment} | samples={samples}".format(
+                name=column.get("column_name"),
+                data_type=column.get("data_type"),
+                nullable=nullable,
+                comment=column.get("comment"),
+                samples=column.get("sample_values"),
+            )
+        )
+    return (
+        f"Table: {schema.get('table_name')}\n"
+        f"Table comment: {schema.get('table_comment')}\n"
+        f"Allowed columns:\n{chr(10).join(columns)}"
+    )
 
 
 def _extract_sql(model_text: str) -> str:
-    """
-    处理模型可能返回的 fenced sql：
-    ```sql
-    select ...
-    ```
-    同时去掉首尾空白和分号。
-    """
     value = model_text.strip()
-    fenced = re.search(r"```(?:sql)?\s*(.*?)\s*```", value, flags=re.DOTALL | re.IGNORECASE)
+    fenced = re.search(
+        r"```(?:sql)?\s*(.*?)\s*```",
+        value,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
     if fenced:
         value = fenced.group(1)
     value = value.strip().rstrip(";").strip()

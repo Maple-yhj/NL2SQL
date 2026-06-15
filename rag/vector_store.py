@@ -5,7 +5,7 @@ import os
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from core.google_client import load_env_file
+from dotenv import load_dotenv
 from rag.documents import EmbeddingDocument
 
 DEFAULT_EMBEDDING_DIM = 768
@@ -33,7 +33,7 @@ class SearchHit:
 
 async def connect_vector_store(dsn: str | None = None):
     """Open a PostgreSQL connection and register pgvector codecs."""
-    load_env_file()
+    load_dotenv()
     if dsn is None:
         dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN")
     if not dsn:

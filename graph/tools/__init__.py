@@ -1,24 +1,14 @@
-from importlib import import_module
-
-from .descriptions import TOOL_DESCRIPTIONS, get_tool_description
-from .validate_sql import validate_sql
-from .sql_store import search_metrics,search_schema
-from .execute_sql import execute_sql
-from .explain_result import explain_result
+from graph.tools.execute_sql import execute_sql
+from graph.tools.explain_result import explain_result
+from graph.tools.sql_generator import generate_sql
+from graph.tools.sql_store import search_metrics, search_schema
+from graph.tools.validate_sql import validate_sql
 
 __all__ = [
-    "TOOL_DESCRIPTIONS",
-    "get_tool_description",
+    "execute_sql",
+    "explain_result",
+    "generate_sql",
     "search_metrics",
     "search_schema",
     "validate_sql",
-    "execute_sql",
-    "explain_result"
 ]
-
-
-def __getattr__(name: str):
-    if name in {"search_metrics", "search_schema"}:
-        sql_store = import_module(".sql_store", __name__)
-        return getattr(sql_store, name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

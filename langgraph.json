@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "nl2sql": "./graph/pipeline.py:graph"
+  },
+  "env": ".env"
+}

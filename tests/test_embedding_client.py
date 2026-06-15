@@ -1,40 +1,51 @@
-import importlib
-import sys
-import types
+import os
 import unittest
+from unittest import mock
+
+from core.embeddings import LangChainEmbeddingClient, create_embedding_client
 
 
-fake_google = types.ModuleType("google")
-fake_genai = types.ModuleType("google.genai")
-fake_genai.types = types.SimpleNamespace(
-    EmbedContentConfig=lambda **kwargs: types.SimpleNamespace(**kwargs)
-)
-fake_google.genai = fake_genai
-sys.modules.setdefault("google", fake_google)
-sys.modules.setdefault("google.genai", fake_genai)
+class FakeEmbeddings:
+    async def aembed_documents(self, texts):
+        return [[float(index), 1.0] for index, _ in enumerate(texts)]
 
-embedding_client = importlib.import_module("rag.embedding_client")
+    async def aembed_query(self, text):
+        return [1.0, 2.0]
 
 
-class EmbeddingValidationTests(unittest.TestCase):
-    def test_validate_vectors_reports_embedding_count_mismatch(self):
-        with self.assertRaisesRegex(ValueError, "Expected 2 embeddings, got 1"):
-            embedding_client._validate_vectors(
-                vectors=[[0.1, 0.2, 0.3]],
-                expected_count=2,
-                expected_dim=3,
-            )
+class EmbeddingClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_adapter_uses_langchain_async_embedding_api(self):
+        client = LangChainEmbeddingClient(
+            FakeEmbeddings(),
+            model_name="embedding-model",
+            dimension=2,
+        )
 
-    def test_validate_vectors_reports_dimension_mismatch(self):
-        with self.assertRaisesRegex(
-            ValueError,
-            "Expected embedding dim 3 at index 1, got 2",
-        ):
-            embedding_client._validate_vectors(
-                vectors=[[0.1, 0.2, 0.3], [0.4, 0.5]],
-                expected_count=2,
-                expected_dim=3,
-            )
+        self.assertEqual(await client.embed_text("query"), [1.0, 2.0])
+        self.assertEqual(
+            await client.embed_texts(["a", "b"]),
+            [[0.0, 1.0], [1.0, 1.0]],
+        )
+
+    def test_factory_builds_google_langchain_embeddings(self):
+        with mock.patch.dict(
+            os.environ,
+            {
+                "GEMINI_API_KEY": "test-key",
+                "EMBEDDING_MODEL": "models/gemini-embedding-001",
+                "EMBEDDING_DIM": "768",
+            },
+            clear=True,
+        ), mock.patch("core.embeddings.GoogleGenerativeAIEmbeddings") as embeddings:
+            result = create_embedding_client()
+
+        self.assertEqual(result.model_name, "models/gemini-embedding-001")
+        self.assertEqual(result.dimension, 768)
+        embeddings.assert_called_once_with(
+            model="models/gemini-embedding-001",
+            api_key="test-key",
+            output_dimensionality=768,
+        )
 
 
 if __name__ == "__main__":

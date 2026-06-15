@@ -31,9 +31,7 @@ async def validate_sql(
     allowed_tables: list[str] | None = None,
     max_limit: int = 1000,
 ) -> dict[str, Any]:
-    '''
-    
-    '''
+    """Validate and normalize a read-only query within an authorized table scope."""
 
     result: dict[str, Any] = {
         "ok": False,
@@ -54,6 +52,15 @@ async def validate_sql(
         raise ValueError("Tool[validate_sql]: arg 'tenant_id' is empty")
     if max_limit <= 0:
         raise ValueError("Tool[validate_sql]: arg 'max_limit' must be positive")
+    if not allowed_tables:
+        result["violations"].append(
+            _violation(
+                "missing_allowed_tables",
+                "SQL validation requires a non-empty authorized table scope.",
+            )
+        )
+        result["message"] = "SQL table authorization scope is missing."
+        return result
 
     raw_sql = sql.strip().rstrip(";").strip()
 
@@ -87,16 +94,15 @@ async def validate_sql(
     tables = sorted({table.name for table in expression.find_all(exp.Table)})
     result["tables"] = tables
 
-    if allowed_tables:
-        allowed = {table.lower() for table in allowed_tables}
-        disallowed = [table for table in tables if table.lower() not in allowed]
-        if disallowed:
-            result["violations"].append(
-                _violation(
-                    "table_not_allowed",
-                    f"SQL uses tables outside allowed_tables: {', '.join(disallowed)}",
-                )
+    allowed = {table.lower() for table in allowed_tables}
+    disallowed = [table for table in tables if table.lower() not in allowed]
+    if disallowed:
+        result["violations"].append(
+            _violation(
+                "table_not_allowed",
+                f"SQL uses tables outside allowed_tables: {', '.join(disallowed)}",
             )
+        )
 
     result["columns"] = sorted({column.name for column in expression.find_all(exp.Column)})
 

@@ -6,13 +6,13 @@ from dataclasses import replace
 from typing import Iterable
 
 from catalog.loader import load_schema_catalog
-from engine.metrics import MetricRegistry
+from catalog.metrics import MetricRegistry
+from core.embeddings import create_embedding_client
 from rag.documents import (
     EmbeddingDocument,
     build_metric_document,
     build_schema_documents,
 )
-from rag.embedding_client import GeminiEmbeddingClient
 from rag.vector_store import upsert_documents
 
 
@@ -81,7 +81,7 @@ async def rebuild(args: argparse.Namespace) -> int:
     if args.dry_run:
         return 0
 
-    client = GeminiEmbeddingClient()
+    client = create_embedding_client()
     total = 0
 
     for batch in chunked(docs, args.batch_size):
@@ -96,8 +96,8 @@ async def rebuild(args: argparse.Namespace) -> int:
         count = await upsert_documents(
             batch,
             embeddings,
-            embedding_model= client.config.model,
-            embedding_dim = client.config.dimension, 
+            embedding_model=client.model_name,
+            embedding_dim=client.dimension,
             dsn = args.dsn
             )
         total+=count

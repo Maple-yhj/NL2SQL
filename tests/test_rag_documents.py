@@ -1,6 +1,6 @@
 import unittest
 
-from engine.metrics import Metric
+from catalog.metrics import Metric
 from rag.documents import build_metric_document,build_schema_documents
 
 
@@ -15,7 +15,7 @@ class RagDocumentTests(unittest.TestCase):
             sql_expr="sum(orders.amount)",
             base_table="orders",
             time_column="paid_at",
-            activate=True,
+            active=True,
             dimensions=("region", "paid_date", "product_id", "user_id"),
             join_tables=(),
             filters=("status = 'paid'",),
@@ -59,7 +59,7 @@ class RagDocumentTests(unittest.TestCase):
             sql_expr="sum(orders.amount)",
             base_table="orders",
             time_column="paid_at",
-            activate=True,
+            active=True,
             dimensions=("region",),
             join_tables=(),
             filters=(),

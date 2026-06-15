@@ -4,7 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Any
 
-from engine.metrics import Metric
+from catalog.metrics import Metric
 
 
 @dataclass(frozen=True, slots=True)
