@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "asyncpg>=0.30",
+  "fastapi>=0.115",
   "langchain>=1.2",
   "langchain-google-genai>=4.2",
   "langchain-openai>=1.1",
@@ -18,10 +19,11 @@ dependencies = [
   "psycopg2-binary>=2.9",
   "python-dotenv>=1.1",
   "sqlglot>=30.0",
+  "uvicorn[standard]>=0.34",
 ]
 
 [project.optional-dependencies]
 dev = ["langgraph-cli[inmem]>=0.4"]
 
 [tool.setuptools.packages.find]
-include = ["catalog*", "core*", "db*", "engine*", "graph*", "rag*"]
+include = ["api*", "catalog*", "core*", "db*", "engine*", "graph*", "rag*"]

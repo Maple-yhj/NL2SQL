@@ -31,7 +31,7 @@ def _error(state: GraphState, node_name: str, exc: Exception | str) -> GraphStat
     return {
         "error": message,
         "trace": _trace(state, node_name, ok=False, message=message),
-    }
+    } # type: ignore
 
 
 def _metric_table_names(metrics_result: dict[str, Any]) -> list[str]:
@@ -80,7 +80,7 @@ async def initialize_node(state: GraphState) -> GraphState:
         "answer": "",
         "error": "",
         "trace": [{"node": "initialize", "ok": True, "message": "success"}],
-    }
+    } # type: ignore
 
 
 async def parse_intent_node(
@@ -92,7 +92,7 @@ async def parse_intent_node(
         return {
             "intent": intent,
             "trace": _trace(state, "parse_intent", ok=True, message="success"),
-        }
+        } # pyright: ignore[reportReturnType]
     except Exception as exc:
         return _error(state, "parse_intent", exc)
 
@@ -116,7 +116,7 @@ async def search_metrics_node(
                 ok=bool(result.get("ok")),
                 message=str(result.get("message", "")),
             ),
-        }
+        } # type: ignore
     except Exception as exc:
         return _error(state, "search_metrics", exc)
 
@@ -146,7 +146,7 @@ async def search_schema_node(
                 ok=bool(result.get("ok") and allowed_tables),
                 message=str(result.get("message", "")),
             ),
-        }
+        } # type: ignore
         if not allowed_tables:
             update["error"] = "No authorized schema tables were retrieved."
         return update
@@ -176,7 +176,7 @@ async def generate_sql_node(
             "answer": "",
             "error": "",
             "trace": _trace(state, "generate_sql", ok=True, message="success"),
-        }
+        } # type: ignore
     except Exception as exc:
         return _error(state, "generate_sql", exc)
 
@@ -212,7 +212,7 @@ async def validate_sql_node(
                 ok=ok,
                 message=str(result.get("message", "")),
             ),
-        }
+        } # type: ignore
     except Exception as exc:
         return _error(state, "validate_sql", exc)
 
@@ -241,7 +241,7 @@ async def execute_sql_node(
                 ok=ok,
                 message=str(result.get("message", "")),
             ),
-        }
+        } # type: ignore
     except Exception as exc:
         return _error(state, "execute_sql", exc)
 
@@ -268,7 +268,7 @@ async def explain_node(
                 ok=ok,
                 message=str(result.get("message", "")),
             ),
-        }
+        } # type: ignore
     except Exception as exc:
         return _error(state, "explain", exc)
 
