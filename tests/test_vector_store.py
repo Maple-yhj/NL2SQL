@@ -1,6 +1,6 @@
 import asyncio
+import builtins
 import os
-import sys
 import types
 import unittest
 from unittest import mock
@@ -13,36 +13,50 @@ class ConnectVectorStoreTests(unittest.TestCase):
         calls = []
         conn = object()
 
-        async def fake_connect(dsn):
-            calls.append(("connect", dsn))
+        async def fake_connect(dsn, *, ssl=None):
+            calls.append(("connect", dsn, ssl))
             return conn
 
         async def fake_register_vector(connection):
             calls.append(("register", connection))
 
-        fake_asyncpg = types.SimpleNamespace(connect=fake_connect)
-        fake_pgvector_asyncpg = types.SimpleNamespace(register_vector=fake_register_vector)
+        original_import = builtins.__import__
+
+        def reject_runtime_dependency_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "asyncpg" or name.startswith("pgvector"):
+                raise AssertionError("runtime dependency import is blocking")
+            return original_import(name, globals, locals, fromlist, level)
 
         with mock.patch.dict(
-            sys.modules,
-            {
-                "asyncpg": fake_asyncpg,
-                "pgvector": types.SimpleNamespace(asyncpg=fake_pgvector_asyncpg),
-                "pgvector.asyncpg": fake_pgvector_asyncpg,
-            },
-        ), mock.patch.dict(
             os.environ,
             {"POSTGRES_DSN": "postgresql://example/db"},
             clear=True,
-        ), mock.patch.object(vector_store, "load_dotenv") as load_dotenv:
+        ), mock.patch.object(
+            vector_store,
+            "asyncpg",
+            types.SimpleNamespace(connect=fake_connect),
+            create=True,
+        ), mock.patch.object(
+            vector_store,
+            "register_vector",
+            fake_register_vector,
+            create=True,
+        ), mock.patch.object(
+            vector_store,
+            "load_dotenv",
+            create=True,
+            side_effect=AssertionError("runtime dotenv load is blocking"),
+        ), mock.patch(
+            "builtins.__import__",
+            side_effect=reject_runtime_dependency_import,
+        ):
             result = asyncio.run(vector_store.connect_vector_store())
 
         self.assertIs(result, conn)
-        load_dotenv.assert_called_once_with()
         self.assertEqual(
             calls,
             [
-                ("connect", "postgresql://example/db"),
+                ("connect", "postgresql://example/db", False),
                 ("register", conn),
             ],
         )

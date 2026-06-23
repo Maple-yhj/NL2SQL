@@ -36,6 +36,10 @@ class EmbeddingClientTests(unittest.IsolatedAsyncioTestCase):
                 "EMBEDDING_DIM": "768",
             },
             clear=True,
+        ), mock.patch(
+            "core.embeddings.load_dotenv",
+            create=True,
+            side_effect=AssertionError("runtime dotenv load is blocking"),
         ), mock.patch("core.embeddings.GoogleGenerativeAIEmbeddings") as embeddings:
             result = create_embedding_client()
 

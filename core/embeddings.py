@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from typing import Protocol, runtime_checkable
 
-from dotenv import load_dotenv
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 
@@ -65,7 +64,6 @@ class LangChainEmbeddingClient:
 
 
 def create_embedding_client() -> EmbeddingClientProtocol:
-    load_dotenv()
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("Missing GEMINI_API_KEY for embeddings.")

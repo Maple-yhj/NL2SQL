@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from typing import Protocol, runtime_checkable
 
-from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
@@ -51,7 +50,6 @@ class LangChainLLM:
 def create_llm() -> LLMProtocol:
     """Create the configured LangChain chat model behind the project protocol."""
 
-    load_dotenv()
     provider = os.getenv("LLM_PROVIDER", "").strip().lower()
     if not provider:
         provider = "deepseek" if os.getenv("DEEPSEEK_API_KEY") else "google"

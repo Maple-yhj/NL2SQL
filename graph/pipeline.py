@@ -5,6 +5,10 @@ from functools import partial
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
+from core.environment import load_project_environment
+
+load_project_environment()
+
 from core.embeddings import EmbeddingClientProtocol, create_embedding_client
 from core.llm import LLMProtocol, create_llm
 from graph.context import GraphContext

@@ -38,6 +38,10 @@ class LLMAdapterTests(unittest.IsolatedAsyncioTestCase):
                 "DEFAULT_MODEL_NAME": "deepseek-chat",
             },
             clear=True,
+        ), mock.patch(
+            "core.llm.load_dotenv",
+            create=True,
+            side_effect=AssertionError("runtime dotenv load is blocking"),
         ), mock.patch("core.llm.ChatOpenAI") as chat_openai:
             result = create_llm()
 

@@ -5,7 +5,9 @@ import os
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from dotenv import load_dotenv
+import asyncpg
+from pgvector.asyncpg import register_vector
+
 from rag.documents import EmbeddingDocument
 
 DEFAULT_EMBEDDING_DIM = 768
@@ -33,16 +35,12 @@ class SearchHit:
 
 async def connect_vector_store(dsn: str | None = None):
     """Open a PostgreSQL connection and register pgvector codecs."""
-    load_dotenv()
     if dsn is None:
         dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN")
     if not dsn:
         raise ValueError("Missing DATABASE_URL or POSTGRES_DSN.")
 
-    import asyncpg
-    from pgvector.asyncpg import register_vector
-
-    conn = await asyncpg.connect(dsn)
+    conn = await asyncpg.connect(dsn, ssl=False)
     await register_vector(conn)
     return conn
 

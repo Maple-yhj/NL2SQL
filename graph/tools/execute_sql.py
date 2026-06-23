@@ -1,16 +1,12 @@
 from typing import Any
 
-from dotenv import load_dotenv
+import asyncpg
+
 from graph.tools.validate_sql import validate_sql
 
 
 async def _connect(dsn: str):
-    try:
-        import asyncpg
-    except ModuleNotFoundError as exc:
-        raise RuntimeError("asyncpg is not installed. Install it with: pip install asyncpg") from exc
-
-    return await asyncpg.connect(dsn)
+    return await asyncpg.connect(dsn, ssl=False)
 
 
 async def execute_sql(
@@ -49,7 +45,6 @@ async def execute_sql(
     if dsn is None:
         import os
 
-        load_dotenv()
         dsn = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN")
 
     if not dsn:
