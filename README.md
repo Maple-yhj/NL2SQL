@@ -59,6 +59,30 @@ langgraph dev
 
 图定义位于 `graph/pipeline.py`，运行时模型、Embeddings 和数据库参数通过 `GraphContext` 注入，不写入持久化状态。
 
+## FastAPI 后端
+
+启动 HTTP API：
+
+```powershell
+uvicorn api.app:app --reload --host 127.0.0.1 --port 8000
+```
+
+健康检查：
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+生成并校验 SQL：
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/nl2sql `
+  -H "Content-Type: application/json" `
+  -d "{\"question\":\"按地区统计本月 GMV\",\"tenant_id\":\"demo\",\"execute\":false}"
+```
+
+`execute=false` 只返回意图、SQL 和 trace；`execute=true` 会在 SQL 校验通过后执行查询并生成解释。
+
 ## 测试
 
 ```powershell

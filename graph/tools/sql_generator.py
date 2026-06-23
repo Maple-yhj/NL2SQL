@@ -26,6 +26,8 @@ async def generate_sql(
     metrics_result: dict[str, Any],
     schema_result: dict[str, Any],
     retry_feedback: str | None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    user_memories: list[dict[str, Any]] | None = None,
     llm: LLMProtocol,
     max_output_tokens: int = 2048,
 ) -> str:
@@ -38,6 +40,8 @@ async def generate_sql(
         metrics_result=metrics_result,
         schema_result=schema_result,
         retry_feedback=retry_feedback,
+        conversation_history=conversation_history or [],
+        user_memories=user_memories or [],
     )
     raw = await llm.complete(
         prompt=prompt,
@@ -54,6 +58,8 @@ def build_sql_prompt(
     metrics_result: dict[str, Any],
     schema_result: dict[str, Any],
     retry_feedback: str | None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    user_memories: list[dict[str, Any]] | None = None,
 ) -> str:
     metrics_content = "\n\n".join(
         format_metrics_context(metric)
@@ -62,6 +68,10 @@ def build_sql_prompt(
     schema_content = "\n\n".join(
         format_schema_context(schema)
         for schema in schema_result.get("schema", []) or []
+    )
+    conversation_content = format_conversation_context(
+        conversation_history or [],
+        user_memories or [],
     )
 
     prompt = f"""
@@ -80,9 +90,35 @@ filters: {intent.filters}
 [SCHEMA CONTEXT]
 {schema_content}
 """.strip()
+    if conversation_content:
+        prompt += f"\n\n[CONVERSATION CONTEXT]\n{conversation_content}"
     if retry_feedback:
         prompt += f"\n\n[VALIDATION FEEDBACK]\n{retry_feedback}"
     return prompt
+
+
+def format_conversation_context(
+    conversation_history: list[dict[str, Any]],
+    user_memories: list[dict[str, Any]],
+) -> str:
+    parts: list[str] = []
+    if conversation_history:
+        parts.append("Recent turns:")
+        for item in conversation_history:
+            role = str(item.get("role") or "unknown")
+            content = str(item.get("content") or "").strip()
+            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+            sql = str(metadata.get("sql") or "").strip()
+            suffix = f" | SQL: {sql}" if sql else ""
+            parts.append(f"- {role}: {content}{suffix}")
+    if user_memories:
+        parts.append("User memories:")
+        for item in user_memories:
+            key = str(item.get("memory_key") or "").strip()
+            value = str(item.get("memory_value") or "").strip()
+            if key or value:
+                parts.append(f"- {key}: {value}" if key else f"- {value}")
+    return "\n".join(parts)
 
 
 def format_metrics_context(metric: dict[str, Any]) -> str:

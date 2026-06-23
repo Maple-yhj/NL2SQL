@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import uuid
 
 from graph.pipeline import run_nl2sql
 
@@ -11,11 +12,15 @@ async def run_once(
     *,
     tenant_id: str = "demo",
     execute: bool = False,
+    conversation_id: str = "",
+    user_id: str = "",
 ) -> None:
     result = await run_nl2sql(
         question,
         tenant_id=tenant_id,
         execute=execute,
+        conversation_id=conversation_id,
+        user_id=user_id,
     )
     print("\n[intent]")
     print(result["intent"])
@@ -32,8 +37,16 @@ async def run_once(
         print(result["error"])
 
 
-async def run_repl(*, tenant_id: str = "demo", execute: bool = False) -> None:
+async def run_repl(
+    *,
+    tenant_id: str = "demo",
+    execute: bool = False,
+    conversation_id: str = "",
+    user_id: str = "",
+) -> None:
+    conversation_id = conversation_id or str(uuid.uuid4())
     print("NL2SQL LangGraph Assistant")
+    print(f"Conversation: {conversation_id}")
     print("Type exit to quit.\n")
     while True:
         user_input = input("You> ").strip()
@@ -41,7 +54,13 @@ async def run_repl(*, tenant_id: str = "demo", execute: bool = False) -> None:
             continue
         if user_input.lower() in {"exit", "quit"}:
             break
-        await run_once(user_input, tenant_id=tenant_id, execute=execute)
+        await run_once(
+            user_input,
+            tenant_id=tenant_id,
+            execute=execute,
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
 
 
 def main() -> None:
@@ -49,6 +68,8 @@ def main() -> None:
     parser.add_argument("question", nargs="?", help="Natural-language BI question")
     parser.add_argument("--tenant-id", default="demo")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--conversation-id", default="")
+    parser.add_argument("--user-id", default="")
     args = parser.parse_args()
 
     if args.question:
@@ -57,10 +78,19 @@ def main() -> None:
                 args.question,
                 tenant_id=args.tenant_id,
                 execute=args.execute,
+                conversation_id=args.conversation_id,
+                user_id=args.user_id,
             )
         )
     else:
-        asyncio.run(run_repl(tenant_id=args.tenant_id, execute=args.execute))
+        asyncio.run(
+            run_repl(
+                tenant_id=args.tenant_id,
+                execute=args.execute,
+                conversation_id=args.conversation_id,
+                user_id=args.user_id,
+            )
+        )
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 from core.embeddings import EmbeddingClientProtocol, create_embedding_client
 from core.llm import LLMProtocol, create_llm
+from graph.memory_store import ConversationStoreProtocol, create_conversation_store
 
 
 class GraphContext(BaseModel):
@@ -24,7 +25,13 @@ class GraphContext(BaseModel):
         exclude=True,
         repr=False,
     )
+    memory_store: SkipJsonSchema[ConversationStoreProtocol] = Field(
+        default_factory=lambda: create_conversation_store(),
+        exclude=True,
+        repr=False,
+    )
     dsn: str | None = None
     timeout_ms: int = 10_000
     max_limit: int = 1000
     max_validation_attempts: int = 2
+    memory_history_limit: int = 8

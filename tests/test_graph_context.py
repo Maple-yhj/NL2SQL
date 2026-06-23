@@ -33,8 +33,14 @@ class GraphContextTests(unittest.TestCase):
                 "timeout_ms",
                 "max_limit",
                 "max_validation_attempts",
+                "memory_history_limit",
             },
         )
+
+    def test_graph_context_excludes_runtime_memory_store_from_schema(self):
+        schema = graph.get_context_jsonschema()
+
+        self.assertNotIn("memory_store", schema["properties"])
 
     def test_graph_context_ignores_langsmith_thread_id(self):
         context = GraphContext(

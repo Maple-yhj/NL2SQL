@@ -9,6 +9,7 @@ from langgraph.runtime import Runtime
 from engine.intent_parser import parse_intent
 from graph.context import GraphContext
 from graph.state import GraphState, OutputState
+from graph.tools.contextualize_question import contextualize_question
 from graph.tools.execute_sql import execute_sql
 from graph.tools.explain_result import explain_result
 from graph.tools.sql_generator import generate_sql
@@ -32,6 +33,19 @@ def _error(state: GraphState, node_name: str, exc: Exception | str) -> GraphStat
         "error": message,
         "trace": _trace(state, node_name, ok=False, message=message),
     } # type: ignore
+
+
+def _question_for_model(state: GraphState) -> str:
+    return state.get("contextualized_question") or state["question"]
+
+
+def _state_ok(state: GraphState) -> bool:
+    sql = state.get("validated_sql", "")
+    error = state.get("error", "")
+    ok = bool(sql) and not error
+    if state.get("execute", False):
+        ok = ok and (state.get("execution_result") or {}).get("ok") is True
+    return ok
 
 
 def _metric_table_names(metrics_result: dict[str, Any]) -> list[str]:
@@ -68,6 +82,8 @@ def _retry_feedback(sql: str, validation: dict[str, Any]) -> str:
 async def initialize_node(state: GraphState) -> GraphState:
     question = state.get("question", "").strip()
     tenant_id = state.get("tenant_id", "").strip()
+    conversation_id = state.get("conversation_id", "").strip()
+    user_id = state.get("user_id", "").strip()
     if not question:
         return _error(state, "initialize", "question is empty")
     if not tenant_id:
@@ -75,6 +91,11 @@ async def initialize_node(state: GraphState) -> GraphState:
     return {
         "question": question,
         "tenant_id": tenant_id,
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+        "contextualized_question": question,
+        "conversation_history": [],
+        "user_memories": [],
         "validation_attempts": 0,
         "rows": [],
         "answer": "",
@@ -83,12 +104,78 @@ async def initialize_node(state: GraphState) -> GraphState:
     } # type: ignore
 
 
+async def load_memory_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    conversation_id = state.get("conversation_id", "")
+    user_id = state.get("user_id", "")
+    if not conversation_id and not user_id:
+        return {
+            "conversation_history": [],
+            "user_memories": [],
+            "trace": _trace(state, "load_memory", ok=True, message="memory disabled"),
+        } # type: ignore
+    try:
+        context = await runtime.context.memory_store.load_context(
+            tenant_id=state["tenant_id"],
+            conversation_id=conversation_id,
+            user_id=user_id,
+            limit=runtime.context.memory_history_limit,
+        )
+        history = context.get("history", []) or []
+        memories = context.get("user_memories", []) or []
+        return {
+            "conversation_history": history,
+            "user_memories": memories,
+            "trace": _trace(
+                state,
+                "load_memory",
+                ok=True,
+                message=f"loaded {len(history)} history item(s), {len(memories)} user memory item(s)",
+            ),
+        } # type: ignore
+    except Exception as exc:
+        return {
+            "conversation_history": [],
+            "user_memories": [],
+            "trace": _trace(state, "load_memory", ok=False, message=str(exc)),
+        } # type: ignore
+
+
+async def contextualize_question_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    try:
+        rewritten = await contextualize_question(
+            question=state["question"],
+            conversation_history=state.get("conversation_history", []),
+            user_memories=state.get("user_memories", []),
+            llm=runtime.context.llm,
+        )
+        return {
+            "contextualized_question": rewritten,
+            "trace": _trace(
+                state,
+                "contextualize_question",
+                ok=True,
+                message="unchanged" if rewritten == state["question"] else "rewritten",
+            ),
+        } # type: ignore
+    except Exception as exc:
+        return {
+            "contextualized_question": state["question"],
+            "trace": _trace(state, "contextualize_question", ok=False, message=str(exc)),
+        } # type: ignore
+
+
 async def parse_intent_node(
     state: GraphState,
     runtime: Runtime[GraphContext],
 ) -> GraphState:
     try:
-        intent = await parse_intent(state["question"], llm=runtime.context.llm)
+        intent = await parse_intent(_question_for_model(state), llm=runtime.context.llm)
         return {
             "intent": intent,
             "trace": _trace(state, "parse_intent", ok=True, message="success"),
@@ -103,7 +190,7 @@ async def search_metrics_node(
 ) -> GraphState:
     try:
         result = await search_metrics(
-            query=state["question"],
+            query=_question_for_model(state),
             tenant_id=state["tenant_id"],
             embedding_client=runtime.context.embeddings,
         )
@@ -127,7 +214,7 @@ async def search_schema_node(
 ) -> GraphState:
     try:
         result = await search_schema(
-            query=state["question"],
+            query=_question_for_model(state),
             tenant_id=state["tenant_id"],
             embedding_client=runtime.context.embeddings,
             table_names=state.get("table_names") or None,
@@ -160,11 +247,13 @@ async def generate_sql_node(
 ) -> GraphState:
     try:
         sql = await generate_sql(
-            question=state["question"],
+            question=_question_for_model(state),
             intent=state.get("intent"),
             metrics_result=state.get("metrics_result", {}),
             schema_result=state.get("schema_result", {}),
             retry_feedback=state.get("retry_feedback"),
+            conversation_history=state.get("conversation_history", []),
+            user_memories=state.get("user_memories", []),
             llm=runtime.context.llm,
         )
         return {
@@ -252,7 +341,7 @@ async def explain_node(
 ) -> GraphState:
     try:
         result = await explain_result(
-            question=state["question"],
+            question=_question_for_model(state),
             sql=state.get("validated_sql", ""),
             rows=state.get("rows", []),
             metrics_result=state.get("metrics_result", {}),
@@ -273,21 +362,52 @@ async def explain_node(
         return _error(state, "explain", exc)
 
 
+async def persist_memory_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    conversation_id = state.get("conversation_id", "")
+    user_id = state.get("user_id", "")
+    if not conversation_id and not user_id:
+        return {
+            "trace": _trace(state, "persist_memory", ok=True, message="memory disabled"),
+        } # type: ignore
+    try:
+        await runtime.context.memory_store.save_turn(
+            tenant_id=state["tenant_id"],
+            conversation_id=conversation_id,
+            user_id=user_id,
+            question=state["question"],
+            contextualized_question=_question_for_model(state),
+            sql=state.get("validated_sql", ""),
+            answer=state.get("answer", ""),
+            ok=_state_ok(state),
+            error=state.get("error", ""),
+            trace=state.get("trace", []),
+        )
+        return {
+            "trace": _trace(state, "persist_memory", ok=True, message="success"),
+        } # type: ignore
+    except Exception as exc:
+        return {
+            "trace": _trace(state, "persist_memory", ok=False, message=str(exc)),
+        } # type: ignore
+
+
 async def finalize_node(state: GraphState) -> OutputState:
     intent = state.get("intent")
     sql = state.get("validated_sql", "")
-    error = state.get("error", "")
-    ok = bool(sql) and not error
-    if state.get("execute", False):
-        ok = ok and (state.get("execution_result") or {}).get("ok") is True
     return {
-        "ok": ok,
+        "ok": _state_ok(state),
         "question": state["question"],
+        "contextualized_question": _question_for_model(state),
+        "conversation_id": state.get("conversation_id", ""),
+        "user_id": state.get("user_id", ""),
         "tenant_id": state["tenant_id"],
         "intent": asdict(intent) if intent is not None else {},
         "sql": sql,
         "rows": state.get("rows", []),
         "answer": state.get("answer", ""),
-        "error": error,
+        "error": state.get("error", ""),
         "trace": state.get("trace", []),
     }

@@ -10,6 +10,10 @@ class GraphStateTests(unittest.TestCase):
             InputState.__required_keys__,
             frozenset({"question", "tenant_id", "execute"}),
         )
+        self.assertEqual(
+            InputState.__optional_keys__,
+            frozenset({"conversation_id", "user_id"}),
+        )
 
     def test_graph_state_contains_security_and_retry_channels(self):
         hints = get_type_hints(GraphState)
@@ -24,6 +28,11 @@ class GraphStateTests(unittest.TestCase):
             "validation_attempts",
             "retry_feedback",
             "execution_result",
+            "conversation_id",
+            "user_id",
+            "conversation_history",
+            "user_memories",
+            "contextualized_question",
             "trace",
         ):
             self.assertIn(field, hints)
@@ -37,6 +46,9 @@ class GraphStateTests(unittest.TestCase):
                 {
                     "ok",
                     "question",
+                    "contextualized_question",
+                    "conversation_id",
+                    "user_id",
                     "tenant_id",
                     "intent",
                     "sql",

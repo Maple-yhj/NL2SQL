@@ -3,6 +3,7 @@ from unittest import mock
 
 from engine.models import QueryIntent
 from graph import node, pipeline
+from graph.memory_store import InMemoryConversationStore
 
 
 class FakeLLM:
@@ -70,7 +71,17 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["sql"], "SELECT amount FROM orders LIMIT 100")
         self.assertEqual(
             [item["node"] for item in result["trace"]],
-            ["initialize", "parse_intent", "search_metrics", "search_schema", "generate_sql", "validate_sql"],
+            [
+                "initialize",
+                "load_memory",
+                "contextualize_question",
+                "parse_intent",
+                "search_metrics",
+                "search_schema",
+                "generate_sql",
+                "validate_sql",
+                "persist_memory",
+            ],
         )
 
     async def test_validation_failure_regenerates_sql(self):
@@ -135,6 +146,57 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(result["rows"], [{"amount": 100}])
         self.assertEqual(result["answer"], "GMV is 100.")
+
+    async def test_conversation_history_is_loaded_and_follow_up_is_contextualized(self):
+        store = InMemoryConversationStore()
+        await store.save_turn(
+            tenant_id="demo",
+            conversation_id="conv-1",
+            user_id="user-1",
+            question="show gmv last month",
+            contextualized_question="show gmv last month",
+            sql="SELECT 100 AS gmv",
+            answer="GMV is 100.",
+            ok=True,
+            error="",
+            trace=[],
+        )
+
+        with mock.patch.object(
+            node,
+            "contextualize_question",
+            new=mock.AsyncMock(return_value="show gmv by region last month"),
+        ), mock.patch.object(
+            node, "parse_intent", new=mock.AsyncMock(return_value=QueryIntent(metrics=["gmv"], dimensions=["region"]))
+        ) as parser, mock.patch.object(
+            node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result())
+        ), mock.patch.object(
+            node, "search_schema", new=mock.AsyncMock(return_value=schema_result())
+        ), mock.patch.object(
+            node, "generate_sql", new=mock.AsyncMock(return_value="SELECT region, SUM(amount) FROM orders GROUP BY region")
+        ), mock.patch.object(
+            node, "validate_sql", new=mock.AsyncMock(return_value=valid_sql())
+        ):
+            result = await pipeline.run_nl2sql(
+                "那按地区呢",
+                tenant_id="demo",
+                execute=False,
+                conversation_id="conv-1",
+                user_id="user-1",
+                llm=FakeLLM(),
+                embeddings=FakeEmbeddings(),
+                memory_store=store,
+            )
+
+        parser.assert_awaited_once_with("show gmv by region last month", llm=mock.ANY)
+        self.assertEqual(result["contextualized_question"], "show gmv by region last month")
+        saved = await store.load_context(
+            tenant_id="demo",
+            conversation_id="conv-1",
+            user_id="user-1",
+            limit=10,
+        )
+        self.assertEqual(saved["history"][-2]["content"], "那按地区呢")
 
 
 if __name__ == "__main__":
