@@ -147,6 +147,57 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["rows"], [{"amount": 100}])
         self.assertEqual(result["answer"], "GMV is 100.")
 
+    async def test_query_dsn_is_not_reused_for_memory_store(self):
+        with mock.patch.object(
+            pipeline,
+            "create_conversation_store",
+            return_value=InMemoryConversationStore(),
+        ) as create_memory_store, mock.patch.object(
+            node, "parse_intent", new=mock.AsyncMock(return_value=QueryIntent(metrics=["gmv"]))
+        ), mock.patch.object(
+            node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result())
+        ), mock.patch.object(
+            node, "search_schema", new=mock.AsyncMock(return_value=schema_result())
+        ), mock.patch.object(
+            node, "generate_sql", new=mock.AsyncMock(return_value="SELECT amount FROM orders")
+        ), mock.patch.object(
+            node, "validate_sql", new=mock.AsyncMock(return_value=valid_sql())
+        ):
+            await pipeline.run_nl2sql(
+                "show gmv",
+                llm=FakeLLM(),
+                embeddings=FakeEmbeddings(),
+                dsn="postgresql://query-db",
+            )
+
+        create_memory_store.assert_called_once_with(None)
+
+    async def test_memory_dsn_is_passed_to_memory_store_factory(self):
+        with mock.patch.object(
+            pipeline,
+            "create_conversation_store",
+            return_value=InMemoryConversationStore(),
+        ) as create_memory_store, mock.patch.object(
+            node, "parse_intent", new=mock.AsyncMock(return_value=QueryIntent(metrics=["gmv"]))
+        ), mock.patch.object(
+            node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result())
+        ), mock.patch.object(
+            node, "search_schema", new=mock.AsyncMock(return_value=schema_result())
+        ), mock.patch.object(
+            node, "generate_sql", new=mock.AsyncMock(return_value="SELECT amount FROM orders")
+        ), mock.patch.object(
+            node, "validate_sql", new=mock.AsyncMock(return_value=valid_sql())
+        ):
+            await pipeline.run_nl2sql(
+                "show gmv",
+                llm=FakeLLM(),
+                embeddings=FakeEmbeddings(),
+                dsn="postgresql://query-db",
+                memory_dsn="postgresql://memory-db",
+            )
+
+        create_memory_store.assert_called_once_with("postgresql://memory-db")
+
     async def test_conversation_history_is_loaded_and_follow_up_is_contextualized(self):
         store = InMemoryConversationStore()
         await store.save_turn(

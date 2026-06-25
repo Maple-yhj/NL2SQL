@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import SkipJsonSchema
 
@@ -31,7 +33,16 @@ class GraphContext(BaseModel):
         repr=False,
     )
     dsn: str | None = None
+    memory_dsn: str | None = None
     timeout_ms: int = 10_000
     max_limit: int = 1000
     max_validation_attempts: int = 2
     memory_history_limit: int = 8
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.memory_dsn and "memory_store" not in self.__pydantic_fields_set__:
+            object.__setattr__(
+                self,
+                "memory_store",
+                create_conversation_store(self.memory_dsn),
+            )

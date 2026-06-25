@@ -72,6 +72,21 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_load_memory_reads_conversation_context_from_runtime_store(self):
         class Store:
+            async def create_conversation(self, **kwargs):
+                return {}
+
+            async def list_conversations(self, **kwargs):
+                return []
+
+            async def get_conversation(self, **kwargs):
+                return None
+
+            async def update_conversation(self, **kwargs):
+                return None
+
+            async def list_messages(self, **kwargs):
+                return []
+
             async def load_context(self, **kwargs):
                 self.kwargs = kwargs
                 return {
@@ -126,6 +141,21 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_persist_memory_saves_turn_without_affecting_result(self):
         class Store:
+            async def create_conversation(self, **kwargs):
+                return {}
+
+            async def list_conversations(self, **kwargs):
+                return []
+
+            async def get_conversation(self, **kwargs):
+                return None
+
+            async def update_conversation(self, **kwargs):
+                return None
+
+            async def list_messages(self, **kwargs):
+                return []
+
             async def load_context(self, **kwargs):
                 return {"history": [], "user_memories": []}
 

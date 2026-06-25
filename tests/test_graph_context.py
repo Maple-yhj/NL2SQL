@@ -34,6 +34,7 @@ class GraphContextTests(unittest.TestCase):
                 "max_limit",
                 "max_validation_attempts",
                 "memory_history_limit",
+                "memory_dsn",
             },
         )
 
@@ -41,6 +42,15 @@ class GraphContextTests(unittest.TestCase):
         schema = graph.get_context_jsonschema()
 
         self.assertNotIn("memory_store", schema["properties"])
+
+    def test_graph_context_uses_memory_dsn_for_default_memory_store(self):
+        context = GraphContext(
+            llm=FakeLLM(),
+            embeddings=FakeEmbeddings(),
+            memory_dsn="postgresql://memory-db",
+        )
+
+        self.assertEqual(context.memory_store._resolve_dsn(), "postgresql://memory-db")
 
     def test_graph_context_ignores_langsmith_thread_id(self):
         context = GraphContext(

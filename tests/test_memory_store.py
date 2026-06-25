@@ -1,6 +1,12 @@
 import unittest
+from unittest import mock
 
-from graph.memory_store import InMemoryConversationStore
+from graph.memory_store import (
+    InMemoryConversationStore,
+    NullConversationStore,
+    PostgresConversationStore,
+    create_conversation_store,
+)
 
 
 class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
@@ -59,6 +65,43 @@ class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
+
+
+class ConversationStoreFactoryTests(unittest.TestCase):
+    def test_factory_does_not_use_query_database_url_for_memory_store(self):
+        with mock.patch.dict(
+            "os.environ",
+            {"DATABASE_URL": "postgresql://query-db"},
+            clear=True,
+        ):
+            store = create_conversation_store()
+
+        self.assertIsInstance(store, NullConversationStore)
+
+    def test_factory_uses_memory_database_url_for_memory_store(self):
+        with mock.patch.dict(
+            "os.environ",
+            {
+                "DATABASE_URL": "postgresql://query-db",
+                "MEMORY_DATABASE_URL": "postgresql://memory-db",
+            },
+            clear=True,
+        ):
+            store = create_conversation_store()
+
+        self.assertIsInstance(store, PostgresConversationStore)
+        self.assertEqual(store._resolve_dsn(), "postgresql://memory-db")
+
+    def test_explicit_memory_dsn_takes_precedence(self):
+        with mock.patch.dict(
+            "os.environ",
+            {"MEMORY_DATABASE_URL": "postgresql://memory-db"},
+            clear=True,
+        ):
+            store = create_conversation_store("postgresql://explicit-memory")
+
+        self.assertIsInstance(store, PostgresConversationStore)
+        self.assertEqual(store._resolve_dsn(), "postgresql://explicit-memory")
 
 
 if __name__ == "__main__":

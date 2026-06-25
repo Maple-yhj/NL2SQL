@@ -138,6 +138,7 @@ async def run_nl2sql(
     embeddings: EmbeddingClientProtocol | None = None,
     memory_store: ConversationStoreProtocol | None = None,
     dsn: str | None = None,
+    memory_dsn: str | None = None,
     timeout_ms: int = 10_000,
     max_limit: int = 1000,
     max_validation_attempts: int = 2,
@@ -150,8 +151,9 @@ async def run_nl2sql(
     context = GraphContext(
         llm=llm or create_llm(),
         embeddings=embeddings or create_embedding_client(),
-        memory_store=memory_store or create_conversation_store(dsn),
+        memory_store=memory_store or create_conversation_store(memory_dsn),
         dsn=dsn,
+        memory_dsn=memory_dsn,
         timeout_ms=timeout_ms,
         max_limit=max_limit,
         max_validation_attempts=max_validation_attempts,
