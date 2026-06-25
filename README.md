@@ -116,10 +116,69 @@ uvicorn api.app:app --reload --host 127.0.0.1 --port 8000
 curl http://127.0.0.1:8000/health
 ```
 
+### API Authentication
+
+Apply the auth schema to the auth database. When `AUTH_DATABASE_URL` is set, use it; otherwise fall back to `MEMORY_DATABASE_URL`:
+
+```powershell
+$authDsn = if ($env:AUTH_DATABASE_URL) { $env:AUTH_DATABASE_URL } else { $env:MEMORY_DATABASE_URL }
+psql $authDsn -f db/auth.sql
+```
+
+Set `JWT_SECRET_KEY` in `.env`, then create an auth user:
+
+```powershell
+python scripts/create_auth_user.py --tenant-id demo --user-id user-1 --username alice --password "secret"
+```
+
+Login and capture the returned `access_token` and `refresh_token`:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/auth/login `
+  -H "Content-Type: application/json" `
+  -d "{\"username\":\"alice\",\"password\":\"secret\"}"
+```
+
+Refresh an access token:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/auth/refresh `
+  -H "Content-Type: application/json" `
+  -d "{\"refresh_token\":\"<refresh_token>\"}"
+```
+
+Read the current token identity:
+
+```powershell
+curl http://127.0.0.1:8000/api/auth/me `
+  -H "Authorization: Bearer <access_token>"
+```
+
+Logout the current session:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/auth/logout `
+  -H "Authorization: Bearer <access_token>" `
+  -H "Content-Type: application/json" `
+  -d "{\"refresh_token\":\"<refresh_token>\"}"
+```
+
+Call protected NL2SQL with the access token. `tenant_id` is no longer required in the request body:
+
+```powershell
+curl -X POST http://127.0.0.1:8000/api/nl2sql `
+  -H "Authorization: Bearer <access_token>" `
+  -H "Content-Type: application/json" `
+  -d "{\"question\":\"按地区统计本月 GMV\",\"execute\":false}"
+```
+
+Existing `tenant_id` and `user_id` request fields are migration-compatible only when they match the token identity. The token identity is the source of truth.
+
 ### 单轮 NL2SQL
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/api/nl2sql `
+  -H "Authorization: Bearer <access_token>" `
   -H "Content-Type: application/json" `
   -d "{\"question\":\"按地区统计本月 GMV\",\"tenant_id\":\"demo\",\"execute\":false}"
 ```
@@ -132,6 +191,7 @@ curl -X POST http://127.0.0.1:8000/api/nl2sql `
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/api/conversations `
+  -H "Authorization: Bearer <access_token>" `
   -H "Content-Type: application/json" `
   -d "{\"tenant_id\":\"demo\",\"user_id\":\"user-1\",\"title\":\"GMV 分析\"}"
 ```
@@ -139,19 +199,22 @@ curl -X POST http://127.0.0.1:8000/api/conversations `
 查询当前用户会话列表：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/conversations?tenant_id=demo&user_id=user-1&limit=20&include_archived=false"
+curl "http://127.0.0.1:8000/api/conversations?tenant_id=demo&user_id=user-1&limit=20&include_archived=false" `
+  -H "Authorization: Bearer <access_token>"
 ```
 
 查询会话详情：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/conversations/{conversation_id}?tenant_id=demo&user_id=user-1"
+curl "http://127.0.0.1:8000/api/conversations/{conversation_id}?tenant_id=demo&user_id=user-1" `
+  -H "Authorization: Bearer <access_token>"
 ```
 
 更新标题或归档状态：
 
 ```powershell
 curl -X PATCH http://127.0.0.1:8000/api/conversations/{conversation_id} `
+  -H "Authorization: Bearer <access_token>" `
   -H "Content-Type: application/json" `
   -d "{\"tenant_id\":\"demo\",\"user_id\":\"user-1\",\"title\":\"本月 GMV 追踪\",\"archived\":false}"
 ```
@@ -159,13 +222,15 @@ curl -X PATCH http://127.0.0.1:8000/api/conversations/{conversation_id} `
 查询会话消息：
 
 ```powershell
-curl "http://127.0.0.1:8000/api/conversations/{conversation_id}/messages?tenant_id=demo&user_id=user-1&limit=50"
+curl "http://127.0.0.1:8000/api/conversations/{conversation_id}/messages?tenant_id=demo&user_id=user-1&limit=50" `
+  -H "Authorization: Bearer <access_token>"
 ```
 
 发送多轮消息：
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/api/conversations/{conversation_id}/messages `
+  -H "Authorization: Bearer <access_token>" `
   -H "Content-Type: application/json" `
   -d "{\"tenant_id\":\"demo\",\"user_id\":\"user-1\",\"question\":\"那华东地区呢？\",\"execute\":false,\"memory_history_limit\":8}"
 ```
@@ -185,7 +250,7 @@ curl -X POST http://127.0.0.1:8000/api/conversations/{conversation_id}/messages 
 | `GET` | `/api/conversations/{conversation_id}/messages` | 查询会话消息历史 |
 | `POST` | `/api/conversations/{conversation_id}/messages` | 在指定会话内发送问题并执行 NL2SQL |
 
-当前第一版 API 没有内置鉴权中间件。调用方需要可信地传入 `tenant_id` 和 `user_id`，接口内部使用这两个字段做会话隔离。
+鉴权接口使用 JWT token identity 作为租户和用户身份来源；现有请求体或查询参数中的 `tenant_id` 和 `user_id` 字段仅用于迁移兼容，并且必须与 token identity 匹配。
 
 ## 测试
 

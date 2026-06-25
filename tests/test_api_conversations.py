@@ -5,7 +5,30 @@ from unittest import mock
 from fastapi.testclient import TestClient
 
 from api.app import create_app
+from api.auth import AuthPrincipal, AuthSettings, create_access_token
 from graph.memory_store import InMemoryConversationStore
+
+
+TEST_JWT_SECRET = "test-secret-key-with-at-least-32-bytes"
+
+
+def auth_headers(
+    tenant_id: str = "demo",
+    user_id: str = "user-1",
+    username: str = "analyst",
+) -> dict[str, str]:
+    token = create_access_token(
+        AuthPrincipal(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            username=username,
+            roles=["analyst"],
+            token_version=1,
+            token_id="test-token-id",
+        ),
+        AuthSettings(secret_key=TEST_JWT_SECRET),
+    )
+    return {"Authorization": f"Bearer {token}"}
 
 
 def graph_output(**overrides):
@@ -28,13 +51,47 @@ def graph_output(**overrides):
 
 
 class ApiConversationTests(unittest.TestCase):
+    def test_conversation_routes_require_token(self):
+        client = TestClient(create_app())
+        cases = [
+            (
+                "post create",
+                "post",
+                "/api/conversations",
+                {"json": {"tenant_id": "demo", "user_id": "user-1", "title": "GMV"}},
+            ),
+            ("get list", "get", "/api/conversations", {}),
+            ("get one", "get", "/api/conversations/some-id", {}),
+            (
+                "patch one",
+                "patch",
+                "/api/conversations/some-id",
+                {"json": {"tenant_id": "demo", "user_id": "user-1", "title": "New"}},
+            ),
+            ("get messages", "get", "/api/conversations/some-id/messages", {}),
+            (
+                "post message",
+                "post",
+                "/api/conversations/some-id/messages",
+                {"json": {"tenant_id": "demo", "user_id": "user-1", "question": "show gmv"}},
+            ),
+        ]
+
+        for label, method, url, kwargs in cases:
+            with self.subTest(label=label):
+                response = getattr(client, method)(url, **kwargs)
+                self.assertEqual(response.status_code, 401)
+
     def test_create_conversation_returns_session(self):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store):
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
             response = client.post(
                 "/api/conversations",
+                headers=auth_headers(),
                 json={
                     "tenant_id": "demo",
                     "user_id": "user-1",
@@ -50,21 +107,59 @@ class ApiConversationTests(unittest.TestCase):
         self.assertFalse(payload["archived"])
         self.assertTrue(payload["conversation_id"])
 
+    def test_create_conversation_uses_token_identity_when_request_omits_identity(self):
+        client = TestClient(create_app())
+        store = InMemoryConversationStore()
+
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
+            response = client.post(
+                "/api/conversations",
+                headers=auth_headers(tenant_id="token-tenant", user_id="token-user"),
+                json={"title": "GMV analysis"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["tenant_id"], "token-tenant")
+        self.assertEqual(payload["user_id"], "token-user")
+
+    def test_create_conversation_rejects_mismatched_user_id(self):
+        client = TestClient(create_app())
+        store = InMemoryConversationStore()
+
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
+            response = client.post(
+                "/api/conversations",
+                headers=auth_headers(user_id="user-1"),
+                json={"tenant_id": "demo", "user_id": "user-2", "title": "GMV"},
+            )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_list_conversations_filters_by_user(self):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store):
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
             client.post(
                 "/api/conversations",
+                headers=auth_headers(user_id="user-1"),
                 json={"tenant_id": "demo", "user_id": "user-1", "title": "User 1"},
             )
             client.post(
                 "/api/conversations",
+                headers=auth_headers(user_id="user-2"),
                 json={"tenant_id": "demo", "user_id": "user-2", "title": "User 2"},
             )
             response = client.get(
                 "/api/conversations",
+                headers=auth_headers(user_id="user-1"),
                 params={"tenant_id": "demo", "user_id": "user-1"},
             )
 
@@ -75,13 +170,17 @@ class ApiConversationTests(unittest.TestCase):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store):
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
             created = client.post(
                 "/api/conversations",
+                headers=auth_headers(user_id="user-1"),
                 json={"tenant_id": "demo", "user_id": "user-1", "title": "User 1"},
             ).json()
             response = client.get(
                 f"/api/conversations/{created['conversation_id']}",
+                headers=auth_headers(user_id="user-2"),
                 params={"tenant_id": "demo", "user_id": "user-2"},
             )
 
@@ -91,13 +190,17 @@ class ApiConversationTests(unittest.TestCase):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store):
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
             created = client.post(
                 "/api/conversations",
+                headers=auth_headers(),
                 json={"tenant_id": "demo", "user_id": "user-1", "title": "Old"},
             ).json()
             response = client.patch(
                 f"/api/conversations/{created['conversation_id']}",
+                headers=auth_headers(),
                 json={
                     "tenant_id": "demo",
                     "user_id": "user-1",
@@ -114,9 +217,12 @@ class ApiConversationTests(unittest.TestCase):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store):
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
             created = client.post(
                 "/api/conversations",
+                headers=auth_headers(),
                 json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
             ).json()
             asyncio.run(
@@ -135,6 +241,7 @@ class ApiConversationTests(unittest.TestCase):
             )
             response = client.get(
                 f"/api/conversations/{created['conversation_id']}/messages",
+                headers=auth_headers(),
                 params={"tenant_id": "demo", "user_id": "user-1"},
             )
 
@@ -145,16 +252,20 @@ class ApiConversationTests(unittest.TestCase):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store), mock.patch(
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ), mock.patch(
             "api.routes.run_nl2sql",
             new=mock.AsyncMock(return_value=graph_output()),
         ) as run_nl2sql:
             created = client.post(
                 "/api/conversations",
+                headers=auth_headers(),
                 json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
             ).json()
             response = client.post(
                 f"/api/conversations/{created['conversation_id']}/messages",
+                headers=auth_headers(),
                 json={
                     "tenant_id": "demo",
                     "user_id": "user-1",
@@ -185,9 +296,12 @@ class ApiConversationTests(unittest.TestCase):
         client = TestClient(create_app())
         store = InMemoryConversationStore()
 
-        with mock.patch("api.routes.create_conversation_store", return_value=store):
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ):
             response = client.post(
                 "/api/conversations/missing/messages",
+                headers=auth_headers(),
                 json={"tenant_id": "demo", "user_id": "user-1", "question": "show gmv"},
             )
 
