@@ -20,6 +20,7 @@ class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
             question="show gmv last month",
             contextualized_question="show gmv last month",
             sql="SELECT 100 AS gmv",
+            rows=[{"region": "East", "gmv": "1.28M"}],
             answer="GMV is 100.",
             ok=True,
             error="",
@@ -36,6 +37,10 @@ class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["role"] for item in context["history"]], ["user", "assistant"])
         self.assertEqual(context["history"][0]["content"], "show gmv last month")
         self.assertEqual(context["history"][1]["metadata"]["sql"], "SELECT 100 AS gmv")
+        self.assertEqual(
+            context["history"][1]["metadata"]["rows"],
+            [{"region": "East", "gmv": "1.28M"}],
+        )
 
     async def test_in_memory_store_round_trips_user_memories(self):
         store = InMemoryConversationStore()

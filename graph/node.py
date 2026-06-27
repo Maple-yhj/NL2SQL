@@ -380,6 +380,7 @@ async def persist_memory_node(
             question=state["question"],
             contextualized_question=_question_for_model(state),
             sql=state.get("validated_sql", ""),
+            rows=state.get("rows", []),
             answer=state.get("answer", ""),
             ok=_state_ok(state),
             error=state.get("error", ""),

@@ -85,6 +85,7 @@ class ConversationStoreProtocol(Protocol):
         question: str,
         contextualized_question: str,
         sql: str,
+        rows: list[dict[str, Any]],
         answer: str,
         ok: bool,
         error: str,
@@ -182,6 +183,7 @@ class NullConversationStore:
         question: str,
         contextualized_question: str,
         sql: str,
+        rows: list[dict[str, Any]],
         answer: str,
         ok: bool,
         error: str,
@@ -351,6 +353,7 @@ class InMemoryConversationStore:
         question: str,
         contextualized_question: str,
         sql: str,
+        rows: list[dict[str, Any]],
         answer: str,
         ok: bool,
         error: str,
@@ -380,6 +383,7 @@ class InMemoryConversationStore:
                 "content": answer or error or sql,
                 "metadata": {
                     "sql": sql,
+                    "rows": deepcopy(rows),
                     "answer": answer,
                     "ok": ok,
                     "error": error,
@@ -633,6 +637,7 @@ class PostgresConversationStore:
         question: str,
         contextualized_question: str,
         sql: str,
+        rows: list[dict[str, Any]],
         answer: str,
         ok: bool,
         error: str,
@@ -679,6 +684,7 @@ class PostgresConversationStore:
                 json.dumps(
                     {
                         "sql": sql,
+                        "rows": rows,
                         "answer": answer,
                         "ok": ok,
                         "error": error,

@@ -233,6 +233,7 @@ class ApiConversationTests(unittest.TestCase):
                     question="show gmv",
                     contextualized_question="show gmv",
                     sql="SELECT 1",
+                    rows=[{"region": "East", "gmv": "1.28M"}],
                     answer="GMV is 100.",
                     ok=True,
                     error="",
@@ -247,6 +248,10 @@ class ApiConversationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual([item["role"] for item in response.json()["items"]], ["user", "assistant"])
+        self.assertEqual(
+            response.json()["items"][1]["metadata"]["rows"],
+            [{"region": "East", "gmv": "1.28M"}],
+        )
 
     def test_post_message_calls_graph_with_conversation_identity(self):
         client = TestClient(create_app())

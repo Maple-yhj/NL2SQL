@@ -207,6 +207,7 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
             question="show gmv last month",
             contextualized_question="show gmv last month",
             sql="SELECT 100 AS gmv",
+            rows=[],
             answer="GMV is 100.",
             ok=True,
             error="",
