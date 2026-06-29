@@ -1,4 +1,6 @@
 import unittest
+from datetime import datetime, timezone
+from decimal import Decimal
 from unittest import mock
 
 from graph.memory_store import (
@@ -22,6 +24,7 @@ class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
             sql="SELECT 100 AS gmv",
             rows=[{"region": "East", "gmv": "1.28M"}],
             answer="GMV is 100.",
+            message_type="table",
             ok=True,
             error="",
             trace=[{"node": "finalize", "ok": True}],
@@ -41,6 +44,7 @@ class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
             context["history"][1]["metadata"]["rows"],
             [{"region": "East", "gmv": "1.28M"}],
         )
+        self.assertEqual(context["history"][1]["metadata"]["message_type"], "table")
 
     async def test_in_memory_store_round_trips_user_memories(self):
         store = InMemoryConversationStore()
@@ -70,6 +74,46 @@ class MemoryStoreTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
+
+
+    async def test_postgres_store_serializes_non_json_native_assistant_metadata(self):
+        class FakeConnection:
+            def __init__(self):
+                self.calls = []
+
+            async def execute(self, sql, *args):
+                self.calls.append((sql, args))
+
+            async def close(self):
+                self.calls.append(("close", ()))
+
+        conn = FakeConnection()
+        store = PostgresConversationStore("postgresql://memory-db")
+
+        with mock.patch("graph.memory_store.asyncpg.connect", new=mock.AsyncMock(return_value=conn)):
+            await store.save_turn(
+                tenant_id="demo",
+                conversation_id="conv-1",
+                user_id="user-1",
+                question="show latest orders",
+                contextualized_question="show latest orders",
+                sql="SELECT amount, created_at FROM orders",
+                rows=[
+                    {
+                        "amount": Decimal("1751.64"),
+                        "created_at": datetime(2024, 12, 30, 23, 45, tzinfo=timezone.utc),
+                    }
+                ],
+                answer="Returned the latest orders.",
+                message_type="table",
+                ok=True,
+                error="",
+                trace=[{"node": "execute_sql", "ok": True}],
+            )
+
+        assistant_metadata = conn.calls[2][1][4]
+        self.assertIn('"amount": "1751.64"', assistant_metadata)
+        self.assertIn('"created_at": "2024-12-30T23:45:00+00:00"', assistant_metadata)
 
 
 class ConversationStoreFactoryTests(unittest.TestCase):

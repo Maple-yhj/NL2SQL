@@ -5,6 +5,7 @@ import os
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 
 import asyncpg
@@ -90,6 +91,7 @@ class ConversationStoreProtocol(Protocol):
         ok: bool,
         error: str,
         trace: list[dict[str, Any]],
+        message_type: str = "text",
     ) -> None:
         ...
 
@@ -188,6 +190,7 @@ class NullConversationStore:
         ok: bool,
         error: str,
         trace: list[dict[str, Any]],
+        message_type: str = "text",
     ) -> None:
         return None
 
@@ -358,6 +361,7 @@ class InMemoryConversationStore:
         ok: bool,
         error: str,
         trace: list[dict[str, Any]],
+        message_type: str = "text",
     ) -> None:
         if not conversation_id:
             return
@@ -383,6 +387,7 @@ class InMemoryConversationStore:
                 "content": answer or error or sql,
                 "metadata": {
                     "sql": sql,
+                    "message_type": message_type,
                     "rows": deepcopy(rows),
                     "answer": answer,
                     "ok": ok,
@@ -642,9 +647,22 @@ class PostgresConversationStore:
         ok: bool,
         error: str,
         trace: list[dict[str, Any]],
+        message_type: str = "text",
     ) -> None:
         if not conversation_id:
             return
+        user_metadata = _json_dumps({"contextualized_question": contextualized_question})
+        assistant_metadata = _json_dumps(
+            {
+                "sql": sql,
+                "message_type": message_type,
+                "rows": rows,
+                "answer": answer,
+                "ok": ok,
+                "error": error,
+                "trace": trace,
+            }
+        )
         conn = await self._connect()
         try:
             await conn.execute(
@@ -669,7 +687,7 @@ class PostgresConversationStore:
                 conversation_id,
                 user_id,
                 question,
-                json.dumps({"contextualized_question": contextualized_question}, ensure_ascii=False),
+                user_metadata,
             )
             await conn.execute(
                 """
@@ -681,17 +699,7 @@ class PostgresConversationStore:
                 conversation_id,
                 user_id,
                 answer or error or sql,
-                json.dumps(
-                    {
-                        "sql": sql,
-                        "rows": rows,
-                        "answer": answer,
-                        "ok": ok,
-                        "error": error,
-                        "trace": trace,
-                    },
-                    ensure_ascii=False,
-                ),
+                assistant_metadata,
             )
         finally:
             await conn.close()
@@ -723,7 +731,7 @@ class PostgresConversationStore:
                 user_id,
                 memory_key,
                 memory_value,
-                json.dumps(metadata or {}, ensure_ascii=False),
+                _json_dumps(metadata or {}),
             )
         finally:
             await conn.close()
@@ -748,6 +756,18 @@ def _decode_json(value: Any) -> dict[str, Any]:
     if isinstance(value, str):
         return json.loads(value)
     return dict(value)
+
+
+def _json_dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=_json_default)
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
 
 
 def _utc_now() -> str:

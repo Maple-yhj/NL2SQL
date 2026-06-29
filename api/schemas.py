@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -78,7 +78,7 @@ class LogoutResponse(BaseModel):
 class Nl2SqlRequest(BaseModel):
     question: str = Field(min_length=1)
     tenant_id: str | None = Field(default=None, min_length=1)
-    execute: bool = False
+    execute: bool = True
     timeout_ms: int = Field(default=10_000, ge=1_000, le=60_000)
     max_limit: int = Field(default=1_000, ge=1, le=10_000)
     max_validation_attempts: int = Field(default=2, ge=1, le=5)
@@ -100,6 +100,7 @@ class Nl2SqlResponse(BaseModel):
     tenant_id: str
     intent: dict[str, Any]
     sql: str
+    message_type: Literal["text", "table", "error"]
     rows: list[dict[str, Any]]
     answer: str
     error: str
@@ -143,7 +144,7 @@ class ConversationMessageRequest(BaseModel):
     question: str = Field(min_length=1)
     tenant_id: str | None = Field(default=None, min_length=1)
     user_id: str | None = Field(default=None, min_length=1)
-    execute: bool = False
+    execute: bool = True
     timeout_ms: int = Field(default=10_000, ge=1_000, le=60_000)
     max_limit: int = Field(default=1_000, ge=1, le=10_000)
     max_validation_attempts: int = Field(default=2, ge=1, le=5)
@@ -193,6 +194,7 @@ class ConversationNl2SqlResponse(BaseModel):
     tenant_id: str
     intent: dict[str, Any]
     sql: str
+    message_type: Literal["text", "table", "error"]
     rows: list[dict[str, Any]]
     answer: str
     error: str

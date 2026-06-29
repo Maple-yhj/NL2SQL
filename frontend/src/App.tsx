@@ -1,15 +1,32 @@
 import {
   AlertTriangle,
+  BookOpen,
   ChevronDown,
-  Database,
   Loader2,
   LogOut,
+  MessageSquare,
+  MoreHorizontal,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Pencil,
   Plus,
+  Search,
   Send,
+  SquarePen,
   Table2,
+  Trash2,
   User,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ApiClient, ApiError } from "./api";
 import type {
   ApiConversationMessage,
@@ -19,15 +36,24 @@ import type {
   DataRow,
   StoredSession,
 } from "./types";
-import { createAssistantViewModel, formatCellValue } from "./viewModel";
+import {
+  applyConversationUpdate,
+  removeConversationFromList,
+  resolveConversationDeletionState,
+} from "./conversationState";
+import { parseMarkdown, type MarkdownSegment } from "./markdown";
+import { getNewChatButtonClassName } from "./navigationState";
+import { createSendMessagePayload } from "./requestPayload";
+import { paginateRows } from "./tablePagination";
+import {
+  createAssistantViewModel,
+  formatCellValueForColumn,
+  formatColumnLabel,
+  getColumnClassName,
+} from "./viewModel";
 
 const SESSION_KEY = "nl2sql.session";
-const REQUEST_DEFAULTS = {
-  timeout_ms: 10_000,
-  max_limit: 1_000,
-  max_validation_attempts: 2,
-  memory_history_limit: 8,
-};
+const SIDEBAR_KEY = "nl2sql.sidebarCollapsed";
 
 export function App() {
   const [session, setSessionState] = useState<StoredSession | null>(() => readSession());
@@ -36,12 +62,21 @@ export function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [execute, setExecute] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(Boolean(session));
   const [error, setError] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => localStorage.getItem(SIDEBAR_KEY) === "true",
+  );
+  const [conversationMenuId, setConversationMenuId] = useState("");
+  const [renamingConversationId, setRenamingConversationId] = useState("");
+  const [renameDraft, setRenameDraft] = useState("");
+  const [conversationActionId, setConversationActionId] = useState("");
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
+  const skipRenameBlurRef = useRef(false);
+  const renameSavingRef = useRef(false);
 
   const commitSession = useCallback((nextSession: StoredSession | null) => {
     sessionRef.current = nextSession;
@@ -108,6 +143,37 @@ export function App() {
     void bootstrap();
   }, [bootstrap]);
 
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed ? "true" : "false");
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    if (!conversationMenuId) {
+      return undefined;
+    }
+
+    function closeMenu() {
+      setConversationMenuId("");
+    }
+
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") {
+        closeMenu();
+      }
+    }
+
+    document.addEventListener("click", closeMenu);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("click", closeMenu);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [conversationMenuId]);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages, loading, booting]);
+
   async function handleLogin(payload: { tenant_id: string; username: string; password: string }) {
     setLoading(true);
     setError("");
@@ -156,6 +222,101 @@ export function App() {
     }
   }
 
+  function handleConversationMenuToggle(
+    event: MouseEvent<HTMLButtonElement>,
+    conversationId: string,
+  ) {
+    event.stopPropagation();
+    setConversationMenuId((current) => (current === conversationId ? "" : conversationId));
+  }
+
+  function beginRename(event: MouseEvent<HTMLButtonElement>, conversation: Conversation) {
+    event.stopPropagation();
+    skipRenameBlurRef.current = false;
+    renameSavingRef.current = false;
+    setConversationMenuId("");
+    setRenamingConversationId(conversation.conversation_id);
+    setRenameDraft(conversation.title || "Untitled analysis");
+  }
+
+  function cancelRename() {
+    skipRenameBlurRef.current = true;
+    setRenamingConversationId("");
+    setRenameDraft("");
+  }
+
+  async function commitRename(conversation: Conversation) {
+    if (renameSavingRef.current) {
+      return;
+    }
+
+    const title = renameDraft.trim();
+    if (!title || title === conversation.title) {
+      cancelRename();
+      return;
+    }
+
+    renameSavingRef.current = true;
+    setConversationActionId(conversation.conversation_id);
+    setError("");
+    try {
+      const updated = await api.updateConversation(conversation.conversation_id, { title });
+      setConversations((items) => applyConversationUpdate(items, updated));
+      cancelRename();
+    } catch (err) {
+      handleAuthOrError(err, clearSession, setError);
+    } finally {
+      renameSavingRef.current = false;
+      setConversationActionId("");
+    }
+  }
+
+  function handleRenameBlur(conversation: Conversation) {
+    if (skipRenameBlurRef.current) {
+      skipRenameBlurRef.current = false;
+      return;
+    }
+    void commitRename(conversation);
+  }
+
+  function handleRenameKeyDown(
+    event: KeyboardEvent<HTMLInputElement>,
+    conversation: Conversation,
+  ) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void commitRename(conversation);
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancelRename();
+    }
+  }
+
+  async function handleDeleteConversation(conversationId: string) {
+    setConversationMenuId("");
+    setConversationActionId(conversationId);
+    setError("");
+    try {
+      await api.updateConversation(conversationId, { archived: true });
+      setConversations((items) => removeConversationFromList(items, conversationId));
+      const nextState = resolveConversationDeletionState({
+        activeConversationId,
+        deletedConversationId: conversationId,
+        messages,
+      });
+      setActiveConversationId(nextState.activeConversationId);
+      setMessages(nextState.messages);
+      if (renamingConversationId === conversationId) {
+        cancelRename();
+      }
+    } catch (err) {
+      handleAuthOrError(err, clearSession, setError);
+    } finally {
+      setConversationActionId("");
+    }
+  }
+
   async function handleSend() {
     const question = input.trim();
     if (!question || loading) {
@@ -172,7 +333,15 @@ export function App() {
       content: question,
       metadata: {},
     };
-    setMessages((items) => [...items, userMessage]);
+    const thinkingMessage: ChatMessage = {
+      id: `local-assistant-thinking-${Date.now()}`,
+      role: "assistant",
+      content: "",
+      metadata: {
+        message_type: "thinking",
+      },
+    };
+    setMessages((items) => [...items, userMessage, thinkingMessage]);
 
     try {
       let conversationId = activeConversationId;
@@ -183,30 +352,34 @@ export function App() {
         setConversations((items) => [conversation, ...items]);
       }
 
-      const response = await api.sendMessage(conversationId, {
-        question,
-        execute,
-        ...REQUEST_DEFAULTS,
-      });
-      setMessages((items) => [...items, responseToAssistantMessage(response)]);
+      const response = await api.sendMessage(conversationId, createSendMessagePayload(question));
+      setMessages((items) =>
+        items.map((item) =>
+          item.id === thinkingMessage.id ? responseToAssistantMessage(response, item.id) : item,
+        ),
+      );
       const refreshed = await loadConversations();
       setConversations(refreshed);
     } catch (err) {
       handleAuthOrError(err, clearSession, setError);
-      setMessages((items) => [
-        ...items,
-        {
-          id: `local-assistant-error-${Date.now()}`,
-          role: "assistant",
-          content: "Request failed.",
-          metadata: {
-            ok: false,
-            error: err instanceof Error ? err.message : "Request failed",
-            rows: [],
-            trace: [],
-          },
-        },
-      ]);
+      setMessages((items) =>
+        items.map((item) =>
+          item.id === thinkingMessage.id
+            ? {
+                id: `local-assistant-error-${Date.now()}`,
+                role: "assistant",
+                content: "Request failed.",
+                metadata: {
+                  message_type: "error",
+                  ok: false,
+                  error: err instanceof Error ? err.message : "Request failed",
+                  rows: [],
+                  trace: [],
+                },
+              }
+            : item,
+        ),
+      );
     } finally {
       setLoading(false);
     }
@@ -229,93 +402,178 @@ export function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="rail">
-        <div className="brand">
-          <div className="mark">AI</div>
-          <div>
-            <div className="h2">Data Assistant</div>
-            <div className="small muted">Conversational BI</div>
-          </div>
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <aside className={`rail ${sidebarCollapsed ? "collapsed" : ""}`}>
+        <div className="sidebar-header">
+          <div className="sidebar-title">Data Assistant</div>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => setSidebarCollapsed(true)}
+            aria-label="Collapse sidebar"
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={18} />
+          </button>
         </div>
 
-        <button className="new-chat" onClick={handleNewConversation} disabled={loading}>
-          <Plus size={16} />
-          New chat
-        </button>
+        <nav className="sidebar-nav" aria-label="Primary">
+          <button
+            className={getNewChatButtonClassName(activeConversationId)}
+            onClick={handleNewConversation}
+            disabled={loading}
+          >
+            <SquarePen size={17} />
+            <span>新聊天</span>
+          </button>
+          <button className="sidebar-nav-item" type="button">
+            <Search size={17} />
+            <span>搜索聊天</span>
+          </button>
+          <button className="sidebar-nav-item" type="button">
+            <BookOpen size={17} />
+            <span>文件库</span>
+          </button>
+        </nav>
 
-        <div className="conversation-list">
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.conversation_id}
-              className={`prompt-card ${
-                conversation.conversation_id === activeConversationId ? "active" : ""
-              }`}
-              onClick={() => void handleSelectConversation(conversation.conversation_id)}
-            >
-              {conversation.title || "Untitled analysis"}
-            </button>
-          ))}
-          {!conversations.length && <div className="empty-list">No conversations</div>}
+        <div className="conversation-list" aria-label="Conversation history">
+          <div className="sidebar-section-label">聊天</div>
+          {conversations.map((conversation) => {
+            const title = conversation.title || "Untitled analysis";
+            const isActive = conversation.conversation_id === activeConversationId;
+            const isRenaming = conversation.conversation_id === renamingConversationId;
+            const isBusy = conversation.conversation_id === conversationActionId;
+
+            return (
+              <div
+                key={conversation.conversation_id}
+                className={`conversation-row ${isActive ? "active" : ""} ${
+                  isRenaming ? "renaming" : ""
+                }`}
+              >
+                {isRenaming ? (
+                  <div className="conversation-rename">
+                    <MessageSquare size={15} />
+                    <input
+                      value={renameDraft}
+                      autoFocus
+                      disabled={isBusy}
+                      onClick={(event) => event.stopPropagation()}
+                      onFocus={(event) => event.currentTarget.select()}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onBlur={() => handleRenameBlur(conversation)}
+                      onKeyDown={(event) => handleRenameKeyDown(event, conversation)}
+                      aria-label="Rename conversation"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      className="prompt-card"
+                      type="button"
+                      onClick={() => void handleSelectConversation(conversation.conversation_id)}
+                      title={title}
+                    >
+                      <MessageSquare size={15} />
+                      <span>{title}</span>
+                    </button>
+                    <button
+                      className="conversation-more"
+                      type="button"
+                      disabled={isBusy}
+                      onClick={(event) =>
+                        handleConversationMenuToggle(event, conversation.conversation_id)
+                      }
+                      aria-label={`More actions for ${title}`}
+                      aria-expanded={conversationMenuId === conversation.conversation_id}
+                    >
+                      <MoreHorizontal size={16} />
+                    </button>
+                    {conversationMenuId === conversation.conversation_id && (
+                      <div
+                        className="conversation-actions-menu"
+                        role="menu"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <button
+                          className="conversation-menu-item"
+                          type="button"
+                          role="menuitem"
+                          onClick={(event) => beginRename(event, conversation)}
+                        >
+                          <Pencil size={15} />
+                          <span>重命名</span>
+                        </button>
+                        <button
+                          className="conversation-menu-item danger"
+                          type="button"
+                          role="menuitem"
+                          disabled={isBusy}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteConversation(conversation.conversation_id);
+                          }}
+                        >
+                          <Trash2 size={15} />
+                          <span>删除</span>
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
+          {!conversations.length && <div className="empty-list">暂无聊天</div>}
         </div>
 
-        <div className="context-card card">
-          <div className="label">Session context</div>
-          <div className="context-strong">tenant_id {session.user.tenant_id}</div>
-          <div className="muted small">user_id {session.user.user_id}</div>
+        <div className="rail-footer">
+          <button className="user-menu" onClick={() => setAccountOpen((value) => !value)}>
+            <div className="avatar">{initials(session.user.username)}</div>
+            <div className="user-meta">
+              <strong>{session.user.username}</strong>
+              <span>{session.user.tenant_id}</span>
+            </div>
+            <ChevronDown size={16} />
+          </button>
+          {accountOpen && (
+            <div className="account-flyout">
+              <div className="account-profile">
+                <div className="avatar">{initials(session.user.username)}</div>
+                <div>
+                  <div className="account-name">{session.user.username}</div>
+                  <div className="small muted">
+                    {session.user.user_id} / {session.user.tenant_id}
+                  </div>
+                </div>
+              </div>
+              <div className="account-row active">
+                <User size={15} />
+                <span>Personal profile</span>
+              </div>
+              <button className="account-row button-row" onClick={() => void handleLogout()}>
+                <LogOut size={15} />
+                <span>Sign out</span>
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
       <main className="content">
-        <header className="chat-head card">
-          <div>
-            <div className="h2">Ask your warehouse in plain English</div>
-            <div className="small muted">Memory-aware NL2SQL conversation</div>
-          </div>
-          <div className="head-actions">
-            <span className={`pill ${healthOk ? "success" : "warning"}`}>
-              {healthOk ? "health ok" : "health down"}
-            </span>
-            <label className="switch-pill">
-              <input
-                type="checkbox"
-                checked={execute}
-                onChange={(event) => setExecute(event.target.checked)}
-              />
-              <span>{execute ? "execute on" : "execute off"}</span>
-            </label>
-            <div className="account-wrap">
-              <button className="user-menu" onClick={() => setAccountOpen((value) => !value)}>
-                <div className="avatar">{initials(session.user.username)}</div>
-                <div className="user-meta">
-                  <strong>{session.user.username}</strong>
-                  <span className="small muted">Profile & settings</span>
-                </div>
-                <ChevronDown size={16} />
-              </button>
-              {accountOpen && (
-                <div className="account-flyout">
-                  <div className="account-profile">
-                    <div className="avatar">{initials(session.user.username)}</div>
-                    <div>
-                      <div className="account-name">{session.user.username}</div>
-                      <div className="small muted">
-                        {session.user.user_id} / {session.user.tenant_id}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="account-row active">
-                    <User size={15} />
-                    <span>Personal profile</span>
-                  </div>
-                  <button className="account-row button-row" onClick={() => void handleLogout()}>
-                    <LogOut size={15} />
-                    <span>Sign out</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+        <header className="chat-topbar">
+          {sidebarCollapsed && (
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setSidebarCollapsed(false)}
+              aria-label="Expand sidebar"
+              title="Expand sidebar"
+            >
+              <PanelLeftOpen size={19} />
+            </button>
+          )}
+          <span className={`health-dot ${healthOk ? "online" : "offline"}`} />
         </header>
 
         {error && (
@@ -325,52 +583,56 @@ export function App() {
           </div>
         )}
 
-        <section className="thread card" aria-live="polite">
-          {booting ? (
-            <div className="loading-state">
-              <Loader2 className="spin" size={20} />
-              Loading
-            </div>
-          ) : (
-            <>
-              {messages.map((message) =>
-                message.role === "user" ? (
-                  <UserBubble key={message.id} message={message} />
-                ) : (
-                  <AssistantBubble key={message.id} message={message} />
-                ),
-              )}
-              {!messages.length && (
-                <div className="empty-thread">
-                  <Database size={22} />
-                  <span>Start with a warehouse question.</span>
-                </div>
-              )}
-            </>
-          )}
+        <section className={`thread ${messages.length ? "" : "empty"}`} aria-live="polite">
+          <div className="thread-content">
+            {booting ? (
+              <div className="loading-state">
+                <Loader2 className="spin" size={20} />
+                Loading
+              </div>
+            ) : (
+              <>
+                {messages.map((message) =>
+                  message.role === "user" ? (
+                    <UserBubble key={message.id} message={message} />
+                  ) : (
+                    <AssistantBubble key={message.id} message={message} />
+                  ),
+                )}
+                {!messages.length && (
+                  <div className="empty-thread">
+                    <span>你好，{session.user.username}。</span>
+                  </div>
+                )}
+                <div ref={threadEndRef} className="thread-end" />
+              </>
+            )}
+          </div>
         </section>
 
-        <form
-          className="composer card"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSend();
-          }}
-        >
-          <input
-            className="composer-input"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask a follow-up question..."
-            disabled={loading}
-          />
-          <span className="pill amber">memory {REQUEST_DEFAULTS.memory_history_limit}</span>
-          <span className="pill indigo">max_limit {REQUEST_DEFAULTS.max_limit}</span>
-          <button className="btn" type="submit" disabled={loading || !input.trim()}>
-            {loading ? <Loader2 className="spin" size={16} /> : <Send size={16} />}
-            Send
-          </button>
-        </form>
+        <div className="composer-shell">
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSend();
+            }}
+          >
+            <button className="composer-icon" type="button" aria-label="Add context" title="Add context">
+              <Plus size={20} />
+            </button>
+            <input
+              className="composer-input"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="有问题，尽管问"
+              disabled={loading}
+            />
+            <button className="send-button" type="submit" disabled={loading || !input.trim()}>
+              {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+            </button>
+          </form>
+        </div>
       </main>
     </div>
   );
@@ -433,7 +695,6 @@ function LoginView({
 function UserBubble({ message }: { message: ChatMessage }) {
   return (
     <div className="message user">
-      <div className="avatar">U</div>
       <div className="bubble">{message.content}</div>
     </div>
   );
@@ -444,69 +705,145 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
 
   return (
     <div className="message ai">
-      <div className="avatar">AI</div>
       <div className="bubble assistant-bubble">
-        <strong>Answer</strong>
-        <p>{viewModel.answer || viewModel.status}</p>
-        <div className="assistant-grid">
-          <div className="mini-card">
-            <div className="label table-label">
-              <Table2 size={14} />
-              Rows
-            </div>
-            <RowsTable rows={viewModel.rows} />
+        {viewModel.isThinking ? (
+          <div className="thinking">
+            <span />
+            <span />
+            <span />
           </div>
-        </div>
-        <div className="pill-row">
-          <span className="pill neutral">{viewModel.intentLabel}</span>
-          <span className="pill neutral">
-            trace {viewModel.trace.length ? "collapsed" : "empty"}
-          </span>
-          <span className={`pill ${viewModel.status === "error" ? "danger" : "success"}`}>
-            {viewModel.status}
-          </span>
-        </div>
+        ) : (
+          <>
+            {viewModel.showTable && <div className="insight-label">数据洞察</div>}
+            <MarkdownAnswer text={viewModel.answer || viewModel.status} />
+            {viewModel.showTable && (
+              <div className="assistant-grid">
+                <div className="mini-card">
+                  <div className="label table-label">
+                    <span>
+                      <Table2 size={14} />
+                      查询结果
+                    </span>
+                    <span>{viewModel.rows.length} 条</span>
+                  </div>
+                  <RowsTable rows={viewModel.rows} />
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
 }
 
 function RowsTable({ rows }: { rows: DataRow[] }) {
+  const [page, setPage] = useState(1);
+  const paginated = useMemo(() => paginateRows(rows, page), [page, rows]);
+
+  useEffect(() => {
+    if (paginated.page !== page) {
+      setPage(paginated.page);
+    }
+  }, [page, paginated.page]);
+
   if (!rows.length) {
     return <div className="no-rows">No rows returned</div>;
   }
 
   const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const hasPagination = paginated.totalPages > 1;
 
   return (
-    <table>
-      <thead>
-        <tr>
-          {columns.map((column) => (
-            <th key={column}>{column}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.slice(0, 20).map((row, rowIndex) => (
-          <tr key={rowIndex}>
+    <>
+      <table>
+        <thead>
+          <tr>
             {columns.map((column) => (
-              <td key={column}>{formatCellValue(row[column])}</td>
+              <th key={column} className={getColumnClassName(column)}>
+                {formatColumnLabel(column)}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {paginated.pageRows.map((row, rowIndex) => (
+            <tr key={(paginated.page - 1) * paginated.pageSize + rowIndex}>
+              {columns.map((column) => (
+                <td key={column} className={getColumnClassName(column)}>
+                  {formatCellValueForColumn(row[column], column)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {hasPagination && (
+        <div className="table-pagination">
+          <span>{paginated.totalRows} 条</span>
+          <button
+            type="button"
+            onClick={() => setPage((value) => value - 1)}
+            disabled={paginated.page <= 1}
+          >
+            上一页
+          </button>
+          <span>
+            第 {paginated.page} / {paginated.totalPages} 页
+          </span>
+          <button
+            type="button"
+            onClick={() => setPage((value) => value + 1)}
+            disabled={paginated.page >= paginated.totalPages}
+          >
+            下一页
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
-function responseToAssistantMessage(response: ConversationMessageResponse): ChatMessage {
+function MarkdownAnswer({ text }: { text: string }) {
+  const blocks = parseMarkdown(text);
+  if (!blocks.length) {
+    return <p className="assistant-answer">{text}</p>;
+  }
+
+  return (
+    <div className="assistant-answer">
+      {blocks.map((block, blockIndex) => (
+        <p key={blockIndex}>
+          {block.segments.map((segment, segmentIndex) => (
+            <MarkdownInline key={segmentIndex} segment={segment} />
+          ))}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function MarkdownInline({ segment }: { segment: MarkdownSegment }) {
+  if (segment.kind === "strong") {
+    return <strong>{segment.text}</strong>;
+  }
+  if (segment.kind === "code") {
+    return <code>{segment.text}</code>;
+  }
+  return <>{segment.text}</>;
+}
+
+function responseToAssistantMessage(
+  response: ConversationMessageResponse,
+  id = `assistant-${response.conversation_id}-${Date.now()}`,
+): ChatMessage {
   return {
-    id: `assistant-${response.conversation_id}-${Date.now()}`,
+    id,
     role: "assistant",
     content: response.answer || response.error || "No answer returned.",
     metadata: {
       answer: response.answer,
+      message_type: response.message_type,
       rows: response.rows,
       ok: response.ok,
       error: response.error,

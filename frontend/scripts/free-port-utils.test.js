@@ -1,0 +1,15 @@
+import { describe, expect, it } from "vitest";
+import { parseListeningPids } from "./free-port-utils.mjs";
+
+describe("parseListeningPids", () => {
+  it("returns unique listening process ids for the requested port", () => {
+    const output = `
+  TCP    127.0.0.1:5173         0.0.0.0:0              LISTENING       39092
+  TCP    127.0.0.1:5173         127.0.0.1:62763        ESTABLISHED     39092
+  TCP    127.0.0.1:5174         0.0.0.0:0              LISTENING       25228
+  TCP    [::1]:5173             [::]:0                 LISTENING       39093
+`;
+
+    expect(parseListeningPids(output, 5173)).toEqual([39092, 39093]);
+  });
+});

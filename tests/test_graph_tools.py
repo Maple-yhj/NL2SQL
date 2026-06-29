@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 from graph.tools.explain_result import explain_result
+from graph.tools.explain_table_result import explain_table_result
 from graph.tools.validate_sql import validate_sql
 
 
@@ -61,6 +62,26 @@ class GraphToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["explanation"], "GMV is 100.")
         self.assertIn("show gmv", llm.calls[0]["prompt"])
         self.assertIn("100", llm.calls[0]["prompt"])
+
+    async def test_table_explanation_requests_insights_without_repeating_rows(self):
+        llm = FakeLLM()
+        result = await explain_table_result(
+            question="show yesterday order records",
+            sql="SELECT order_id, amount, created_at FROM orders ORDER BY created_at DESC",
+            rows=[
+                {"order_id": "O-1", "amount": 100, "created_at": "2024-12-30T23:45:00Z"},
+                {"order_id": "O-2", "amount": 200, "created_at": "2024-12-30T22:15:00Z"},
+            ],
+            metrics_result={},
+            llm=llm,
+        )
+
+        self.assertEqual(result["explanation"], "GMV is 100.")
+        self.assertIn("row_count", llm.calls[0]["prompt"])
+        self.assertIn("trend", llm.calls[0]["system"].lower())
+        self.assertIn("do not list records row by row", llm.calls[0]["system"].lower())
+        self.assertIn("frontend table paginates all returned rows", llm.calls[0]["system"].lower())
+        self.assertIn("do not say only a subset is available", llm.calls[0]["system"].lower())
 
     async def test_execute_sql_reads_environment_without_runtime_dotenv_load(self):
         execute_sql_module = importlib.import_module("graph.tools.execute_sql")

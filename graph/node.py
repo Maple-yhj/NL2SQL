@@ -8,10 +8,12 @@ from langgraph.runtime import Runtime
 
 from engine.intent_parser import parse_intent
 from graph.context import GraphContext
+from graph.message_type import classify_message_type
 from graph.state import GraphState, OutputState
 from graph.tools.contextualize_question import contextualize_question
 from graph.tools.execute_sql import execute_sql
 from graph.tools.explain_result import explain_result
+from graph.tools.explain_table_result import explain_table_result
 from graph.tools.sql_generator import generate_sql
 from graph.tools.sql_store import search_metrics, search_schema
 from graph.tools.validate_sql import validate_sql
@@ -46,6 +48,16 @@ def _state_ok(state: GraphState) -> bool:
     if state.get("execute", False):
         ok = ok and (state.get("execution_result") or {}).get("ok") is True
     return ok
+
+
+def _message_type(state: GraphState) -> str:
+    return classify_message_type(
+        question=state.get("question", ""),
+        contextualized_question=_question_for_model(state),
+        sql=state.get("validated_sql", ""),
+        rows=state.get("rows", []),
+        error=state.get("error", ""),
+    )
 
 
 def _metric_table_names(metrics_result: dict[str, Any]) -> list[str]:
@@ -340,7 +352,8 @@ async def explain_node(
     runtime: Runtime[GraphContext],
 ) -> GraphState:
     try:
-        result = await explain_result(
+        explainer = explain_table_result if _message_type(state) == "table" else explain_result
+        result = await explainer(
             question=_question_for_model(state),
             sql=state.get("validated_sql", ""),
             rows=state.get("rows", []),
@@ -382,6 +395,7 @@ async def persist_memory_node(
             sql=state.get("validated_sql", ""),
             rows=state.get("rows", []),
             answer=state.get("answer", ""),
+            message_type=_message_type(state),
             ok=_state_ok(state),
             error=state.get("error", ""),
             trace=state.get("trace", []),
@@ -407,6 +421,7 @@ async def finalize_node(state: GraphState) -> OutputState:
         "tenant_id": state["tenant_id"],
         "intent": asdict(intent) if intent is not None else {},
         "sql": sql,
+        "message_type": _message_type(state),
         "rows": state.get("rows", []),
         "answer": state.get("answer", ""),
         "error": state.get("error", ""),

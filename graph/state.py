@@ -29,6 +29,7 @@ class OutputState(TypedDict):
     tenant_id: str
     intent: dict[str, Any]
     sql: str
+    message_type: str
     rows: list[dict[str, Any]]
     answer: str
     error: str
@@ -56,6 +57,7 @@ class GraphOptionalState(TypedDict, total=False):
     trace: list[dict[str, Any]]
     ok: bool
     sql: str
+    message_type: str
 
 
 class GraphState(InputState, GraphOptionalState):

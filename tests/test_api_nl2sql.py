@@ -36,6 +36,7 @@ def graph_output(**overrides):
         "tenant_id": "demo",
         "intent": {"metrics": ["gmv"]},
         "sql": "SELECT sum(amount) AS gmv FROM orders LIMIT 1000",
+        "message_type": "text",
         "rows": [],
         "answer": "",
         "error": "",
@@ -68,6 +69,7 @@ class ApiNl2SqlTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["sql"], "SELECT sum(amount) AS gmv FROM orders LIMIT 1000")
+        self.assertEqual(response.json()["message_type"], "text")
         run_nl2sql.assert_awaited_once_with(
             "show gmv",
             tenant_id="demo",
@@ -113,7 +115,7 @@ class ApiNl2SqlTests(unittest.TestCase):
         run_nl2sql.assert_awaited_once_with(
             "show gmv",
             tenant_id="token-tenant",
-            execute=False,
+            execute=True,
             timeout_ms=10000,
             max_limit=1000,
             max_validation_attempts=2,

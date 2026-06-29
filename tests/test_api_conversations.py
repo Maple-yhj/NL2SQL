@@ -41,6 +41,7 @@ def graph_output(**overrides):
         "tenant_id": "demo",
         "intent": {"metrics": ["gmv"], "dimensions": ["region"]},
         "sql": "SELECT region, sum(amount) AS gmv FROM orders GROUP BY region LIMIT 1000",
+        "message_type": "text",
         "rows": [],
         "answer": "",
         "error": "",
@@ -235,6 +236,7 @@ class ApiConversationTests(unittest.TestCase):
                     sql="SELECT 1",
                     rows=[{"region": "East", "gmv": "1.28M"}],
                     answer="GMV is 100.",
+                    message_type="table",
                     ok=True,
                     error="",
                     trace=[],
@@ -252,6 +254,7 @@ class ApiConversationTests(unittest.TestCase):
             response.json()["items"][1]["metadata"]["rows"],
             [{"region": "East", "gmv": "1.28M"}],
         )
+        self.assertEqual(response.json()["items"][1]["metadata"]["message_type"], "table")
 
     def test_post_message_calls_graph_with_conversation_identity(self):
         client = TestClient(create_app())
@@ -284,6 +287,7 @@ class ApiConversationTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["message_type"], "text")
         run_nl2sql.assert_awaited_once_with(
             "那按地区呢",
             tenant_id="demo",

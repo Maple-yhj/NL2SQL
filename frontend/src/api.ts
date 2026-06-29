@@ -2,6 +2,7 @@ import type {
   ApiConversationMessage,
   AuthUser,
   Conversation,
+  ConversationUpdatePayload,
   ConversationMessageResponse,
   LoginPayload,
   SendMessagePayload,
@@ -60,6 +61,19 @@ export class ApiClient {
       method: "POST",
       body: JSON.stringify({ title }),
     });
+  }
+
+  updateConversation(
+    conversationId: string,
+    payload: ConversationUpdatePayload,
+  ): Promise<Conversation> {
+    return this.request<Conversation>(
+      `/api/conversations/${encodeURIComponent(conversationId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
   }
 
   listMessages(conversationId: string): Promise<{ items: ApiConversationMessage[] }> {

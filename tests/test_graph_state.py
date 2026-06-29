@@ -52,6 +52,7 @@ class GraphStateTests(unittest.TestCase):
                     "tenant_id",
                     "intent",
                     "sql",
+                    "message_type",
                     "rows",
                     "answer",
                     "error",

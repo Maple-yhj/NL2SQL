@@ -262,6 +262,77 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SELECT * FROM users", result["retry_feedback"])
         self.assertIn("table_not_allowed", result["retry_feedback"])
 
+    async def test_explain_node_uses_table_explanation_for_detail_rows(self):
+        rt = runtime()
+        with mock.patch.object(
+            node,
+            "explain_table_result",
+            new=mock.AsyncMock(
+                return_value={
+                    "ok": True,
+                    "explanation": "Orders are concentrated late in the day.",
+                    "message": "success",
+                }
+            ),
+        ) as table_explainer, mock.patch.object(
+            node,
+            "explain_result",
+            new=mock.AsyncMock(return_value={"ok": True, "explanation": "unused"}),
+        ) as summary_explainer:
+            result = await node.explain_node(
+                {
+                    "question": "show yesterday order records",
+                    "tenant_id": "demo",
+                    "execute": True,
+                    "validated_sql": (
+                        "SELECT order_id, amount, created_at "
+                        "FROM orders ORDER BY created_at DESC"
+                    ),
+                    "rows": [{"order_id": "O-1", "amount": 100}],
+                    "metrics_result": {},
+                    "trace": [],
+                },
+                rt,
+            )
+
+        self.assertEqual(result["answer"], "Orders are concentrated late in the day.")
+        table_explainer.assert_awaited_once()
+        summary_explainer.assert_not_awaited()
+
+    async def test_explain_node_uses_summary_explanation_for_aggregate_rows(self):
+        rt = runtime()
+        with mock.patch.object(
+            node,
+            "explain_result",
+            new=mock.AsyncMock(
+                return_value={
+                    "ok": True,
+                    "explanation": "GMV is higher in East.",
+                    "message": "success",
+                }
+            ),
+        ) as summary_explainer, mock.patch.object(
+            node,
+            "explain_table_result",
+            new=mock.AsyncMock(return_value={"ok": True, "explanation": "unused"}),
+        ) as table_explainer:
+            result = await node.explain_node(
+                {
+                    "question": "show gmv by region",
+                    "tenant_id": "demo",
+                    "execute": True,
+                    "validated_sql": "SELECT region, SUM(amount) AS gmv FROM orders GROUP BY region",
+                    "rows": [{"region": "East", "gmv": 100}],
+                    "metrics_result": {},
+                    "trace": [],
+                },
+                rt,
+            )
+
+        self.assertEqual(result["answer"], "GMV is higher in East.")
+        summary_explainer.assert_awaited_once()
+        table_explainer.assert_not_awaited()
+
     async def test_finalize_exposes_only_stable_output(self):
         intent = QueryIntent(metrics=["gmv"])
         result = await node.finalize_node(
@@ -293,12 +364,66 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
                     "filters": [],
                 },
                 "sql": "SELECT 1",
+                "message_type": "text",
                 "rows": [],
                 "answer": "",
                 "error": "",
                 "trace": [{"node": "validate_sql", "ok": True}],
             },
         )
+
+    async def test_finalize_keeps_scalar_row_results_as_text_messages(self):
+        result = await node.finalize_node(
+            {
+                "question": "count orders",
+                "tenant_id": "demo",
+                "execute": True,
+                "validated_sql": "SELECT COUNT(*) AS count FROM orders",
+                "execution_result": {"ok": True},
+                "rows": [{"count": 50000}],
+                "answer": "There are 50,000 orders.",
+                "error": "",
+                "trace": [{"node": "execute_sql", "ok": True}],
+            }
+        )
+
+        self.assertEqual(result["message_type"], "text")
+
+    async def test_finalize_marks_detail_record_results_as_table_messages(self):
+        result = await node.finalize_node(
+            {
+                "question": "show yesterday order records",
+                "tenant_id": "demo",
+                "execute": True,
+                "validated_sql": (
+                    "SELECT order_id, customer_id, amount, created_at "
+                    "FROM orders ORDER BY created_at DESC"
+                ),
+                "execution_result": {"ok": True},
+                "rows": [{"order_id": "O-1", "customer_id": "C-1", "amount": 100}],
+                "answer": "Found 1 order.",
+                "error": "",
+                "trace": [{"node": "execute_sql", "ok": True}],
+            }
+        )
+
+        self.assertEqual(result["message_type"], "table")
+
+    async def test_finalize_marks_errors_as_error_messages(self):
+        result = await node.finalize_node(
+            {
+                "question": "show gmv",
+                "tenant_id": "demo",
+                "execute": False,
+                "validated_sql": "",
+                "rows": [],
+                "answer": "",
+                "error": "SQL validation failed.",
+                "trace": [{"node": "validate_sql", "ok": False}],
+            }
+        )
+
+        self.assertEqual(result["message_type"], "error")
 
 
 if __name__ == "__main__":

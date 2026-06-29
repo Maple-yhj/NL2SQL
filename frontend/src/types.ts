@@ -8,6 +8,8 @@ export type JsonValue =
 
 export type DataRow = Record<string, JsonValue>;
 
+export type MessageType = "text" | "table" | "error" | "thinking";
+
 export interface AuthUser {
   tenant_id: string;
   user_id: string;
@@ -39,6 +41,11 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface ConversationUpdatePayload {
+  title?: string;
+  archived?: boolean;
+}
+
 export interface TraceEntry {
   node?: string;
   ok?: boolean;
@@ -49,6 +56,7 @@ export interface TraceEntry {
 export interface MessageMetadata {
   contextualized_question?: string;
   sql?: string;
+  message_type?: MessageType;
   rows?: DataRow[];
   answer?: string;
   ok?: boolean;
@@ -76,6 +84,7 @@ export interface ConversationMessageResponse {
   tenant_id: string;
   intent: Record<string, JsonValue>;
   sql: string;
+  message_type: Exclude<MessageType, "thinking">;
   rows: DataRow[];
   answer: string;
   error: string;

@@ -260,6 +260,7 @@ class ApiAuthSchemaTests(unittest.TestCase):
 
         self.assertIsNone(request.tenant_id)
         self.assertEqual(request.question, "show gmv")
+        self.assertTrue(request.execute)
 
     def test_nl2sql_request_strips_question_and_tenant(self):
         request = Nl2SqlRequest(question=" show gmv ", tenant_id=" demo ")
@@ -330,6 +331,7 @@ class ApiAuthSchemaTests(unittest.TestCase):
         self.assertIsNone(request.tenant_id)
         self.assertIsNone(request.user_id)
         self.assertEqual(request.question, "show gmv")
+        self.assertTrue(request.execute)
 
     def test_conversation_message_strips_question_and_identity(self):
         request = ConversationMessageRequest(

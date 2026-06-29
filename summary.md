@@ -1,240 +1,115 @@
-# NL2SQL LangGraph 项目实现总结
+# NL2SQL 项目当前业务总结
 
-## 当前实现状态
+## 项目定位
 
-本项目是一个面向多租户 BI 场景的 NL2SQL agent 服务。核心链路由 LangGraph 编排，入口问题会依次经过初始化、记忆加载、上下文化改写、意图解析、指标检索、Schema 检索、SQL 生成、SQL 校验、可选执行、可选解释、记忆持久化和最终输出。
+本项目是一个面向企业经营分析场景的自然语言数据助手。用户可以像聊天一样提出业务问题，系统自动理解问题、查询业务数据库，并以自然语言、明细表格或两者结合的方式返回结果。
 
-当前实现支持三类使用方式：
+项目当前重点服务 BI 查询与运营分析场景，目标是降低业务人员直接写 SQL、理解数据表结构和反复找数的成本。
 
-- CLI：支持单次问题，也支持不传问题时进入长对话 REPL。
-- FastAPI：支持认证、无会话 `/api/nl2sql`、完整 conversation REST API。
-- LangGraph Studio：`langgraph dev` 可直接加载 `graph/pipeline.py` 中的图定义。
+## 核心业务能力
 
-## 运行时身份与认证
+### 1. 自然语言问数
 
-认证方案已经落地为“数据库用户表 + JWT access token + Refresh Token 轮换”。
+用户可以直接输入业务问题，例如：
 
-核心文件：
+- “华东地区昨天 GMV 是多少？”
+- “按地区统计本月 GMV”
+- “查询 2024-12-30 华东地区最新的 20 条订单记录”
 
-- `api/auth.py`：认证配置、Argon2 密码哈希、JWT 生成与解码、Bearer token dependency。
-- `api/auth_store.py`：认证 store 协议、PostgreSQL 实现、refresh token SHA-256 哈希存储、刷新轮换和撤销。
-- `db/auth.sql`：`auth_users` 和 `auth_refresh_tokens` 表。
-- `scripts/create_auth_user.py`：创建或更新认证用户。
+系统会根据问题识别指标、维度、时间范围、筛选条件和明细/汇总意图，并自动生成查询。
 
-主要规则：
+### 2. 汇总问题用自然语言回答
 
-- `JWT_SECRET_KEY` 必须配置。
-- `AUTH_DATABASE_URL` 优先作为认证库 DSN；为空时回退到 `MEMORY_DATABASE_URL` 或 `MEMORY_POSTGRES_DSN`。
-- access token 默认 30 分钟有效，refresh token 默认 7 天有效。
-- refresh token 原文不入库，只保存 SHA-256 hash。
-- `/api/auth/refresh` 会原子撤销旧 refresh token 并写入新 refresh token。
-- `/api/auth/logout` 会撤销传入的 refresh token。
-- 受保护业务接口以 JWT token identity 作为租户和用户身份来源。
-- 请求体或查询参数里的 `tenant_id` / `user_id` 只用于迁移兼容：省略时使用 token identity；传入时必须匹配 token identity，否则返回 `403`。
+当用户询问 GMV、订单数、地区对比、趋势总结等汇总类问题时，系统默认以自然语言解释结果，避免把简单指标强行展示成表格。
 
-## 数据库划分
+这类回答适合管理层或运营人员快速获取结论，例如“华东地区 GMV 最高”“本月订单金额集中在某几个区域”等。
 
-项目当前有三类数据库职责：
+### 3. 明细问题用表格回答
 
-- `DATABASE_URL`：业务查询数据库，用于 schema 检索、SQL 校验和 SQL 执行。
-- `MEMORY_DATABASE_URL` 或 `MEMORY_POSTGRES_DSN`：会话记忆数据库，用于会话列表、历史消息、用户记忆和会话摘要。
-- `AUTH_DATABASE_URL`：认证数据库，用于用户和 refresh token；未配置时回退到记忆库 DSN。
+当用户询问订单记录、用户明细、商品明细等记录型问题时，系统会把结果识别为表格消息。
 
-数据库脚本：
+当前前端支持：
 
-- `db/conversation_memory.sql`
-  - `conversation_sessions`
-  - `conversation_messages`
-  - `user_memories`
-  - `conversation_summaries`
-- `db/auth.sql`
-  - `auth_users`
-  - `auth_refresh_tokens`
+- 中文字段表头
+- 数字列右对齐
+- 金额和时间格式化
+- 每页 20 条分页
+- 展示全部返回记录，而不是只展示前几条
+- 表格上方提供数据洞察说明
 
-如果未配置记忆库 DSN，`create_conversation_store()` 会返回 `NullConversationStore`。这允许单轮 `/api/nl2sql` 继续运行，但会话 REST API 不具备真实持久化能力。认证 store 则要求存在可用 DSN，否则登录和 refresh token 管理无法工作。
+### 4. 数据洞察说明
 
-## LangGraph 工作流
+对于明细表格，AI 不再逐条复述数据，而是总结数据范围、金额分布、异常点、时间跨度、状态比例等洞察。
 
-图定义在 `graph/pipeline.py`，节点实现集中在 `graph/node.py`。
+表格负责展示原始明细，AI 负责帮助用户理解这批数据有什么特点。
 
-当前节点：
+### 5. 多轮会话
 
-1. `initialize`：标准化问题、租户、用户、会话 ID 和执行模式。
-2. `load_memory`：读取会话历史和用户记忆。
-3. `contextualize_question`：基于历史上下文改写当前问题。
-4. `parse_intent`：使用 LLM 解析指标、维度、时间范围、过滤条件和目标表。
-5. `search_metrics`：通过向量检索召回指标上下文。
-6. `search_schema`：通过向量检索召回授权 schema 上下文。
-7. `generate_sql`：基于意图、指标、schema 和历史上下文生成 PostgreSQL SQL。
-8. `validate_sql`：限制单条 `SELECT`、授权表访问和最大返回行数。
-9. `execute_sql`：在 `execute=true` 时执行 SQL。
-10. `explain`：对查询结果生成自然语言解释。
-11. `persist_memory`：有会话 ID 时保存用户消息与助手回答。
-12. `finalize`：输出稳定响应结构。
+系统支持会话历史。用户可以围绕同一个分析主题连续追问，系统会读取当前会话上下文，并把后续问题改写成更完整的问题后再查询。
 
-路由逻辑在 `graph/router.py`：
+例如用户先问“本月 GMV”，再问“按地区拆一下”，系统可以结合上下文理解“按地区拆本月 GMV”。
 
-- schema 检索失败会直接进入 `persist_memory -> finalize`。
-- SQL 校验失败会在 `max_validation_attempts` 范围内回到 `generate_sql`。
-- `execute=false` 或执行失败都会跳过解释，进入持久化和输出。
+### 6. 历史会话管理
 
-## SQL 安全策略
+前端左侧侧边栏展示历史对话，支持：
 
-SQL 安全边界集中在生成、校验和执行阶段：
+- 新建聊天
+- 打开历史会话
+- 重命名会话
+- 删除会话，当前实现为软删除/归档
+- 侧边栏收缩与展开
 
-- 只允许 PostgreSQL 单条 `SELECT`。
-- SQL 访问表必须来自 schema 检索返回的授权表集合。
-- 自动补齐或限制 `LIMIT`，上限由请求参数 `max_limit` 控制。
-- 执行阶段使用 statement timeout，默认请求超时参数为 `timeout_ms=10000`。
-- schema 不足、生成失败或校验失败时不会执行 SQL。
-- 业务查询数据库和记忆/认证数据库使用独立 DSN，避免误用业务库作为记忆库。
+重新打开页面后，新产生的历史问答会恢复用户问题、AI 答复和表格数据。
 
-## FastAPI 接口
+### 7. 用户登录与租户隔离
 
-服务入口是 `api.app:app`，路由集中在 `api/routes.py`，请求响应 schema 在 `api/schemas.py`。
+项目支持账号登录。每个请求都绑定当前用户和租户身份，用户只能访问属于自己的会话。
 
-### 公开接口
+当前已有的业务身份字段包括：
 
-- `GET /health`
-- `POST /api/auth/login`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
+- `tenant_id`
+- `user_id`
+- `username`
+- `roles`
 
-### 受保护接口
+这为后续扩展组织、角色权限和数据权限打下基础。
 
-- `GET /api/auth/me`
-- `POST /api/nl2sql`
-- `POST /api/conversations`
-- `GET /api/conversations`
-- `GET /api/conversations/{conversation_id}`
-- `PATCH /api/conversations/{conversation_id}`
-- `GET /api/conversations/{conversation_id}/messages`
-- `POST /api/conversations/{conversation_id}/messages`
+### 8. 前端聊天体验
 
-`/api/nl2sql` 是无会话 agent 调用入口。它验证 bearer access token 后解析租户身份，并调用 `graph.pipeline.run_nl2sql(...)`。
+当前前端采用类 ChatGPT 的使用方式：
 
-`/api/conversations/{conversation_id}/messages` 是多轮 agent 调用入口。它先校验会话归属，再传入 `conversation_id`、`user_id` 和记忆 store 调用 `run_nl2sql(...)`，使图可以读取历史消息并保存本轮消息。
+- 左侧历史会话栏
+- 中间聊天主区域
+- 底部固定输入框
+- AI 思考中有加载提示
+- 新回答后自动滚动到最新位置
+- AI 回答支持基础 Markdown 渲染，例如加粗和行内代码
 
-## 请求和响应模型
+## 当前适合的业务场景
 
-主要请求模型：
-
-- `LoginRequest`
-- `RefreshRequest`
-- `LogoutRequest`
-- `Nl2SqlRequest`
-- `ConversationCreateRequest`
-- `ConversationUpdateRequest`
-- `ConversationMessageRequest`
-
-主要响应模型：
-
-- `TokenResponse`
-- `AuthUserResponse`
-- `LogoutResponse`
-- `Nl2SqlResponse`
-- `ConversationResponse`
-- `ConversationListResponse`
-- `ConversationMessagesResponse`
-- `ConversationNl2SqlResponse`
-
-输入清洗策略：
-
-- 必填文本字段会 trim 并拒绝空字符串。
-- 可选 `tenant_id` / `user_id` 允许省略；如果传入空白字符串会拒绝。
-- `timeout_ms`、`max_limit`、`max_validation_attempts`、`memory_history_limit` 都有范围限制。
-
-## CLI
-
-CLI 入口是 `main.py`。
-
-单次问题：
-
-```powershell
-python main.py "按地区统计本月 GMV"
-```
-
-执行 SQL：
-
-```powershell
-python main.py "按地区统计本月 GMV" --tenant-id demo --execute
-```
-
-长对话 REPL：
-
-```powershell
-python main.py --tenant-id demo --user-id user-1
-```
-
-指定已有会话：
-
-```powershell
-python main.py --tenant-id demo --user-id user-1 --conversation-id conv-1
-```
-
-CLI 不走 HTTP JWT 认证，直接把租户、用户和会话参数传入 `run_nl2sql(...)`。
-
-## RAG 与向量索引
-
-RAG 相关实现包括：
-
-- `rag/documents.py`：把指标和 schema catalog 转换为 embedding 文档。
-- `rag/vector_store.py`：基于 PostgreSQL + pgvector 的 upsert 和语义检索。
-- `graph/tools/sql_store.py`：检索指标和 schema，并按租户/授权表过滤。
-- `scripts/rebuild_embeddings.py`：重建向量索引。
-
-默认 embedding 配置：
-
-- `EMBEDDING_MODEL=models/gemini-embedding-001`
-- `EMBEDDING_DIM=768`
-
-## Apifox / OpenAPI
-
-当前可导入 Apifox 的 OpenAPI 文档：
-
-```text
-docs/apifox-openapi.json
-```
-
-生成脚本：
-
-```powershell
-conda run -n agents-env python scripts/export_apifox_openapi.py
-```
-
-该文档基于 FastAPI `app.openapi()` 生成，并补充：
-
-- 中文接口分组和说明。
-- 请求/响应示例。
-- `BearerAuth` JWT 安全方案。
-- 常见 `401`、`403`、`404`、`500` 响应说明。
-
-## 测试覆盖
-
-推荐回归命令：
-
-```powershell
-conda run -n agents-env python -m unittest discover -s tests -v
-```
-
-当前测试覆盖：
-
-- API 健康检查。
-- Auth token：密码哈希、claim 校验、签名、issuer/audience、过期和 token 类型。
-- Auth store：用户 upsert、登录查找、refresh token 存储、轮换、过期、撤销和 hash 校验。
-- Auth API：登录、刷新、me、logout 和 schema 校验。
-- `/api/nl2sql`：鉴权、租户匹配、请求校验、异常响应。
-- Conversation API：鉴权、创建、列表、详情隔离、更新、消息查询、多轮消息调用。
-- LangGraph：状态、路由、上下文、节点、pipeline。
-- SQL 工具：生成、校验、执行、解释和检索。
-- RAG 文档、向量 store、memory store、LLM/Embedding adapter 和 CLI。
-
-最近一次完整验证结果：`conda run -n agents-env python -m unittest discover -s tests -v` 通过 145 个测试。
+- 经营指标查询
+- 区域、商品、用户、订单分析
+- 订单明细查询
+- 多轮追问式数据探索
+- 快速生成 SQL 并返回解释
+- 面向内部运营、数据分析、业务管理人员的自助问数
 
 ## 当前边界
 
-- 认证已经具备登录、access token、refresh token 轮换和登出撤销，但尚未实现细粒度角色授权；`roles` 已进入 token 和用户表，后续可用于 RBAC。
-- refresh token 会记录 hash、过期、撤销和替换关系，但当前路由未记录 user agent / client IP。
-- 会话删除接口尚未实现，当前支持归档字段 `archived`。
-- `conversation_summaries` 表已预留，但当前上下文加载主要依赖最近消息和用户记忆。
-- OpenAPI 文档由脚本生成；路由或 schema 变更后需要重新执行 `scripts/export_apifox_openapi.py`。
+- 系统依赖业务数据库中已有的数据表和字段含义。
+- 当前表头中文含义通过前端映射实现，后续可扩展为从数据字典读取。
+- 删除会话目前是归档式软删除，不是物理删除。
+- “搜索聊天”“文件库”等入口已在界面预留，但还不是完整功能。
+- 权限模型目前以用户/租户隔离为主，细粒度 RBAC 和字段级权限仍可继续增强。
+- 会话摘要表已预留，但当前上下文主要依赖最近消息和用户记忆。
+
+## 当前状态
+
+项目已经具备后端 API、登录认证、会话持久化、前端聊天界面和基础可用的 NL2SQL 问答体验。
+
+本地开发时需要同时启动后端 API 和前端 Vite 服务：
+
+- 后端默认地址：`http://127.0.0.1:8000`
+- 前端默认地址：`http://127.0.0.1:5173`
+
+详细配置、建表、创建账号和启动步骤见 `README.md`。
