@@ -4,6 +4,7 @@ from typing import Any
 
 from core.embeddings import EmbeddingClientProtocol
 from rag.vector_store import search_semantic_index
+from graph.tools.tenant_scope import catalog_tenant_id
 
 
 async def search_metrics(
@@ -23,7 +24,7 @@ async def search_metrics(
     query_embedding = await embedding_client.embed_text(query)
     hits = await search_semantic_index(
         query_embedding=query_embedding,
-        tenant_id=tenant_id,
+        tenant_id=catalog_tenant_id(tenant_id),
         object_types=["metric"],
         top_k=top_k,
     )
@@ -79,7 +80,7 @@ async def search_schema(
     query_embedding = await embedding_client.embed_text(query)
     hits = await search_semantic_index(
         query_embedding=query_embedding,
-        tenant_id=tenant_id,
+        tenant_id=catalog_tenant_id(tenant_id),
         object_types=object_types,
         top_k=top_k,
     )

@@ -136,6 +136,50 @@ class GraphToolTests(unittest.IsolatedAsyncioTestCase):
         connect.assert_awaited_once_with("postgresql://example/db")
         self.assertEqual(conn.calls[-1], ("close",))
 
+    async def test_execute_sql_applies_seller_scope_before_fetch(self):
+        execute_sql_module = importlib.import_module("graph.tools.execute_sql")
+
+        class FakeConnection:
+            def __init__(self):
+                self.fetch_sql = ""
+
+            async def execute(self, sql):
+                return None
+
+            async def fetch(self, sql):
+                self.fetch_sql = sql
+                return [{"gmv": 100}]
+
+            async def close(self):
+                return None
+
+        conn = FakeConnection()
+        validation = {
+            "ok": True,
+            "normalized_sql": "SELECT SUM(price) AS gmv FROM olist_order_items_dataset LIMIT 1000",
+            "violations": [],
+            "message": "valid",
+        }
+        with mock.patch.object(
+            execute_sql_module,
+            "validate_sql",
+            new=mock.AsyncMock(return_value=validation),
+        ), mock.patch.object(
+            execute_sql_module,
+            "_connect",
+            new=mock.AsyncMock(return_value=conn),
+        ):
+            result = await execute_sql_module.execute_sql(
+                "SELECT SUM(price) AS gmv FROM olist_order_items_dataset",
+                "seller-1",
+                dsn="postgresql://example/db",
+                allowed_tables=["olist_order_items_dataset"],
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertIn("seller_id = 'seller-1'", conn.fetch_sql)
+        self.assertIn("seller_id = 'seller-1'", result["normalized_sql"])
+
     async def test_execute_sql_connect_uses_preloaded_asyncpg_driver(self):
         execute_sql_module = importlib.import_module("graph.tools.execute_sql")
         original_import = builtins.__import__

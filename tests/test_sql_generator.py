@@ -51,6 +51,35 @@ class SqlGeneratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("show gmv last month", prompt)
         self.assertIn("preferred_region: 华东", prompt)
 
+    def test_prompt_includes_seller_scope_for_non_admin_tenant(self):
+        prompt = build_sql_prompt(
+            question="show my gmv",
+            intent=QueryIntent(metrics=["gmv"]),
+            metrics_result={"metrics": []},
+            schema_result={"schema": []},
+            retry_feedback=None,
+            conversation_history=[],
+            user_memories=[],
+            tenant_id="seller-1",
+        )
+
+        self.assertIn("[TENANT SCOPE]", prompt)
+        self.assertIn("seller_id = 'seller-1'", prompt)
+
+    def test_prompt_does_not_include_seller_scope_for_admin_tenant(self):
+        prompt = build_sql_prompt(
+            question="show all gmv",
+            intent=QueryIntent(metrics=["gmv"]),
+            metrics_result={"metrics": []},
+            schema_result={"schema": []},
+            retry_feedback=None,
+            conversation_history=[],
+            user_memories=[],
+            tenant_id="admin",
+        )
+
+        self.assertNotIn("[TENANT SCOPE]", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

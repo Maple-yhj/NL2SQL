@@ -5,6 +5,7 @@ from typing import Any
 
 from core.llm import LLMProtocol
 from engine.models import QueryIntent
+from graph.tools.tenant_scope import format_tenant_scope_context
 
 
 SQL_SYSTEM = """
@@ -26,6 +27,7 @@ async def generate_sql(
     metrics_result: dict[str, Any],
     schema_result: dict[str, Any],
     retry_feedback: str | None,
+    tenant_id: str = "admin",
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
     llm: LLMProtocol,
@@ -40,6 +42,7 @@ async def generate_sql(
         metrics_result=metrics_result,
         schema_result=schema_result,
         retry_feedback=retry_feedback,
+        tenant_id=tenant_id,
         conversation_history=conversation_history or [],
         user_memories=user_memories or [],
     )
@@ -58,6 +61,7 @@ def build_sql_prompt(
     metrics_result: dict[str, Any],
     schema_result: dict[str, Any],
     retry_feedback: str | None,
+    tenant_id: str = "admin",
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
 ) -> str:
@@ -73,6 +77,7 @@ def build_sql_prompt(
         conversation_history or [],
         user_memories or [],
     )
+    tenant_scope_content = format_tenant_scope_context(tenant_id)
 
     prompt = f"""
 Question:
@@ -90,6 +95,8 @@ filters: {intent.filters}
 [SCHEMA CONTEXT]
 {schema_content}
 """.strip()
+    if tenant_scope_content:
+        prompt += f"\n\n[TENANT SCOPE]\n{tenant_scope_content}"
     if conversation_content:
         prompt += f"\n\n[CONVERSATION CONTEXT]\n{conversation_content}"
     if retry_feedback:

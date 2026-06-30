@@ -2,6 +2,7 @@ from typing import Any
 
 import asyncpg
 
+from graph.tools.tenant_scope import apply_tenant_scope
 from graph.tools.validate_sql import validate_sql
 
 
@@ -41,6 +42,8 @@ async def execute_sql(
             "violations": validation["violations"],
             "message": validation["message"],
         }
+
+    executable_sql = apply_tenant_scope(executable_sql, tenant_id=tenant_id)
 
     if dsn is None:
         import os

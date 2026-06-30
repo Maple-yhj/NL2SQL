@@ -63,6 +63,32 @@ class SqlStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["table_name"] for item in result["schema"]], ["orders"])
         self.assertEqual(result["schema"][0]["columns"][0]["column_name"], "amount")
 
+    @mock.patch("graph.tools.sql_store.search_semantic_index")
+    async def test_search_schema_uses_admin_catalog_for_seller_tenant(self, search):
+        search.return_value = []
+
+        result = await search_schema(
+            "show my orders",
+            "seller-1",
+            FakeEmbeddings(),
+        )
+
+        self.assertEqual(result["tenant_id"], "seller-1")
+        self.assertEqual(search.await_args.kwargs["tenant_id"], "admin")
+
+    @mock.patch("graph.tools.sql_store.search_semantic_index")
+    async def test_search_metrics_uses_admin_catalog_for_seller_tenant(self, search):
+        search.return_value = []
+
+        result = await search_metrics(
+            "show my gmv",
+            "seller-1",
+            FakeEmbeddings(),
+        )
+
+        self.assertEqual(result["tenant_id"], "seller-1")
+        self.assertEqual(search.await_args.kwargs["tenant_id"], "admin")
+
 
 if __name__ == "__main__":
     unittest.main()

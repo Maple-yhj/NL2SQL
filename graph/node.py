@@ -264,6 +264,7 @@ async def generate_sql_node(
             metrics_result=state.get("metrics_result", {}),
             schema_result=state.get("schema_result", {}),
             retry_feedback=state.get("retry_feedback"),
+            tenant_id=state["tenant_id"],
             conversation_history=state.get("conversation_history", []),
             user_memories=state.get("user_memories", []),
             llm=runtime.context.llm,

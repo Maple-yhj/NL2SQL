@@ -1,256 +1,419 @@
 [
   {
-    "table": "orders",
-    "comment": "订单主表，记录每笔交易",
+    "table": "olist_customers_dataset",
+    "comment": "",
     "columns": [
       {
-        "name": "id",
-        "type": "integer",
-        "nullable": false,
-        "default": "nextval('orders_id_seq'::regclass)",
-        "comment": "订单唯一ID，主键"
-      },
-      {
-        "name": "tenant_id",
-        "type": "character varying",
-        "nullable": false,
-        "default": "'demo'::character varying",
-        "comment": "租户ID，用于多租户隔离"
-      },
-      {                                                                                                                                                                                                                                                                                                                                                                          
-        "name": "user_id",
-        "type": "integer",
-        "nullable": false,
-        "default": null,
-        "comment": "标识订单所属的用户ID，外键"
-      },
-      {
-        "name": "product_id",
-        "type": "integer",
-        "nullable": false,
-        "default": null,
-        "comment": "表示订单购买的商品ID，外键"
-      },
-      {
-        "name": "region",
-        "type": "character varying",
-        "nullable": false,
-        "default": null,
-        "comment": "订单所属的区域,具体值只有[华南,华东,华中,华北,西南,港澳]"
-      },
-      {
-        "name": "amount",
-        "type": "numeric",
-        "nullable": false,
-        "default": null,
-        "comment": "订单金额，单位：人民币"
-      },
-      {
-        "name": "quantity",
-        "type": "integer",
-        "nullable": false,
-        "default": "1",
-        "comment": "下单的商品数量"
-      },
-      {
-        "name": "status",
-        "type": "character varying",
-        "nullable": false,
-        "default": null,
-        "comment": "订单状态：paid/pending/cancelled/refunded"
-      },
-      {
-        "name": "paid_at",
-        "type": "timestamp with time zone",
+        "name": "customer_id",
+        "type": "text",
         "nullable": true,
         "default": null,
-        "comment": "订单的支付时间"
+        "comment": ""
       },
       {
-        "name": "created_at",
-        "type": "timestamp with time zone",
-        "nullable": false,
-        "default": "now()",
-        "comment": "订单的创建时间"
+        "name": "customer_unique_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "customer_zip_code_prefix",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "customer_city",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "customer_state",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
       }
     ]
   },
   {
-    "table": "products",
-    "comment": "产品信息表，记录每个产品的详细信息",
+    "table": "olist_geolocation_dataset",
+    "comment": "",
     "columns": [
       {
-        "name": "id",
+        "name": "geolocation_zip_code_prefix",
         "type": "integer",
-        "nullable": false,
-        "default": "nextval('products_id_seq'::regclass)",
-        "comment": "商品唯一ID，主键"
-      },
-      {
-        "name": "tenant_id",
-        "type": "character varying",
-        "nullable": false,
-        "default": "'demo'::character varying",
-        "comment": "租户ID，用于多租户隔离"
-      },
-      {
-        "name": "name",
-        "type": "character varying",
-        "nullable": false,
+        "nullable": true,
         "default": null,
-        "comment": "商品名称"
+        "comment": ""
       },
       {
-        "name": "category",
-        "type": "character varying",
-        "nullable": false,
+        "name": "geolocation_lat",
+        "type": "double precision",
+        "nullable": true,
         "default": null,
-        "comment": "商品品类，如家居、运动等类别"
+        "comment": ""
+      },
+      {
+        "name": "geolocation_lng",
+        "type": "double precision",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "geolocation_city",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "geolocation_state",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      }
+    ]
+  },
+  {
+    "table": "olist_order_items_dataset",
+    "comment": "",
+    "columns": [
+      {
+        "name": "order_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_item_id",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "seller_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "shipping_limit_date",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
       },
       {
         "name": "price",
         "type": "numeric",
-        "nullable": false,
+        "nullable": true,
         "default": null,
-        "comment": "商品售价"
+        "comment": ""
       },
       {
-        "name": "cost",
+        "name": "freight_value",
         "type": "numeric",
-        "nullable": false,
+        "nullable": true,
         "default": null,
-        "comment": "商品成本"
-      },
-      {
-        "name": "is_active",
-        "type": "boolean",
-        "nullable": false,
-        "default": "true",
-        "comment": "商品是否上架"
-      },
-      {
-        "name": "created_at",
-        "type": "timestamp with time zone",
-        "nullable": false,
-        "default": "now()",
-        "comment": "商品创建时间"
+        "comment": ""
       }
     ]
   },
   {
-    "table": "users",
-    "comment": "用户账户表",
+    "table": "olist_order_payments_dataset",
+    "comment": "",
     "columns": [
       {
-        "name": "id",
+        "name": "order_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "payment_sequential",
         "type": "integer",
-        "nullable": false,
-        "default": "nextval('users_id_seq'::regclass)",
-        "comment": "用户唯一ID，主键"
-      },
-      {
-        "name": "tenant_id",
-        "type": "character varying",
-        "nullable": false,
-        "default": "'demo'::character varying",
-        "comment": "租户ID，用于多租户隔离"
-      },
-      {
-        "name": "username",
-        "type": "character varying",
-        "nullable": false,
+        "nullable": true,
         "default": null,
-        "comment": "用户名称"
+        "comment": ""
       },
       {
-        "name": "email",
-        "type": "character varying",
-        "nullable": false,
+        "name": "payment_type",
+        "type": "text",
+        "nullable": true,
         "default": null,
-        "comment": "用户邮箱"
+        "comment": ""
       },
       {
-        "name": "region",
-        "type": "character varying",
-        "nullable": false,
+        "name": "payment_installments",
+        "type": "integer",
+        "nullable": true,
         "default": null,
-        "comment": "用户所在地区,具体值只有[华南,华东,华中,华北,西南,港澳]"
+        "comment": ""
       },
       {
-        "name": "user_type",
-        "type": "character varying",
-        "nullable": false,
-        "default": "'normal'::character varying",
-        "comment": "用户类型"
-      },
-      {
-        "name": "created_at",
-        "type": "timestamp with time zone",
-        "nullable": false,
-        "default": "now()",
-        "comment": "用户注册时间"
+        "name": "payment_value",
+        "type": "numeric",
+        "nullable": true,
+        "default": null,
+        "comment": ""
       }
     ]
   },
   {
-    "table": "refunds",
-    "comment": "退款订单信息表，记录每笔退款的交易",
+    "table": "olist_order_reviews_dataset",
+    "comment": "",
     "columns": [
       {
-        "name": "id",
-        "type": "integer",
-        "nullable": false,
-        "default": "nextval('refunds_id_seq'::regclass)",
-        "comment": "退款记录id"
-      },
-      {
-        "name": "tenant_id",
-        "type": "character varying",
-        "nullable": false,
-        "default": "'demo'::character varying",
-        "comment": "租户ID，用于多租户隔离"
+        "name": "review_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
       },
       {
         "name": "order_id",
-        "type": "integer",
-        "nullable": false,
-        "default": null,
-        "comment": "退款订单id，外键"
-      },
-      {
-        "name": "user_id",
-        "type": "integer",
-        "nullable": false,
-        "default": null,
-        "comment": "退款用户id，外键"
-      },
-      {
-        "name": "amount",
-        "type": "numeric",
-        "nullable": false,
-        "default": null,
-        "comment": "退款金额"
-      },
-      {
-        "name": "reason",
-        "type": "character varying",
+        "type": "text",
         "nullable": true,
         "default": null,
-        "comment": "退款原因"
+        "comment": ""
       },
       {
-        "name": "status",
-        "type": "character varying",
-        "nullable": false,
-        "default": "'approved'::character varying",
-        "comment": "退款状态：pending,approved,rejected"
+        "name": "review_score",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
       },
       {
-        "name": "created_at",
-        "type": "timestamp with time zone",
-        "nullable": false,
-        "default": "now()",
-        "comment": "退款记录创建时间"
+        "name": "review_comment_title",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "review_comment_message",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "review_creation_date",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "review_answer_timestamp",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      }
+    ]
+  },
+  {
+    "table": "olist_orders_dataset",
+    "comment": "",
+    "columns": [
+      {
+        "name": "order_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "customer_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_status",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_purchase_timestamp",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_approved_at",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_delivered_carrier_date",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_delivered_customer_date",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "order_estimated_delivery_date",
+        "type": "timestamp without time zone",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      }
+    ]
+  },
+  {
+    "table": "olist_products_dataset",
+    "comment": "",
+    "columns": [
+      {
+        "name": "product_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_category_name",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_name_lenght",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_description_lenght",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_photos_qty",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_weight_g",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_length_cm",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_height_cm",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_width_cm",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      }
+    ]
+  },
+  {
+    "table": "olist_sellers_dataset",
+    "comment": "",
+    "columns": [
+      {
+        "name": "seller_id",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "seller_zip_code_prefix",
+        "type": "integer",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "seller_city",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "seller_state",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      }
+    ]
+  },
+  {
+    "table": "product_category_name_translation",
+    "comment": "",
+    "columns": [
+      {
+        "name": "product_category_name",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
+      },
+      {
+        "name": "product_category_name_english",
+        "type": "text",
+        "nullable": true,
+        "default": null,
+        "comment": ""
       }
     ]
   }

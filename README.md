@@ -104,6 +104,90 @@ python scripts/create_auth_user.py `
   --roles user
 ```
 
+### 新电脑快速配置 OList 数据库
+
+如果需要在一台新电脑上重新配置本项目，并使用 Kaggle OList 作为业务数据源，可以按下面步骤干净重建。
+
+前提：
+
+- PostgreSQL 可用，并已安装 `pgvector` 扩展。
+- Conda 环境 `agents-env` 已安装项目依赖。
+- `.env` 中的 LLM 和 Embedding API key 已配置；重建 `semantic_index` 需要调用 embedding 服务。
+
+创建业务库和会话/认证库：
+
+```powershell
+createdb nl2sql_olist
+createdb agent_user_data
+```
+
+配置 `.env` 中的数据库连接：
+
+```env
+DATABASE_URL=postgresql://postgres:你的密码@localhost:5432/nl2sql_olist
+MEMORY_DATABASE_URL=postgresql://postgres:你的密码@localhost:5432/agent_user_data
+AUTH_DATABASE_URL=postgresql://postgres:你的密码@localhost:5432/agent_user_data
+```
+
+如果后续要直接运行 `psql "$env:..."` 命令，也需要在当前 PowerShell 中设置同样的环境变量：
+
+```powershell
+$env:DATABASE_URL = "postgresql://postgres:你的密码@localhost:5432/nl2sql_olist"
+$env:MEMORY_DATABASE_URL = "postgresql://postgres:你的密码@localhost:5432/agent_user_data"
+$env:AUTH_DATABASE_URL = "postgresql://postgres:你的密码@localhost:5432/agent_user_data"
+```
+
+下载 Kaggle OList 数据集，并放到：
+
+```text
+data/olist/brazilian-ecommerce.zip
+```
+
+导入 OList 表、`metrics_registry` 和 `semantic_index` 支持表：
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+conda run -n agents-env python scripts\import_olist_dataset.py --reset
+```
+
+初始化会话记忆表和认证表：
+
+```powershell
+psql "$env:MEMORY_DATABASE_URL" -f db/conversation_memory.sql
+
+$authDsn = if ($env:AUTH_DATABASE_URL) { $env:AUTH_DATABASE_URL } else { $env:MEMORY_DATABASE_URL }
+psql $authDsn -f db/auth.sql
+```
+
+创建管理员账号：
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+conda run -n agents-env python scripts\create_auth_user.py `
+  --tenant-id admin `
+  --user-id yehj `
+  --username yehj `
+  --password "0708" `
+  --roles admin user
+```
+
+生成 OList schema catalog，并重建语义索引：
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path
+conda run -n agents-env python -m catalog.schema_catalog --output schema_catalog.json
+
+conda run -n agents-env python scripts\rebuild_embeddings.py `
+  --tenant-id admin `
+  --catalog-path schema_catalog.json
+```
+
+说明：
+
+- OList 原生表不会新增 `tenant_id` 字段。
+- 项目在代码逻辑中把 `seller_id` 映射为租户；`tenant_id=admin` 可以查询全部数据，其他租户只能查询对应 `seller_id` 的数据。
+- 如果只是 OList 数据行变化，但表结构、字段注释和 `metrics_registry` 没变，通常不需要重新生成 `schema_catalog.json` 或重建 `semantic_index`。
+
 ## 4. 启动后端
 
 在项目根目录执行：

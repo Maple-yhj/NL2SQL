@@ -9,7 +9,17 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-DEFAULT_TABLES = ("orders", "products", "users", "refunds")
+DEFAULT_TABLES = (
+    "olist_customers_dataset",
+    "olist_geolocation_dataset",
+    "olist_order_items_dataset",
+    "olist_order_payments_dataset",
+    "olist_order_reviews_dataset",
+    "olist_orders_dataset",
+    "olist_products_dataset",
+    "olist_sellers_dataset",
+    "product_category_name_translation",
+)
 
 
 async def extract_schema_catalog(dsn: str, table_names=DEFAULT_TABLES) -> list[dict]:
@@ -70,10 +80,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Extract PostgreSQL schema catalog")
     parser.add_argument("--dsn", default=os.getenv("DATABASE_URL") or os.getenv("POSTGRES_DSN"))
     parser.add_argument("--output", default="schema_catalog.json")
+    parser.add_argument("--tables", nargs="*", default=list(DEFAULT_TABLES))
     args = parser.parse_args()
     if not args.dsn:
         raise ValueError("Missing DATABASE_URL or POSTGRES_DSN.")
-    catalog = asyncio.run(extract_schema_catalog(args.dsn))
+    catalog = asyncio.run(extract_schema_catalog(args.dsn, table_names=args.tables))
     Path(args.output).write_text(
         json.dumps(catalog, ensure_ascii=False, indent=2),
         encoding="utf-8",
