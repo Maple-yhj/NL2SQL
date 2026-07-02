@@ -18,6 +18,10 @@ class GraphStateTests(unittest.TestCase):
     def test_graph_state_contains_security_and_retry_channels(self):
         hints = get_type_hints(GraphState)
         for field in (
+            "plan",
+            "execution_graph",
+            "planned_intent",
+            "plan_context",
             "metrics_result",
             "schema_result",
             "table_names",

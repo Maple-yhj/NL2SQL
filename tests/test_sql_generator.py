@@ -33,6 +33,21 @@ class SqlGeneratorTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIn("table_not_allowed", prompt)
 
+    def test_prompt_includes_plan_context_when_provided(self):
+        prompt = build_sql_prompt(
+            question="show gmv trend",
+            intent=QueryIntent(metrics=["gmv"]),
+            metrics_result={"metrics": []},
+            schema_result={"schema": []},
+            retry_feedback=None,
+            conversation_history=[],
+            user_memories=[],
+            plan_context='{"plan":{"analysis_type":"trend"}}',
+        )
+
+        self.assertIn("[PLAN DSL]", prompt)
+        self.assertIn('"analysis_type":"trend"', prompt)
+
     def test_prompt_includes_conversation_context_and_user_memories(self):
         prompt = build_sql_prompt(
             question="show gmv by region last month",

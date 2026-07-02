@@ -22,6 +22,7 @@ from graph.node import (
     initialize_node,
     load_memory_node,
     parse_intent_node,
+    plan_query_node,
     persist_memory_node,
     search_metrics_node,
     search_schema_node,
@@ -67,6 +68,7 @@ def build_graph():
     builder.add_node("load_memory", load_memory_node)
     builder.add_node("contextualize_question", contextualize_question_node)
     builder.add_node("parse_intent", parse_intent_node)
+    builder.add_node("plan_query", plan_query_node)
     builder.add_node("search_metrics", search_metrics_node)
     builder.add_node("search_schema", search_schema_node)
     builder.add_node("generate_sql", generate_sql_node)
@@ -90,6 +92,11 @@ def build_graph():
     )
     builder.add_conditional_edges(
         "parse_intent",
+        partial(_route_next, next_node="plan_query"),
+        ["plan_query", "persist_memory"],
+    )
+    builder.add_conditional_edges(
+        "plan_query",
         partial(_route_next, next_node="search_metrics"),
         ["search_metrics", "persist_memory"],
     )

@@ -41,6 +41,10 @@ class GraphOptionalState(TypedDict, total=False):
     conversation_history: list[dict[str, Any]]
     user_memories: list[dict[str, Any]]
     intent: QueryIntent
+    plan: dict[str, Any]
+    execution_graph: dict[str, Any]
+    planned_intent: QueryIntent
+    plan_context: str
     metrics_result: dict[str, Any]
     schema_result: dict[str, Any]
     table_names: list[str]

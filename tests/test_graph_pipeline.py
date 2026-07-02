@@ -76,6 +76,7 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
                 "load_memory",
                 "contextualize_question",
                 "parse_intent",
+                "plan_query",
                 "search_metrics",
                 "search_schema",
                 "generate_sql",

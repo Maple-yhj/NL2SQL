@@ -70,6 +70,27 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["intent"], intent)
         parser.assert_awaited_once_with("show gmv by region", llm=rt.context.llm)
 
+    async def test_plan_query_node_stores_plan_execution_graph_and_planned_intent(self):
+        intent = QueryIntent(metrics=["gmv"], dimensions=["region"])
+        rt = runtime()
+
+        result = await node.plan_query_node(
+            {
+                "question": "show gmv by region",
+                "tenant_id": "demo",
+                "execute": False,
+                "intent": intent,
+                "trace": [],
+            },
+            rt,
+        )
+
+        self.assertEqual(result["plan"]["analysis_type"], "multi_dimensional")
+        self.assertEqual(result["planned_intent"].metrics, ["gmv"])
+        self.assertEqual(result["execution_graph"]["mode"], "fixed_dag")
+        self.assertIn('"analysis_type": "multi_dimensional"', result["plan_context"])
+        self.assertEqual(result["trace"][-1]["node"], "plan_query")
+
     async def test_load_memory_reads_conversation_context_from_runtime_store(self):
         class Store:
             async def create_conversation(self, **kwargs):
@@ -203,13 +224,18 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
             node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result)
         ) as search:
             result = await node.search_metrics_node(
-                {"question": "show gmv", "tenant_id": "demo", "execute": False},
+                {
+                    "question": "show gmv",
+                    "tenant_id": "demo",
+                    "execute": False,
+                    "plan": {"analysis_type": "single_metric", "metrics": [{"name": "gmv"}]},
+                },
                 rt,
             )
 
         self.assertEqual(result["table_names"], ["orders", "refunds"])
         search.assert_awaited_once_with(
-            query="show gmv",
+            query="show gmv\nanalysis_type: single_metric\nmetrics: gmv",
             tenant_id="demo",
             embedding_client=rt.context.embeddings,
         )
@@ -228,10 +254,16 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         }
         with mock.patch.object(
             node, "search_schema", new=mock.AsyncMock(return_value=result_payload)
-        ):
+        ) as search:
             result = await node.search_schema_node(state, rt)
 
         self.assertEqual(result["allowed_tables"], ["orders", "refunds"])
+        search.assert_awaited_once_with(
+            query="show gmv",
+            tenant_id="demo",
+            embedding_client=rt.context.embeddings,
+            table_names=["orders", "refunds"],
+        )
 
     async def test_validation_failure_builds_retry_feedback(self):
         validation = {

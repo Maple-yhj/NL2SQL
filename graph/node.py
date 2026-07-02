@@ -7,6 +7,12 @@ from typing import Any
 from langgraph.runtime import Runtime
 
 from engine.intent_parser import parse_intent
+from engine.plan_models import (
+    PlanDSL,
+    format_plan_context,
+    plan_search_query,
+)
+from engine.planner import plan_query
 from graph.context import GraphContext
 from graph.message_type import classify_message_type
 from graph.state import GraphState, OutputState
@@ -39,6 +45,23 @@ def _error(state: GraphState, node_name: str, exc: Exception | str) -> GraphStat
 
 def _question_for_model(state: GraphState) -> str:
     return state.get("contextualized_question") or state["question"]
+
+
+def _plan_from_state(state: GraphState) -> PlanDSL | None:
+    value = state.get("plan")
+    if not isinstance(value, dict):
+        return None
+    try:
+        return PlanDSL.from_dict(value)
+    except Exception:
+        return None
+
+
+def _query_for_retrieval(state: GraphState) -> str:
+    return plan_search_query(
+        question=_question_for_model(state),
+        plan=_plan_from_state(state),
+    )
 
 
 def _state_ok(state: GraphState) -> bool:
@@ -196,13 +219,45 @@ async def parse_intent_node(
         return _error(state, "parse_intent", exc)
 
 
+async def plan_query_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    try:
+        bundle = await plan_query(
+            question=_question_for_model(state),
+            intent=state.get("intent"),
+            llm=runtime.context.llm,
+            execute=state.get("execute", False),
+        )
+        plan = bundle.plan
+        execution_graph = bundle.execution_graph
+        return {
+            "plan": plan.to_dict(),
+            "execution_graph": execution_graph.to_dict(),
+            "planned_intent": bundle.intent,
+            "plan_context": format_plan_context(
+                plan=plan,
+                execution_graph=execution_graph,
+            ),
+            "trace": _trace(
+                state,
+                "plan_query",
+                ok=bundle.ok,
+                message=bundle.message,
+            ),
+        } # type: ignore
+    except Exception as exc:
+        return _error(state, "plan_query", exc)
+
+
 async def search_metrics_node(
     state: GraphState,
     runtime: Runtime[GraphContext],
 ) -> GraphState:
     try:
         result = await search_metrics(
-            query=_question_for_model(state),
+            query=_query_for_retrieval(state),
             tenant_id=state["tenant_id"],
             embedding_client=runtime.context.embeddings,
         )
@@ -226,7 +281,7 @@ async def search_schema_node(
 ) -> GraphState:
     try:
         result = await search_schema(
-            query=_question_for_model(state),
+            query=_query_for_retrieval(state),
             tenant_id=state["tenant_id"],
             embedding_client=runtime.context.embeddings,
             table_names=state.get("table_names") or None,
@@ -260,13 +315,14 @@ async def generate_sql_node(
     try:
         sql = await generate_sql(
             question=_question_for_model(state),
-            intent=state.get("intent"),
+            intent=state.get("planned_intent") or state.get("intent"),
             metrics_result=state.get("metrics_result", {}),
             schema_result=state.get("schema_result", {}),
             retry_feedback=state.get("retry_feedback"),
             tenant_id=state["tenant_id"],
             conversation_history=state.get("conversation_history", []),
             user_memories=state.get("user_memories", []),
+            plan_context=state.get("plan_context"),
             llm=runtime.context.llm,
         )
         return {
@@ -411,7 +467,7 @@ async def persist_memory_node(
 
 
 async def finalize_node(state: GraphState) -> OutputState:
-    intent = state.get("intent")
+    intent = state.get("planned_intent") or state.get("intent")
     sql = state.get("validated_sql", "")
     return {
         "ok": _state_ok(state),

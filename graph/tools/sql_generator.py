@@ -30,6 +30,7 @@ async def generate_sql(
     tenant_id: str = "admin",
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
+    plan_context: str | None = None,
     llm: LLMProtocol,
     max_output_tokens: int = 2048,
 ) -> str:
@@ -45,6 +46,7 @@ async def generate_sql(
         tenant_id=tenant_id,
         conversation_history=conversation_history or [],
         user_memories=user_memories or [],
+        plan_context=plan_context,
     )
     raw = await llm.complete(
         prompt=prompt,
@@ -64,6 +66,7 @@ def build_sql_prompt(
     tenant_id: str = "admin",
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
+    plan_context: str | None = None,
 ) -> str:
     metrics_content = "\n\n".join(
         format_metrics_context(metric)
@@ -95,6 +98,8 @@ filters: {intent.filters}
 [SCHEMA CONTEXT]
 {schema_content}
 """.strip()
+    if plan_context:
+        prompt += f"\n\n[PLAN DSL]\n{plan_context}"
     if tenant_scope_content:
         prompt += f"\n\n[TENANT SCOPE]\n{tenant_scope_content}"
     if conversation_content:
