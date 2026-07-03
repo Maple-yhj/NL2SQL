@@ -26,6 +26,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["langgraph-cli[inmem]>=0.4"]
+memory = ["graphiti-core>=0.19"]
 
 [tool.setuptools.packages.find]
 include = ["api*", "catalog*", "core*", "db*", "engine*", "graph*", "rag*"]

@@ -36,6 +36,8 @@ class GraphStateTests(unittest.TestCase):
             "user_id",
             "conversation_history",
             "user_memories",
+            "data_memories",
+            "pending_memory_updates",
             "contextualized_question",
             "trace",
         ):
@@ -61,6 +63,7 @@ class GraphStateTests(unittest.TestCase):
                     "answer",
                     "error",
                     "trace",
+                    "pending_memory_updates",
                 }
             ),
         )

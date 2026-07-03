@@ -71,6 +71,26 @@ JWT_ISSUER=nl2sql-api
 JWT_AUDIENCE=nl2sql-client
 ```
 
+### Optional Data Agent Memory
+
+The project keeps conversation history in `MEMORY_DATABASE_URL`. Data Agent memory is a separate optional layer for durable metric corrections, table guidance, default filters, and user-specific analysis preferences.
+
+By default it is disabled and the graph uses `NullDataMemoryStore`, so existing behavior is unchanged. To enable Graphiti-backed temporal graph memory, install the optional dependency and configure Neo4j:
+
+```powershell
+pip install -e ".[memory]"
+```
+
+```env
+DATA_MEMORY_PROVIDER=graphiti
+GRAPHITI_NEO4J_URI=bolt://localhost:7687
+GRAPHITI_NEO4J_USER=neo4j
+GRAPHITI_NEO4J_PASSWORD=replace-with-password
+GRAPHITI_TELEMETRY_ENABLED=false
+```
+
+Memory namespaces are scoped by tenant and then by global/user/conversation group id, for example `tenant:demo:user:user-1`. The first implementation recalls scoped memories before intent parsing and SQL generation, and only returns `pending_memory_updates` for explicit user instructions such as `remember: GMV excludes refunds`; it does not auto-promote global memory.
+
 说明：
 
 - `DATABASE_URL` 是被查询的业务数据库。

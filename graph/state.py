@@ -34,12 +34,15 @@ class OutputState(TypedDict):
     answer: str
     error: str
     trace: list[dict[str, Any]]
+    pending_memory_updates: list[dict[str, Any]]
 
 
 class GraphOptionalState(TypedDict, total=False):
     contextualized_question: str
     conversation_history: list[dict[str, Any]]
     user_memories: list[dict[str, Any]]
+    data_memories: list[dict[str, Any]]
+    pending_memory_updates: list[dict[str, Any]]
     intent: QueryIntent
     plan: dict[str, Any]
     execution_graph: dict[str, Any]

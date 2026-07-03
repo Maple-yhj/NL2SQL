@@ -14,6 +14,7 @@ from engine.plan_models import (
 )
 from engine.planner import plan_query
 from graph.context import GraphContext
+from graph.data_memory import data_memory_to_dict, extract_pending_memory_updates
 from graph.message_type import classify_message_type
 from graph.state import GraphState, OutputState
 from graph.tools.contextualize_question import contextualize_question
@@ -131,6 +132,8 @@ async def initialize_node(state: GraphState) -> GraphState:
         "contextualized_question": question,
         "conversation_history": [],
         "user_memories": [],
+        "data_memories": [],
+        "pending_memory_updates": [],
         "validation_attempts": 0,
         "rows": [],
         "answer": "",
@@ -202,6 +205,35 @@ async def contextualize_question_node(
         return {
             "contextualized_question": state["question"],
             "trace": _trace(state, "contextualize_question", ok=False, message=str(exc)),
+        } # type: ignore
+
+
+async def recall_data_memory_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    try:
+        memories = await runtime.context.data_memory_store.search(
+            tenant_id=state["tenant_id"],
+            user_id=state.get("user_id", ""),
+            conversation_id=state.get("conversation_id", ""),
+            query=_question_for_model(state),
+            limit=runtime.context.data_memory_recall_limit,
+        )
+        data_memories = [data_memory_to_dict(memory) for memory in memories]
+        return {
+            "data_memories": data_memories,
+            "trace": _trace(
+                state,
+                "recall_data_memory",
+                ok=True,
+                message=f"loaded {len(data_memories)} data memory item(s)",
+            ),
+        } # type: ignore
+    except Exception as exc:
+        return {
+            "data_memories": [],
+            "trace": _trace(state, "recall_data_memory", ok=False, message=str(exc)),
         } # type: ignore
 
 
@@ -322,6 +354,7 @@ async def generate_sql_node(
             tenant_id=state["tenant_id"],
             conversation_history=state.get("conversation_history", []),
             user_memories=state.get("user_memories", []),
+            data_memories=state.get("data_memories", []),
             plan_context=state.get("plan_context"),
             llm=runtime.context.llm,
         )
@@ -466,6 +499,34 @@ async def persist_memory_node(
         } # type: ignore
 
 
+async def propose_memory_updates_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    try:
+        updates = extract_pending_memory_updates(
+            question=state.get("question", ""),
+            contextualized_question=_question_for_model(state),
+            sql=state.get("validated_sql", ""),
+            answer=state.get("answer", ""),
+            error=state.get("error", ""),
+        )
+        return {
+            "pending_memory_updates": updates,
+            "trace": _trace(
+                state,
+                "propose_memory_updates",
+                ok=True,
+                message=f"proposed {len(updates)} memory update(s)",
+            ),
+        } # type: ignore
+    except Exception as exc:
+        return {
+            "pending_memory_updates": [],
+            "trace": _trace(state, "propose_memory_updates", ok=False, message=str(exc)),
+        } # type: ignore
+
+
 async def finalize_node(state: GraphState) -> OutputState:
     intent = state.get("planned_intent") or state.get("intent")
     sql = state.get("validated_sql", "")
@@ -483,4 +544,5 @@ async def finalize_node(state: GraphState) -> OutputState:
         "answer": state.get("answer", ""),
         "error": state.get("error", ""),
         "trace": state.get("trace", []),
+        "pending_memory_updates": state.get("pending_memory_updates", []),
     }

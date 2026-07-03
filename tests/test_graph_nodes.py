@@ -4,6 +4,7 @@ from unittest import mock
 
 from engine.models import QueryIntent
 from graph.context import GraphContext
+from graph.data_memory import DataMemory
 from graph import node
 
 
@@ -160,6 +161,42 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["contextualized_question"], "show gmv by region")
         contextualizer.assert_awaited_once()
 
+    async def test_recall_data_memory_reads_scoped_data_memory(self):
+        class Store:
+            async def search(self, **kwargs):
+                self.kwargs = kwargs
+                return [
+                    DataMemory(
+                        text="Use net GMV after refunds.",
+                        scope="global",
+                        source="approved",
+                    )
+                ]
+
+            async def add_episode(self, **kwargs):
+                pass
+
+        store = Store()
+        rt = runtime(data_memory_store=store, data_memory_recall_limit=3)
+
+        result = await node.recall_data_memory_node(
+            {
+                "question": "gmv trend",
+                "contextualized_question": "gmv trend",
+                "tenant_id": "demo",
+                "execute": False,
+                "conversation_id": "conv-1",
+                "user_id": "user-1",
+                "trace": [],
+            },
+            rt,
+        )
+
+        self.assertEqual(result["data_memories"][0]["text"], "Use net GMV after refunds.")
+        self.assertEqual(result["data_memories"][0]["scope"], "global")
+        self.assertEqual(store.kwargs["tenant_id"], "demo")
+        self.assertEqual(store.kwargs["limit"], 3)
+
     async def test_persist_memory_saves_turn_without_affecting_result(self):
         class Store:
             async def create_conversation(self, **kwargs):
@@ -208,6 +245,29 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.kwargs["conversation_id"], "conv-1")
         self.assertEqual(store.kwargs["sql"], "SELECT 1")
         self.assertEqual(result["trace"][-1]["node"], "persist_memory")
+
+    async def test_propose_memory_updates_exposes_pending_updates_without_writing(self):
+        rt = runtime()
+
+        result = await node.propose_memory_updates_node(
+            {
+                "question": "remember: GMV excludes refunded orders by default",
+                "contextualized_question": "remember: GMV excludes refunded orders by default",
+                "tenant_id": "demo",
+                "execute": False,
+                "conversation_id": "conv-1",
+                "user_id": "user-1",
+                "validated_sql": "SELECT 1",
+                "answer": "",
+                "error": "",
+                "trace": [],
+            },
+            rt,
+        )
+
+        self.assertEqual(result["pending_memory_updates"][0]["scope"], "user")
+        self.assertIn("GMV excludes refunded orders", result["pending_memory_updates"][0]["text"])
+        self.assertEqual(result["trace"][-1]["node"], "propose_memory_updates")
 
     async def test_metric_search_derives_schema_table_scope(self):
         metrics_result = {
@@ -401,6 +461,7 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
                 "answer": "",
                 "error": "",
                 "trace": [{"node": "validate_sql", "ok": True}],
+                "pending_memory_updates": [],
             },
         )
 

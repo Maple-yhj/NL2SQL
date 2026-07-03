@@ -105,6 +105,7 @@ class Nl2SqlResponse(BaseModel):
     answer: str
     error: str
     trace: list[dict[str, Any]]
+    pending_memory_updates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ConversationCreateRequest(BaseModel):
@@ -199,6 +200,7 @@ class ConversationNl2SqlResponse(BaseModel):
     answer: str
     error: str
     trace: list[dict[str, Any]]
+    pending_memory_updates: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ErrorResponse(BaseModel):

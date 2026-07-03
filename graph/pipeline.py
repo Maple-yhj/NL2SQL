@@ -12,6 +12,7 @@ load_project_environment()
 from core.embeddings import EmbeddingClientProtocol, create_embedding_client
 from core.llm import LLMProtocol, create_llm
 from graph.context import GraphContext
+from graph.data_memory import DataMemoryStoreProtocol, create_data_memory_store
 from graph.memory_store import ConversationStoreProtocol, create_conversation_store
 from graph.node import (
     contextualize_question_node,
@@ -24,6 +25,8 @@ from graph.node import (
     parse_intent_node,
     plan_query_node,
     persist_memory_node,
+    propose_memory_updates_node,
+    recall_data_memory_node,
     search_metrics_node,
     search_schema_node,
     validate_sql_node,
@@ -67,6 +70,7 @@ def build_graph():
     builder.add_node("initialize", initialize_node)
     builder.add_node("load_memory", load_memory_node)
     builder.add_node("contextualize_question", contextualize_question_node)
+    builder.add_node("recall_data_memory", recall_data_memory_node)
     builder.add_node("parse_intent", parse_intent_node)
     builder.add_node("plan_query", plan_query_node)
     builder.add_node("search_metrics", search_metrics_node)
@@ -76,6 +80,7 @@ def build_graph():
     builder.add_node("execute_sql", execute_sql_node)
     builder.add_node("explain", explain_node)
     builder.add_node("persist_memory", persist_memory_node)
+    builder.add_node("propose_memory_updates", propose_memory_updates_node)
     builder.add_node("finalize", finalize_node)
 
     builder.add_edge(START, "initialize")
@@ -87,6 +92,11 @@ def build_graph():
     builder.add_edge("load_memory", "contextualize_question")
     builder.add_conditional_edges(
         "contextualize_question",
+        partial(_route_next, next_node="recall_data_memory"),
+        ["recall_data_memory", "persist_memory"],
+    )
+    builder.add_conditional_edges(
+        "recall_data_memory",
         partial(_route_next, next_node="parse_intent"),
         ["parse_intent", "persist_memory"],
     )
@@ -126,7 +136,8 @@ def build_graph():
         ["explain", "persist_memory"],
     )
     builder.add_edge("explain", "persist_memory")
-    builder.add_edge("persist_memory", "finalize")
+    builder.add_edge("persist_memory", "propose_memory_updates")
+    builder.add_edge("propose_memory_updates", "finalize")
     builder.add_edge("finalize", END)
     return builder.compile()
 
@@ -144,8 +155,11 @@ async def run_nl2sql(
     llm: LLMProtocol | None = None,
     embeddings: EmbeddingClientProtocol | None = None,
     memory_store: ConversationStoreProtocol | None = None,
+    data_memory_store: DataMemoryStoreProtocol | None = None,
     dsn: str | None = None,
     memory_dsn: str | None = None,
+    data_memory_provider: str = "",
+    data_memory_recall_limit: int = 5,
     timeout_ms: int = 10_000,
     max_limit: int = 1000,
     max_validation_attempts: int = 2,
@@ -155,12 +169,17 @@ async def run_nl2sql(
         raise ValueError("max_validation_attempts must be positive")
     if memory_history_limit < 0:
         raise ValueError("memory_history_limit must be non-negative")
+    if data_memory_recall_limit < 0:
+        raise ValueError("data_memory_recall_limit must be non-negative")
     context = GraphContext(
         llm=llm or create_llm(),
         embeddings=embeddings or create_embedding_client(),
         memory_store=memory_store or create_conversation_store(memory_dsn),
+        data_memory_store=data_memory_store or create_data_memory_store(),
         dsn=dsn,
         memory_dsn=memory_dsn,
+        data_memory_provider=data_memory_provider,
+        data_memory_recall_limit=data_memory_recall_limit,
         timeout_ms=timeout_ms,
         max_limit=max_limit,
         max_validation_attempts=max_validation_attempts,

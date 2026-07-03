@@ -3,6 +3,7 @@ from unittest import mock
 
 from engine.models import QueryIntent
 from graph import node, pipeline
+from graph.data_memory import DataMemory
 from graph.memory_store import InMemoryConversationStore
 
 
@@ -49,6 +50,49 @@ def valid_sql():
 
 
 class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
+    async def test_data_memory_is_recalled_before_intent_and_sql_generation(self):
+        class Store:
+            async def search(self, **kwargs):
+                return [
+                    DataMemory(
+                        text="Use orders table for GMV.",
+                        scope="global",
+                        source="approved",
+                    )
+                ]
+
+            async def add_episode(self, **kwargs):
+                pass
+
+        with mock.patch.object(
+            node, "parse_intent", new=mock.AsyncMock(return_value=QueryIntent(metrics=["gmv"]))
+        ), mock.patch.object(
+            node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result())
+        ), mock.patch.object(
+            node, "search_schema", new=mock.AsyncMock(return_value=schema_result())
+        ), mock.patch.object(
+            node, "generate_sql", new=mock.AsyncMock(return_value="SELECT amount FROM orders")
+        ) as generator, mock.patch.object(
+            node, "validate_sql", new=mock.AsyncMock(return_value=valid_sql())
+        ):
+            result = await pipeline.run_nl2sql(
+                "show gmv",
+                tenant_id="demo",
+                conversation_id="conv-1",
+                user_id="user-1",
+                llm=FakeLLM(),
+                embeddings=FakeEmbeddings(),
+                data_memory_store=Store(),
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            generator.await_args.kwargs["data_memories"][0]["text"],
+            "Use orders table for GMV.",
+        )
+        trace_nodes = [item["node"] for item in result["trace"]]
+        self.assertLess(trace_nodes.index("recall_data_memory"), trace_nodes.index("parse_intent"))
+
     async def test_non_execute_flow_returns_validated_sql(self):
         with mock.patch.object(
             node, "parse_intent", new=mock.AsyncMock(return_value=QueryIntent(metrics=["gmv"]))
@@ -75,6 +119,7 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
                 "initialize",
                 "load_memory",
                 "contextualize_question",
+                "recall_data_memory",
                 "parse_intent",
                 "plan_query",
                 "search_metrics",
@@ -82,8 +127,31 @@ class GraphPipelineTests(unittest.IsolatedAsyncioTestCase):
                 "generate_sql",
                 "validate_sql",
                 "persist_memory",
+                "propose_memory_updates",
             ],
         )
+
+    async def test_pipeline_proposes_pending_memory_updates_before_finalize(self):
+        with mock.patch.object(
+            node, "parse_intent", new=mock.AsyncMock(return_value=QueryIntent(metrics=["gmv"]))
+        ), mock.patch.object(
+            node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result())
+        ), mock.patch.object(
+            node, "search_schema", new=mock.AsyncMock(return_value=schema_result())
+        ), mock.patch.object(
+            node, "generate_sql", new=mock.AsyncMock(return_value="SELECT amount FROM orders")
+        ), mock.patch.object(
+            node, "validate_sql", new=mock.AsyncMock(return_value=valid_sql())
+        ):
+            result = await pipeline.run_nl2sql(
+                "remember: GMV excludes refunded orders by default",
+                llm=FakeLLM(),
+                embeddings=FakeEmbeddings(),
+            )
+
+        self.assertEqual(result["pending_memory_updates"][0]["scope"], "user")
+        trace_nodes = [item["node"] for item in result["trace"]]
+        self.assertLess(trace_nodes.index("persist_memory"), trace_nodes.index("propose_memory_updates"))
 
     async def test_validation_failure_regenerates_sql(self):
         invalid = {

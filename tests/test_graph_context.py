@@ -3,6 +3,7 @@ from unittest import mock
 
 from graph import context as context_module
 from graph.context import GraphContext
+from graph.data_memory import NullDataMemoryStore
 from graph.pipeline import graph
 
 
@@ -35,6 +36,8 @@ class GraphContextTests(unittest.TestCase):
                 "max_validation_attempts",
                 "memory_history_limit",
                 "memory_dsn",
+                "data_memory_provider",
+                "data_memory_recall_limit",
             },
         )
 
@@ -42,6 +45,7 @@ class GraphContextTests(unittest.TestCase):
         schema = graph.get_context_jsonschema()
 
         self.assertNotIn("memory_store", schema["properties"])
+        self.assertNotIn("data_memory_store", schema["properties"])
 
     def test_graph_context_uses_memory_dsn_for_default_memory_store(self):
         context = GraphContext(
@@ -87,6 +91,16 @@ class GraphContextTests(unittest.TestCase):
 
         self.assertIs(context.llm, llm)
         self.assertIs(context.embeddings, embeddings)
+
+    def test_graph_context_preserves_explicit_data_memory_store(self):
+        store = NullDataMemoryStore()
+        context = GraphContext(
+            llm=FakeLLM(),
+            embeddings=FakeEmbeddings(),
+            data_memory_store=store,
+        )
+
+        self.assertIs(context.data_memory_store, store)
 
 
 if __name__ == "__main__":

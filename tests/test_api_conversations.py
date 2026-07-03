@@ -46,6 +46,7 @@ def graph_output(**overrides):
         "answer": "",
         "error": "",
         "trace": [{"node": "initialize", "ok": True, "message": "success"}],
+        "pending_memory_updates": [],
     }
     output.update(overrides)
     return output
@@ -300,6 +301,44 @@ class ApiConversationTests(unittest.TestCase):
             memory_history_limit=6,
             memory_store=store,
         )
+
+    def test_post_message_response_includes_pending_memory_updates(self):
+        client = TestClient(create_app())
+        store = InMemoryConversationStore()
+
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ), mock.patch(
+            "api.routes.run_nl2sql",
+            new=mock.AsyncMock(
+                return_value=graph_output(
+                    pending_memory_updates=[
+                        {
+                            "scope": "user",
+                            "text": "GMV excludes refunds.",
+                            "source": "explicit_user_instruction",
+                        }
+                    ]
+                )
+            ),
+        ):
+            created = client.post(
+                "/api/conversations",
+                headers=auth_headers(),
+                json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
+            ).json()
+            response = client.post(
+                f"/api/conversations/{created['conversation_id']}/messages",
+                headers=auth_headers(),
+                json={
+                    "tenant_id": "demo",
+                    "user_id": "user-1",
+                    "question": "remember: GMV excludes refunds",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["pending_memory_updates"][0]["scope"], "user")
 
     def test_post_message_rejects_unknown_conversation(self):
         client = TestClient(create_app())

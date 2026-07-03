@@ -66,6 +66,25 @@ class SqlGeneratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("show gmv last month", prompt)
         self.assertIn("preferred_region: 华东", prompt)
 
+    def test_prompt_includes_data_agent_memory_context(self):
+        prompt = build_sql_prompt(
+            question="show gmv",
+            intent=QueryIntent(metrics=["gmv"]),
+            metrics_result={"metrics": []},
+            schema_result={"schema": []},
+            retry_feedback=None,
+            data_memories=[
+                {
+                    "text": "Use net GMV after refunds.",
+                    "scope": "global",
+                    "source": "approved",
+                }
+            ],
+        )
+
+        self.assertIn("[DATA AGENT MEMORY]", prompt)
+        self.assertIn("Use net GMV after refunds.", prompt)
+
     def test_prompt_includes_seller_scope_for_non_admin_tenant(self):
         prompt = build_sql_prompt(
             question="show my gmv",

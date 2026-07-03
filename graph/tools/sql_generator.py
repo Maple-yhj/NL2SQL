@@ -5,6 +5,7 @@ from typing import Any
 
 from core.llm import LLMProtocol
 from engine.models import QueryIntent
+from graph.data_memory import format_data_memories
 from graph.tools.tenant_scope import format_tenant_scope_context
 
 
@@ -30,6 +31,7 @@ async def generate_sql(
     tenant_id: str = "admin",
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
+    data_memories: list[dict[str, Any]] | None = None,
     plan_context: str | None = None,
     llm: LLMProtocol,
     max_output_tokens: int = 2048,
@@ -46,6 +48,7 @@ async def generate_sql(
         tenant_id=tenant_id,
         conversation_history=conversation_history or [],
         user_memories=user_memories or [],
+        data_memories=data_memories or [],
         plan_context=plan_context,
     )
     raw = await llm.complete(
@@ -66,6 +69,7 @@ def build_sql_prompt(
     tenant_id: str = "admin",
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
+    data_memories: list[dict[str, Any]] | None = None,
     plan_context: str | None = None,
 ) -> str:
     metrics_content = "\n\n".join(
@@ -80,6 +84,7 @@ def build_sql_prompt(
         conversation_history or [],
         user_memories or [],
     )
+    data_memory_content = format_data_memories(data_memories or [])
     tenant_scope_content = format_tenant_scope_context(tenant_id)
 
     prompt = f"""
@@ -102,6 +107,8 @@ filters: {intent.filters}
         prompt += f"\n\n[PLAN DSL]\n{plan_context}"
     if tenant_scope_content:
         prompt += f"\n\n[TENANT SCOPE]\n{tenant_scope_content}"
+    if data_memory_content:
+        prompt += f"\n\n[DATA AGENT MEMORY]\n{data_memory_content}"
     if conversation_content:
         prompt += f"\n\n[CONVERSATION CONTEXT]\n{conversation_content}"
     if retry_feedback:
