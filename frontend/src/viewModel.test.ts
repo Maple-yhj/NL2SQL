@@ -34,14 +34,17 @@ describe("createAssistantViewModel", () => {
     expect(viewModel.showSqlCard).toBe(false);
   });
 
-  it("keeps row data hidden when the backend returns a text message", () => {
+  it("shows table data when a text response still returns multiple rows", () => {
     const message: ChatMessage = {
       id: "assistant-2",
       role: "assistant",
-      content: "East leads with 1.28M GMV.",
+      content: "Average payment amount by credit-card installments.",
       metadata: {
-        rows: [{ region: "East", gmv: "1.28M" }],
-        answer: "East leads with 1.28M GMV.",
+        rows: [
+          { payment_installments: 1, avg_payment_amount: 104.1 },
+          { payment_installments: 2, avg_payment_amount: 138.84 },
+        ],
+        answer: "Average payment amount by credit-card installments.",
         message_type: "text",
         ok: true,
         error: "",
@@ -51,8 +54,12 @@ describe("createAssistantViewModel", () => {
 
     const viewModel = createAssistantViewModel(message);
 
-    expect(viewModel.rows).toEqual([{ region: "East", gmv: "1.28M" }]);
-    expect(viewModel.showTable).toBe(false);
+    expect(viewModel.rows).toEqual([
+      { payment_installments: 1, avg_payment_amount: 104.1 },
+      { payment_installments: 2, avg_payment_amount: 138.84 },
+    ]);
+    expect(viewModel.messageType).toBe("table");
+    expect(viewModel.showTable).toBe(true);
   });
 
   it("restores table display for legacy assistant history with detail rows but no message type", () => {

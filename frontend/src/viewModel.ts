@@ -79,14 +79,14 @@ function resolveMessageType(
   error?: string,
   rows: DataRow[] = [],
 ): MessageType {
-  if (messageType) {
-    return messageType;
-  }
   if (error) {
     return "error";
   }
   if (rows.some(isLikelyDetailRow) || rows.length > 1) {
     return "table";
+  }
+  if (messageType) {
+    return messageType;
   }
   return "text";
 }

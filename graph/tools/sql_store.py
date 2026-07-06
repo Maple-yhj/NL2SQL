@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
+from catalog.loader import DEFAULT_CATALOG_PATH, load_schema_catalog
 from core.embeddings import EmbeddingClientProtocol
 from rag.vector_store import search_semantic_index
 from graph.tools.tenant_scope import catalog_tenant_id
@@ -131,6 +134,11 @@ async def search_schema(
         if existing is None or existing.get("score", 0) < hit.similarity:
             columns[column_name] = column
 
+    _complete_schema_from_catalog(
+        schema_by_table,
+        table_names=table_names or list(schema_by_table),
+    )
+
     for table_entry in schema_by_table.values():
         columns = table_entry["columns"]
         table_entry["columns"] = sorted(
@@ -150,4 +158,55 @@ async def search_schema(
         "tenant_id": tenant_id,
         "schema": schema,
         "message": "success" if schema else "No matching schema found.",
+    }
+
+
+def _complete_schema_from_catalog(
+    schema_by_table: dict[str, dict[str, Any]],
+    *,
+    table_names: list[str],
+) -> None:
+    if not table_names:
+        return
+    catalog = _schema_catalog_by_table()
+    for table_name in table_names:
+        catalog_entry = catalog.get(table_name)
+        if not catalog_entry:
+            continue
+        table_entry = schema_by_table.setdefault(
+            table_name,
+            {
+                "table_name": table_name,
+                "table_comment": catalog_entry.get("comment", ""),
+                "score": 0.0,
+                "columns": {},
+            },
+        )
+        if not table_entry.get("table_comment"):
+            table_entry["table_comment"] = catalog_entry.get("comment", "")
+        columns = table_entry["columns"]
+        for column in catalog_entry.get("columns", []) or []:
+            column_name = column.get("name")
+            if not column_name or column_name in columns:
+                continue
+            columns[column_name] = {
+                "column_name": column_name,
+                "data_type": column.get("type"),
+                "nullable": column.get("nullable"),
+                "default": column.get("default"),
+                "comment": column.get("comment", ""),
+                "sample_values": column.get("sample_values", []),
+                "score": 0.0,
+            }
+
+
+@lru_cache(maxsize=1)
+def _schema_catalog_by_table() -> dict[str, dict[str, Any]]:
+    path = Path(DEFAULT_CATALOG_PATH)
+    if not path.exists():
+        return {}
+    return {
+        str(entry.get("table")): entry
+        for entry in load_schema_catalog(path)
+        if entry.get("table")
     }

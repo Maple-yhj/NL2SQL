@@ -10,6 +10,7 @@ You rewrite follow-up BI questions into standalone questions for an NL2SQL engin
 Return only the rewritten question.
 Use conversation context and user memories when they clarify omitted metric, time range,
 dimension, filter, tenant-specific naming, or business preference.
+Preserve the previous time grain when a follow-up only adds or changes a breakdown dimension.
 If the current question is already standalone, return it unchanged.
 Do not answer the question and do not generate SQL.
 """.strip()
@@ -36,7 +37,11 @@ async def contextualize_question(
         system=CONTEXTUALIZE_SYSTEM,
         max_output_tokens=max_output_tokens,
     )
-    return rewritten.strip() or question
+    return _preserve_previous_month_grain(
+        question=question,
+        conversation_history=conversation_history,
+        rewritten=rewritten.strip() or question,
+    )
 
 
 def build_contextualization_prompt(
@@ -75,3 +80,43 @@ def _format_user_memory(item: dict[str, Any]) -> str:
     if not key:
         return value
     return f"{key}: {value}"
+
+
+def _preserve_previous_month_grain(
+    *,
+    question: str,
+    conversation_history: list[dict[str, Any]],
+    rewritten: str,
+) -> str:
+    if _mentions_month(rewritten) or not _history_mentions_month_grain(conversation_history):
+        return rewritten
+    if not _looks_like_breakdown_follow_up(question, rewritten):
+        return rewritten
+    if _mentions_customer_state(question) or _mentions_customer_state(rewritten):
+        return rewritten.replace("按客户州", "按月份和客户州")
+    return f"{rewritten}，保留月份维度"
+
+
+def _history_mentions_month_grain(conversation_history: list[dict[str, Any]]) -> bool:
+    for item in conversation_history:
+        content = str(item.get("content") or "")
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        sql = str(metadata.get("sql") or "")
+        if _mentions_month(content) or "date_trunc('month'" in sql.casefold():
+            return True
+    return False
+
+
+def _looks_like_breakdown_follow_up(question: str, rewritten: str) -> bool:
+    text = f"{question}\n{rewritten}".casefold()
+    return any(marker in text for marker in ("按", "拆", "breakdown", "by "))
+
+
+def _mentions_month(value: str) -> bool:
+    text = str(value or "").casefold()
+    return any(marker in text for marker in ("月份", "每月", "月度", "month", "monthly"))
+
+
+def _mentions_customer_state(value: str) -> bool:
+    text = str(value or "").casefold()
+    return any(marker in text for marker in ("客户州", "customer_state", "customer state"))

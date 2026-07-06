@@ -91,7 +91,18 @@ async def validate_sql(
             _violation("not_readonly", "DDL, DML, and mutation statements are not allowed.")
         )
 
-    tables = sorted({table.name for table in expression.find_all(exp.Table)})
+    cte_names = {
+        str(cte.alias or "").casefold()
+        for cte in expression.find_all(exp.CTE)
+        if cte.alias
+    }
+    tables = sorted(
+        {
+            table.name
+            for table in expression.find_all(exp.Table)
+            if table.name.casefold() not in cte_names
+        }
+    )
     result["tables"] = tables
 
     allowed = {table.lower() for table in allowed_tables}

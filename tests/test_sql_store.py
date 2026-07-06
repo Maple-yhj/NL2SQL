@@ -64,6 +64,33 @@ class SqlStoreTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["schema"][0]["columns"][0]["column_name"], "amount")
 
     @mock.patch("graph.tools.sql_store.search_semantic_index")
+    async def test_search_schema_completes_selected_olist_table_columns_from_catalog(self, search):
+        search.return_value = [
+            SimpleNamespace(
+                object_type="table",
+                similarity=0.8,
+                metadata={
+                    "table_name": "olist_order_items_dataset",
+                    "comment": "Order item rows",
+                },
+            )
+        ]
+
+        result = await search_schema(
+            "show olist gmv",
+            "admin",
+            FakeEmbeddings(),
+            table_names=["olist_order_items_dataset"],
+        )
+
+        columns = {
+            item["column_name"] for item in result["schema"][0]["columns"]
+        }
+        self.assertIn("price", columns)
+        self.assertIn("freight_value", columns)
+        self.assertIn("shipping_limit_date", columns)
+
+    @mock.patch("graph.tools.sql_store.search_semantic_index")
     async def test_search_schema_uses_admin_catalog_for_seller_tenant(self, search):
         search.return_value = []
 

@@ -28,6 +28,18 @@ _GENERIC_LIST_TERMS = (
     "list",
 )
 
+_DOMAIN_DETAIL_TERMS = (
+    "\u652f\u4ed8\u8bb0\u5f55",
+    "\u652f\u4ed8\u660e\u7ec6",
+    "\u5546\u54c1 id",
+    "\u5546\u54c1id",
+    "\u957f\u5bbd\u9ad8",
+    "\u91cd\u91cf",
+    "payment record",
+    "payment detail",
+    "product_id",
+)
+
 _SUMMARY_TERMS = (
     "\u591a\u5c11",
     "\u603b\u8ba1",
@@ -57,7 +69,12 @@ _SUMMARY_TERMS = (
 
 _AGGREGATE_SQL_RE = re.compile(r"\b(sum|count|avg|min|max)\s*\(|\bgroup\s+by\b", re.IGNORECASE)
 _DETAIL_COLUMN_RE = re.compile(
-    r"\b(order_id|customer_id|created_at|updated_at|amount|status)\b",
+    r"\b("
+    r"order_id|customer_id|created_at|updated_at|amount|status|"
+    r"product_id|product_category_name|product_length_cm|product_width_cm|"
+    r"product_height_cm|product_weight_g|payment_type|payment_value|"
+    r"payment_installments|payment_sequential|review_id|review_comment_message"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -79,6 +96,8 @@ def classify_message_type(
 
     prompt = f"{question} {contextualized_question}".lower()
     if _contains_any(prompt, _STRONG_DETAIL_TERMS):
+        return "table"
+    if _contains_any(prompt, _DOMAIN_DETAIL_TERMS):
         return "table"
     if _contains_any(prompt, _SUMMARY_TERMS):
         return "text"

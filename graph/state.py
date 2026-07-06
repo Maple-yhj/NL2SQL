@@ -48,6 +48,8 @@ class GraphOptionalState(TypedDict, total=False):
     execution_graph: dict[str, Any]
     planned_intent: QueryIntent
     plan_context: str
+    domain_context: str
+    domain_constraints: dict[str, Any]
     metrics_result: dict[str, Any]
     schema_result: dict[str, Any]
     table_names: list[str]

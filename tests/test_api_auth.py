@@ -380,6 +380,17 @@ class CreateAuthUserScriptTests(unittest.TestCase):
         self.assertNotEqual(payload["password_hash"], "secret")
         self.assertTrue(verify_password("secret", payload["password_hash"]))
 
+    def test_olist_eval_seller_seed_payload_uses_documented_login(self):
+        from scripts.seed_olist_eval_auth import build_olist_eval_seller_payload
+
+        payload = build_olist_eval_seller_payload()
+
+        self.assertEqual(payload["tenant_id"], "3442f8959a84dea7ee197c632cb2df15")
+        self.assertEqual(payload["user_id"], "olist-seller-3442f8959a84dea7ee197c632cb2df15")
+        self.assertEqual(payload["username"], "yehj")
+        self.assertEqual(payload["roles"], ["user"])
+        self.assertTrue(verify_password("0708", payload["password_hash"]))
+
 
 if __name__ == "__main__":
     unittest.main()

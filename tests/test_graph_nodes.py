@@ -300,6 +300,46 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
             embedding_client=rt.context.embeddings,
         )
 
+    async def test_metric_search_extends_olist_schema_scope_from_domain_profile(self):
+        metrics_result = {
+            "ok": True,
+            "metrics": [
+                {
+                    "metric_name": "gmv",
+                    "base_table": "olist_order_items_dataset",
+                    "join_tables": [],
+                }
+            ],
+        }
+        rt = runtime()
+        with mock.patch.object(
+            node, "search_metrics", new=mock.AsyncMock(return_value=metrics_result)
+        ):
+            result = await node.search_metrics_node(
+                {
+                    "question": "按客户州统计 2018 年 GMV",
+                    "tenant_id": "admin",
+                    "execute": False,
+                    "intent": QueryIntent(metrics=["gmv"], dimensions=["customer_state"]),
+                    "plan": {
+                        "analysis_type": "multi_dimensional",
+                        "metrics": [{"name": "gmv"}],
+                        "dimensions": [{"name": "customer_state"}],
+                    },
+                },
+                rt,
+            )
+
+        self.assertEqual(
+            result["table_names"],
+            [
+                "olist_order_items_dataset",
+                "olist_orders_dataset",
+                "olist_customers_dataset",
+            ],
+        )
+        self.assertIn("DOMAIN: OList E-Commerce", result["domain_context"])
+
     async def test_schema_search_sets_allowed_tables(self):
         result_payload = {
             "ok": True,
@@ -353,6 +393,55 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["rows"], [])
         self.assertIn("SELECT * FROM users", result["retry_feedback"])
         self.assertIn("table_not_allowed", result["retry_feedback"])
+
+    async def test_validation_failure_applies_domain_constraints_after_safe_sql_check(self):
+        rt = runtime()
+        state = {
+            "question": "customers by state and city count",
+            "tenant_id": "admin",
+            "execute": False,
+            "candidate_sql": (
+                "SELECT 'state' AS state, 'city' AS city, "
+                "COUNT(DISTINCT olist_order_items_dataset.order_id) AS customer_count "
+                "FROM olist_order_items_dataset "
+                "JOIN olist_order_reviews_dataset "
+                "ON olist_order_items_dataset.order_id = olist_order_reviews_dataset.order_id "
+                "GROUP BY state, city "
+                "ORDER BY customer_count DESC "
+                "LIMIT 20"
+            ),
+            "allowed_tables": [
+                "olist_customers_dataset",
+                "olist_order_items_dataset",
+                "olist_order_reviews_dataset",
+            ],
+            "domain_constraints": {
+                "matched_rules": ["customer_count_by_location"],
+                "required_tables": ["olist_customers_dataset"],
+                "required_columns": [
+                    "olist_customers_dataset.customer_state",
+                    "olist_customers_dataset.customer_city",
+                    "olist_customers_dataset.customer_id",
+                ],
+                "required_group_by": ["customer_state", "customer_city"],
+                "required_order_by": ["customer_count DESC"],
+                "required_sql_fragments": ["COUNT(DISTINCT", "customer_id"],
+                "forbidden_tables": [
+                    "olist_order_items_dataset",
+                    "olist_order_reviews_dataset",
+                ],
+            },
+            "validation_attempts": 0,
+            "rows": [{"stale": True}],
+        }
+
+        result = await node.validate_sql_node(state, rt)
+
+        self.assertEqual(result["validation_attempts"], 1)
+        self.assertEqual(result["validated_sql"], "")
+        self.assertFalse(result["validation_result"]["ok"])
+        self.assertIn("domain_forbidden_table", result["retry_feedback"])
+        self.assertIn("olist_customers_dataset", result["retry_feedback"])
 
     async def test_explain_node_uses_table_explanation_for_detail_rows(self):
         rt = runtime()

@@ -45,6 +45,32 @@ class ContextualizeQuestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("show GMV last month", llm.calls[0]["prompt"])
         self.assertIn("Asia/Shanghai", llm.calls[0]["prompt"])
 
+    async def test_preserves_previous_month_grain_when_follow_up_adds_customer_state(self):
+        llm = FakeLLM("2018年GMV按客户州拆分")
+
+        result = await contextualize_question(
+            question="那按客户州拆一下",
+            conversation_history=[
+                {"role": "user", "content": "2018 年 GMV 按月份趋势", "metadata": {}},
+                {
+                    "role": "assistant",
+                    "content": "已按月统计。",
+                    "metadata": {
+                        "sql": (
+                            "SELECT date_trunc('month', shipping_limit_date) AS month, "
+                            "SUM(price + freight_value) AS gmv "
+                            "FROM olist_order_items_dataset GROUP BY month"
+                        )
+                    },
+                },
+            ],
+            user_memories=[],
+            llm=llm,
+        )
+
+        self.assertIn("月份", result)
+        self.assertIn("客户州", result)
+
     def test_prompt_formats_history_and_user_memories(self):
         prompt = build_contextualization_prompt(
             question="那按地区呢",

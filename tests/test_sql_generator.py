@@ -48,6 +48,21 @@ class SqlGeneratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[PLAN DSL]", prompt)
         self.assertIn('"analysis_type":"trend"', prompt)
 
+    def test_prompt_includes_domain_context_when_provided(self):
+        prompt = build_sql_prompt(
+            question="按客户州统计 GMV",
+            intent=QueryIntent(metrics=["gmv"], dimensions=["customer_state"]),
+            metrics_result={"metrics": []},
+            schema_result={"schema": []},
+            retry_feedback=None,
+            domain_context="DOMAIN: OList E-Commerce\nJoin: items -> orders -> customers",
+        )
+
+        self.assertIn("[DOMAIN CONTEXT]", prompt)
+        self.assertIn("OList E-Commerce", prompt)
+        self.assertIn("items -> orders -> customers", prompt)
+        self.assertIn("Treat DOMAIN CONTEXT rules as hard constraints.", prompt)
+
     def test_prompt_includes_conversation_context_and_user_memories(self):
         prompt = build_sql_prompt(
             question="show gmv by region last month",

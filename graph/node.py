@@ -6,6 +6,8 @@ from typing import Any
 
 from langgraph.runtime import Runtime
 
+from catalog.domain_loader import try_load_domain_profile
+from catalog.domain_resolver import format_domain_context, resolve_domain_context
 from engine.intent_parser import parse_intent
 from engine.plan_models import (
     PlanDSL,
@@ -21,6 +23,7 @@ from graph.tools.contextualize_question import contextualize_question
 from graph.tools.execute_sql import execute_sql
 from graph.tools.explain_result import explain_result
 from graph.tools.explain_table_result import explain_table_result
+from graph.tools.domain_sql_validator import validate_domain_sql
 from graph.tools.sql_generator import generate_sql
 from graph.tools.sql_store import search_metrics, search_schema
 from graph.tools.validate_sql import validate_sql
@@ -97,6 +100,33 @@ def _metric_table_names(metrics_result: dict[str, Any]) -> list[str]:
                 name = match.group(1).split(".")[-1]
                 if name not in names:
                     names.append(name)
+    return names
+
+
+def _domain_context_for_state(
+    state: GraphState,
+    metrics_result: dict[str, Any],
+) -> tuple[list[str], str, dict[str, Any]]:
+    profile = try_load_domain_profile()
+    if profile is None:
+        return [], "", {}
+    resolution = resolve_domain_context(
+        profile=profile,
+        question=_question_for_model(state),
+        intent=state.get("planned_intent") or state.get("intent"),
+        plan=_plan_from_state(state),
+        metrics_result=metrics_result,
+    )
+    schema_tables = _merge_table_names(resolution.required_tables, resolution.optional_tables)
+    return schema_tables, format_domain_context(resolution), asdict(resolution)
+
+
+def _merge_table_names(*groups: list[str]) -> list[str]:
+    names: list[str] = []
+    for group in groups:
+        for name in group:
+            if name and name not in names:
+                names.append(name)
     return names
 
 
@@ -293,9 +323,13 @@ async def search_metrics_node(
             tenant_id=state["tenant_id"],
             embedding_client=runtime.context.embeddings,
         )
+        metric_tables = _metric_table_names(result)
+        domain_tables, domain_context, domain_constraints = _domain_context_for_state(state, result)
         return {
             "metrics_result": result,
-            "table_names": _metric_table_names(result),
+            "table_names": _merge_table_names(metric_tables, domain_tables),
+            "domain_context": domain_context,
+            "domain_constraints": domain_constraints,
             "trace": _trace(
                 state,
                 "search_metrics",
@@ -352,6 +386,7 @@ async def generate_sql_node(
             schema_result=state.get("schema_result", {}),
             retry_feedback=state.get("retry_feedback"),
             tenant_id=state["tenant_id"],
+            domain_context=state.get("domain_context", ""),
             conversation_history=state.get("conversation_history", []),
             user_memories=state.get("user_memories", []),
             data_memories=state.get("data_memories", []),
@@ -386,6 +421,26 @@ async def validate_sql_node(
             allowed_tables=allowed_tables,
             max_limit=runtime.context.max_limit,
         )
+        if result.get("ok") is True:
+            domain_result = validate_domain_sql(
+                sql=str(result.get("normalized_sql", "")),
+                constraints=state.get("domain_constraints"),
+            )
+            if domain_result.get("ok") is not True:
+                result = {
+                    **result,
+                    "ok": False,
+                    "message": str(domain_result.get("message") or "SQL domain validation failed."),
+                    "violations": [
+                        *(result.get("violations", []) or []),
+                        *(domain_result.get("violations", []) or []),
+                    ],
+                    "warnings": [
+                        *(result.get("warnings", []) or []),
+                        *(domain_result.get("warnings", []) or []),
+                    ],
+                    "domain_validation": domain_result,
+                }
         attempts = state.get("validation_attempts", 0) + 1
         ok = result.get("ok") is True
         return {

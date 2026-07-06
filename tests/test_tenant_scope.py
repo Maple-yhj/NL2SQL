@@ -38,6 +38,48 @@ class TenantScopeTests(unittest.TestCase):
 
         self.assertIn("seller_id = 'seller''1'", rewritten)
 
+    def test_seller_scope_filters_products_through_order_items(self):
+        rewritten = apply_tenant_scope(
+            "SELECT product_id FROM olist_products_dataset",
+            tenant_id="seller-1",
+        )
+
+        self.assertIn("product_id IN", rewritten)
+        self.assertIn("olist_order_items_dataset", rewritten)
+        self.assertIn("seller_id = 'seller-1'", rewritten)
+
+    def test_seller_scope_filters_reviews_through_order_items(self):
+        rewritten = apply_tenant_scope(
+            "SELECT review_id FROM olist_order_reviews_dataset",
+            tenant_id="seller-1",
+        )
+
+        self.assertIn("order_id IN", rewritten)
+        self.assertIn("olist_order_items_dataset", rewritten)
+        self.assertIn("seller_id = 'seller-1'", rewritten)
+
+    def test_seller_scope_filters_customers_through_orders_and_order_items(self):
+        rewritten = apply_tenant_scope(
+            "SELECT customer_id FROM olist_customers_dataset",
+            tenant_id="seller-1",
+        )
+
+        self.assertIn("customer_id IN", rewritten)
+        self.assertIn("olist_orders_dataset", rewritten)
+        self.assertIn("olist_order_items_dataset", rewritten)
+        self.assertIn("seller_id = 'seller-1'", rewritten)
+
+    def test_seller_scope_filters_geolocation_through_seller_and_customer_zips(self):
+        rewritten = apply_tenant_scope(
+            "SELECT geolocation_zip_code_prefix FROM olist_geolocation_dataset",
+            tenant_id="seller-1",
+        )
+
+        self.assertIn("geolocation_zip_code_prefix IN", rewritten)
+        self.assertIn("seller_zip_code_prefix", rewritten)
+        self.assertIn("customer_zip_code_prefix", rewritten)
+        self.assertIn("seller_id = 'seller-1'", rewritten)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,7 @@ async def generate_sql(
     schema_result: dict[str, Any],
     retry_feedback: str | None,
     tenant_id: str = "admin",
+    domain_context: str | None = None,
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
     data_memories: list[dict[str, Any]] | None = None,
@@ -46,6 +47,7 @@ async def generate_sql(
         schema_result=schema_result,
         retry_feedback=retry_feedback,
         tenant_id=tenant_id,
+        domain_context=domain_context,
         conversation_history=conversation_history or [],
         user_memories=user_memories or [],
         data_memories=data_memories or [],
@@ -67,6 +69,7 @@ def build_sql_prompt(
     schema_result: dict[str, Any],
     retry_feedback: str | None,
     tenant_id: str = "admin",
+    domain_context: str | None = None,
     conversation_history: list[dict[str, Any]] | None = None,
     user_memories: list[dict[str, Any]] | None = None,
     data_memories: list[dict[str, Any]] | None = None,
@@ -103,6 +106,16 @@ filters: {intent.filters}
 [SCHEMA CONTEXT]
 {schema_content}
 """.strip()
+    if domain_context:
+        prompt += (
+            "\n\n[DOMAIN CONTEXT]\n"
+            "Treat DOMAIN CONTEXT rules as hard constraints. "
+            "Required filters must appear in the SQL. "
+            "Required GROUP BY, ORDER BY, and SQL fragments must appear in the SQL. "
+            "Forbidden tables, fragments, and SELECT * must not appear in the SQL. "
+            "Default detail columns must be selected for detail queries.\n"
+            f"{domain_context}"
+        )
     if plan_context:
         prompt += f"\n\n[PLAN DSL]\n{plan_context}"
     if tenant_scope_content:

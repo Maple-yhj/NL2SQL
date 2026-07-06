@@ -51,6 +51,32 @@ class MessageTypeClassifierTests(unittest.TestCase):
 
         self.assertEqual(message_type, "text")
 
+    def test_product_volume_topn_detail_uses_table_despite_summary_words(self):
+        message_type = classify_message_type(
+            question="查看体积最大的商品，返回商品 id、品类、长宽高和重量，取前 25 个",
+            contextualized_question="",
+            sql=(
+                "SELECT product_id, product_category_name, product_length_cm, "
+                "product_width_cm, product_height_cm, product_weight_g, "
+                "product_length_cm * product_width_cm * product_height_cm AS volume "
+                "FROM olist_products_dataset ORDER BY volume DESC LIMIT 25"
+            ),
+            rows=[
+                {
+                    "product_id": "P-1",
+                    "product_category_name": "moveis",
+                    "product_length_cm": 10,
+                    "product_width_cm": 20,
+                    "product_height_cm": 30,
+                    "product_weight_g": 500,
+                    "volume": 6000,
+                }
+            ],
+            error="",
+        )
+
+        self.assertEqual(message_type, "table")
+
     def test_generic_list_word_does_not_override_aggregate_metric_question(self):
         message_type = classify_message_type(
             question="\u5217\u51fa\u534e\u4e1c\u548c\u534e\u5357\u7684GMV",
