@@ -34,10 +34,14 @@ class GraphContextTests(unittest.TestCase):
                 "timeout_ms",
                 "max_limit",
                 "max_validation_attempts",
+                "max_tool_calls",
+                "allowed_tool_risk_levels",
+                "read_only_tools",
                 "memory_history_limit",
                 "memory_dsn",
                 "data_memory_provider",
                 "data_memory_recall_limit",
+                "agent_mode",
             },
         )
 

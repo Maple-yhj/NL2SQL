@@ -322,6 +322,42 @@
         "Order by customer_count DESC."
       ]
     },
+    "customer_sp_geolocation_coverage_count": {
+      "aliases": ["SP 州客户覆盖的经纬度点数量", "客户覆盖的经纬度点数量", "customer geolocation coverage count"],
+      "required_tables": [
+        "olist_customers_dataset",
+        "olist_geolocation_dataset"
+      ],
+      "required_columns": [
+        "olist_customers_dataset.customer_state",
+        "olist_customers_dataset.customer_zip_code_prefix",
+        "olist_geolocation_dataset.geolocation_zip_code_prefix",
+        "olist_geolocation_dataset.geolocation_lat",
+        "olist_geolocation_dataset.geolocation_lng"
+      ],
+      "required_filters": ["customer_state = 'SP'"],
+      "required_sql_fragments": [
+        "SELECT DISTINCT",
+        "COUNT(DISTINCT",
+        "geolocation_lat",
+        "geolocation_lng"
+      ],
+      "forbidden_tables": [
+        "olist_orders_dataset",
+        "olist_order_items_dataset",
+        "olist_order_reviews_dataset"
+      ],
+      "forbidden_sql_fragments": ["GROUP BY"],
+      "sql_hints": [
+        "For SP customer geolocation coverage, return one aggregate row.",
+        "Join customers to geolocation on customer_zip_code_prefix = geolocation_zip_code_prefix.",
+        "Filter customer_state = 'SP'.",
+        "Pre-deduplicate SP customer_zip_code_prefix values in a CTE or subquery before joining geolocation.",
+        "Expected shape: WITH sp_zips AS (SELECT DISTINCT customer_zip_code_prefix FROM olist_customers_dataset WHERE customer_state = 'SP') SELECT COUNT(DISTINCT (g.geolocation_lat, g.geolocation_lng)) AS coverage_point_count FROM sp_zips AS z JOIN olist_geolocation_dataset AS g ON z.customer_zip_code_prefix = g.geolocation_zip_code_prefix.",
+        "Do not join orders, order items, or reviews for geolocation coverage count.",
+        "Count distinct latitude/longitude points; do not group by customer_zip_code_prefix."
+      ]
+    },
     "monthly_gmv_trend": {
       "aliases": ["GMV 趋势", "monthly GMV", "monthly GMV trend"],
       "match_all": ["gmv", "month"],
@@ -339,19 +375,58 @@
         "shipping_limit_date",
         "AS month"
       ],
+      "forbidden_tables": ["olist_order_reviews_dataset"],
       "forbidden_sql_fragments": ["TO_CHAR(", "EXTRACT(MONTH", "AS paid_month"],
       "sql_hints": [
         "Monthly GMV or order trends must use date_trunc('month', shipping_limit_date) AS month.",
         "Group by month and order by month ASC.",
+        "Do not join olist_order_reviews_dataset for plain GMV trends.",
         "Do not use TO_CHAR or EXTRACT(MONTH) for month buckets."
+      ]
+    },
+    "seller_state_avg_item_price": {
+      "aliases": ["每个卖家州的平均客单商品价格", "卖家州的平均客单商品价格", "average item price by seller_state", "avg item price by seller state"],
+      "match_all": ["avg_item_price", "seller_state"],
+      "required_tables": [
+        "olist_order_items_dataset",
+        "olist_sellers_dataset"
+      ],
+      "required_columns": [
+        "olist_order_items_dataset.seller_id",
+        "olist_order_items_dataset.price",
+        "olist_sellers_dataset.seller_state"
+      ],
+      "required_group_by": ["seller_state"],
+      "required_order_by": ["avg_item_price DESC"],
+      "required_sql_fragments": ["AVG(", "price"],
+      "forbidden_tables": ["olist_order_reviews_dataset"],
+      "sql_hints": [
+        "Join order items to sellers on seller_id.",
+        "Select seller_state and AVG(olist_order_items_dataset.price) AS avg_item_price.",
+        "Group by seller_state and order by avg_item_price DESC."
       ]
     },
     "monthly_gmv_growth": {
       "aliases": ["GMV 增长最快", "monthly GMV fastest growth month"],
       "match_all": ["gmv", "growth"],
+      "required_tables": ["olist_order_items_dataset"],
+      "required_columns": [
+        "olist_order_items_dataset.shipping_limit_date",
+        "olist_order_items_dataset.price",
+        "olist_order_items_dataset.freight_value"
+      ],
+      "required_sql_fragments": [
+        "date_trunc('month'",
+        "shipping_limit_date",
+        "AS month",
+        "SUM("
+      ],
+      "forbidden_tables": ["olist_order_reviews_dataset"],
+      "forbidden_sql_fragments": ["TO_CHAR(", "EXTRACT(MONTH"],
       "sql_hints": [
         "For fastest GMV growth month, aggregate monthly GMV with date_trunc('month', shipping_limit_date) AS month first.",
         "Compute month-over-month growth with LAG or an equivalent previous-month expression.",
+        "Do not join olist_order_reviews_dataset for GMV growth.",
         "Order by the growth expression DESC and limit to 1."
       ]
     },
@@ -406,9 +481,73 @@
         "Group by month and order by month ASC."
       ]
     },
+    "monthly_review_score_admin": {
+      "aliases": ["2018 年每个月的平均评价分趋势", "每个月的平均评价分趋势"],
+      "required_tables": ["olist_order_reviews_dataset"],
+      "required_columns": [
+        "olist_order_reviews_dataset.review_creation_date",
+        "olist_order_reviews_dataset.review_score"
+      ],
+      "required_group_by": ["month"],
+      "required_sql_fragments": [
+        "date_trunc('month'",
+        "review_creation_date",
+        "AS month",
+        "AVG("
+      ],
+      "forbidden_tables": ["olist_order_items_dataset"],
+      "sql_hints": [
+        "For admin monthly average review score, use olist_order_reviews_dataset directly.",
+        "Do not join olist_order_items_dataset unless tenant seller scope requires it."
+      ]
+    },
+    "customer_state_avg_review_score": {
+      "aliases": ["每个客户州的平均评价分", "客户州的平均评价分", "average review score by customer state"],
+      "required_tables": [
+        "olist_order_reviews_dataset",
+        "olist_orders_dataset",
+        "olist_customers_dataset"
+      ],
+      "required_columns": [
+        "olist_order_reviews_dataset.order_id",
+        "olist_order_reviews_dataset.review_score",
+        "olist_orders_dataset.order_id",
+        "olist_orders_dataset.customer_id",
+        "olist_customers_dataset.customer_id",
+        "olist_customers_dataset.customer_state"
+      ],
+      "required_group_by": ["customer_state"],
+      "required_sql_fragments": ["AVG(", "review_score"],
+      "forbidden_tables": ["olist_order_items_dataset"],
+      "sql_hints": [
+        "For average review score by customer state, join reviews to orders on order_id, then orders to customers on customer_id.",
+        "Do not join olist_order_items_dataset; that would weight reviews by item count."
+      ]
+    },
+    "review_score_distribution": {
+      "aliases": ["按评分统计评价数量分布", "评价数量分布", "review score distribution"],
+      "required_tables": ["olist_order_reviews_dataset"],
+      "required_columns": [
+        "olist_order_reviews_dataset.review_id",
+        "olist_order_reviews_dataset.review_score"
+      ],
+      "required_group_by": ["review_score"],
+      "required_order_by": ["review_score"],
+      "required_sql_fragments": ["COUNT(DISTINCT", "review_id"],
+      "forbidden_tables": [
+        "olist_order_items_dataset",
+        "olist_orders_dataset"
+      ],
+      "sql_hints": [
+        "For review score distribution, use olist_order_reviews_dataset directly.",
+        "Select review_score and COUNT(DISTINCT review_id) AS review_count.",
+        "Do not join order items; that would weight reviews by item count."
+      ]
+    },
     "payment_amount_by_type": {
-      "aliases": ["支付方式订单数和支付金额", "payment type order count and total payment amount"],
+      "aliases": ["各支付方式的订单数和支付金额合计", "支付方式订单数和支付金额", "payment type order count and total payment amount"],
       "match_all": ["payment", "type", "amount"],
+      "match_none": ["order_status", "订单状态"],
       "required_tables": ["olist_order_payments_dataset"],
       "required_columns": [
         "olist_order_payments_dataset.order_id",
@@ -418,12 +557,42 @@
       "required_group_by": ["payment_type"],
       "required_order_by": ["total_payment_amount DESC"],
       "required_sql_fragments": ["COUNT(DISTINCT", "SUM(payment_value)"],
-      "forbidden_tables": ["olist_order_items_dataset"],
+      "forbidden_tables": [
+        "olist_order_items_dataset",
+        "olist_order_reviews_dataset"
+      ],
       "sql_hints": [
         "Use olist_order_payments_dataset directly for payment type aggregation.",
         "Select payment_type, COUNT(DISTINCT order_id) AS order_count, and SUM(payment_value) AS total_payment_amount.",
         "Group by payment_type and order by total_payment_amount DESC.",
         "Do not join olist_order_items_dataset for this payment-only aggregate."
+      ]
+    },
+    "order_status_payment_summary": {
+      "aliases": ["每个订单状态下的支付金额合计和订单数量", "payment amount and order count by order_status", "payment summary by order status"],
+      "match_all": ["payment", "order_status"],
+      "required_tables": [
+        "olist_orders_dataset",
+        "olist_order_payments_dataset"
+      ],
+      "required_columns": [
+        "olist_orders_dataset.order_id",
+        "olist_orders_dataset.order_status",
+        "olist_order_payments_dataset.order_id",
+        "olist_order_payments_dataset.payment_value"
+      ],
+      "required_group_by": ["order_status"],
+      "required_sql_fragments": ["SUM(payment_value)", "COUNT(DISTINCT"],
+      "forbidden_tables": [
+        "olist_order_items_dataset",
+        "olist_order_reviews_dataset"
+      ],
+      "forbidden_sql_fragments": ["payment_type"],
+      "sql_hints": [
+        "Join orders to order payments on order_id.",
+        "Expected shape: SELECT o.order_status, SUM(p.payment_value) AS total_payment_amount, COUNT(DISTINCT o.order_id) AS order_count FROM olist_orders_dataset AS o JOIN olist_order_payments_dataset AS p ON o.order_id = p.order_id GROUP BY o.order_status.",
+        "Group only by order_status for this summary.",
+        "Do not select or group by payment_type."
       ]
     },
     "freight_exceeds_price_detail": {
@@ -463,9 +632,14 @@
       "required_group_by": ["payment_installments"],
       "required_order_by": ["payment_installments ASC"],
       "required_sql_fragments": ["AVG(payment_value)"],
+      "forbidden_tables": [
+        "olist_order_items_dataset",
+        "olist_order_reviews_dataset"
+      ],
       "sql_hints": [
         "Filter payment_type = 'credit_card' before grouping by payment_installments.",
         "Use AVG(payment_value) for average payment amount.",
+        "Use olist_order_payments_dataset directly; do not join order items or reviews.",
         "Order by payment_installments ASC."
       ]
     },
@@ -487,12 +661,63 @@
         "olist_order_payments_dataset.payment_value"
       ],
       "required_order_by": ["payment_value DESC"],
-      "forbidden_tables": ["olist_order_items_dataset"],
+      "forbidden_tables": [
+        "olist_order_items_dataset",
+        "olist_order_reviews_dataset"
+      ],
       "sql_hints": [
         "Return payment record level detail columns, not only order_id and amount.",
         "Do not join olist_order_items_dataset for payment record detail ranking.",
         "Do not use DISTINCT because olist_order_payments_dataset rows are already payment records.",
         "Order by payment_value DESC for highest payment records."
+      ]
+    },
+    "multiple_payment_order_count": {
+      "aliases": ["多次支付", "payment_sequential 大于 1", "multiple payment order count"],
+      "required_tables": ["olist_order_payments_dataset"],
+      "required_columns": [
+        "olist_order_payments_dataset.order_id",
+        "olist_order_payments_dataset.payment_sequential"
+      ],
+      "required_filters": ["payment_sequential > 1"],
+      "required_sql_fragments": ["COUNT(DISTINCT", "order_id"],
+      "forbidden_tables": [
+        "olist_order_items_dataset",
+        "olist_order_reviews_dataset"
+      ],
+      "sql_hints": [
+        "For orders using multiple payments, query olist_order_payments_dataset directly.",
+        "Filter payment_sequential > 1 and count DISTINCT order_id.",
+        "Do not join order items or reviews."
+      ]
+    },
+    "bad_review_detail": {
+      "aliases": ["评分为 1 星且有评论内容的差评订单", "差评订单", "bad review detail"],
+      "required_tables": ["olist_order_reviews_dataset"],
+      "required_columns": [
+        "olist_order_reviews_dataset.review_id",
+        "olist_order_reviews_dataset.order_id",
+        "olist_order_reviews_dataset.review_score",
+        "olist_order_reviews_dataset.review_comment_title",
+        "olist_order_reviews_dataset.review_comment_message"
+      ],
+      "default_columns": [
+        "olist_order_reviews_dataset.review_id",
+        "olist_order_reviews_dataset.order_id",
+        "olist_order_reviews_dataset.review_comment_title",
+        "olist_order_reviews_dataset.review_comment_message"
+      ],
+      "required_filters": [
+        "review_score = 1",
+        "review_comment_message IS NOT NULL"
+      ],
+      "forbid_select_star": true,
+      "forbidden_tables": ["olist_order_items_dataset"],
+      "sql_hints": [
+        "For bad review detail, use olist_order_reviews_dataset directly.",
+        "Select review_id, order_id, review_comment_title, and review_comment_message.",
+        "Filter review_score = 1 and review_comment_message IS NOT NULL.",
+        "Do not join order items."
       ]
     },
     "product_volume_detail": {
@@ -533,9 +758,18 @@
         "olist_order_items_dataset.seller_id",
         "olist_sellers_dataset.seller_state"
       ],
+      "required_group_by": ["seller_state"],
+      "required_sql_fragments": [
+        "AVG(",
+        "order_delivered_carrier_date",
+        "order_purchase_timestamp"
+      ],
+      "forbidden_tables": ["olist_order_reviews_dataset"],
       "sql_hints": [
         "Join orders to order items on order_id, then join sellers on seller_id for seller_state.",
-        "Compute carrier handoff duration as order_delivered_carrier_date - order_purchase_timestamp."
+        "Compute carrier handoff duration as order_delivered_carrier_date - order_purchase_timestamp.",
+        "Use a single consistent alias for olist_orders_dataset throughout the SELECT, WHERE, and JOIN clauses.",
+        "Do not join olist_order_reviews_dataset for carrier handoff duration."
       ]
     }
   },

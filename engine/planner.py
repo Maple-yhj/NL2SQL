@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from core.structured_output import extract_json_object
 from engine.models import QueryIntent
 from engine.plan_models import (
+    ExecutionMode,
     ExecutionGraph,
     PlanDSL,
     build_execution_graph,
@@ -60,6 +61,7 @@ async def plan_query(
     intent: QueryIntent | None,
     llm: LLMProtocol,
     execute: bool,
+    execution_mode: ExecutionMode = ExecutionMode.FIXED_DAG,
 ) -> PlanBundle:
     base_intent = intent or QueryIntent()
     try:
@@ -78,7 +80,7 @@ async def plan_query(
         message = f"planner fallback: {exc}"
         ok = False
 
-    execution_graph = build_execution_graph(plan, execute=execute)
+    execution_graph = build_execution_graph(plan, execute=execute, mode=execution_mode)
     return PlanBundle(
         plan=plan,
         execution_graph=execution_graph,

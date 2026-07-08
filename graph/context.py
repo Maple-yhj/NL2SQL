@@ -45,7 +45,11 @@ class GraphContext(BaseModel):
     timeout_ms: int = 10_000
     max_limit: int = 1000
     max_validation_attempts: int = 2
+    max_tool_calls: int = 50
+    allowed_tool_risk_levels: tuple[str, ...] = ("low", "medium", "high")
+    read_only_tools: bool = True
     memory_history_limit: int = 8
+    agent_mode: str = "fixed"
 
     def model_post_init(self, __context: Any) -> None:
         if self.memory_dsn and "memory_store" not in self.__pydantic_fields_set__:

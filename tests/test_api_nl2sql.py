@@ -41,6 +41,19 @@ def graph_output(**overrides):
         "answer": "",
         "error": "",
         "trace": [{"node": "initialize", "ok": True, "message": "success"}],
+        "tool_trace": [
+            {
+                "tool_name": "sql.generate",
+                "canonical_name": "generate_sql",
+                "started_at": "2026-07-08T00:00:00+00:00",
+                "duration_ms": 1.0,
+                "ok": True,
+                "error_code": "",
+                "input_summary": {"keys": ["question"]},
+                "output_summary": {"keys": ["candidate_sql"]},
+                "retry_count": 0,
+            }
+        ],
     }
     output.update(overrides)
     return output
@@ -70,6 +83,7 @@ class ApiNl2SqlTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["sql"], "SELECT sum(amount) AS gmv FROM orders LIMIT 1000")
         self.assertEqual(response.json()["message_type"], "text")
+        self.assertNotIn("tool_trace", response.json())
         run_nl2sql.assert_awaited_once_with(
             "show gmv",
             tenant_id="demo",
@@ -77,6 +91,36 @@ class ApiNl2SqlTests(unittest.TestCase):
             timeout_ms=5000,
             max_limit=200,
             max_validation_attempts=3,
+        )
+
+    def test_nl2sql_includes_tool_trace_when_requested(self):
+        client = TestClient(create_app())
+
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.run_nl2sql",
+            new=mock.AsyncMock(return_value=graph_output()),
+        ) as run_nl2sql:
+            response = client.post(
+                "/api/nl2sql",
+                headers=auth_headers(),
+                json={
+                    "question": "show gmv",
+                    "tenant_id": "demo",
+                    "include_tool_trace": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["tool_trace"][0]["canonical_name"], "generate_sql")
+        self.assertNotIn("SELECT sum", str(response.json()["tool_trace"]))
+        run_nl2sql.assert_awaited_once_with(
+            "show gmv",
+            tenant_id="demo",
+            execute=True,
+            timeout_ms=10000,
+            max_limit=1000,
+            max_validation_attempts=2,
+            include_tool_trace=True,
         )
 
     def test_nl2sql_requires_token(self):

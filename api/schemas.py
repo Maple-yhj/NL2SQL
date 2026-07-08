@@ -82,6 +82,8 @@ class Nl2SqlRequest(BaseModel):
     timeout_ms: int = Field(default=10_000, ge=1_000, le=60_000)
     max_limit: int = Field(default=1_000, ge=1, le=10_000)
     max_validation_attempts: int = Field(default=2, ge=1, le=5)
+    agent_mode: Literal["fixed", "dynamic"] = "dynamic"
+    include_tool_trace: bool = False
 
     @field_validator("question")
     @classmethod
@@ -105,6 +107,7 @@ class Nl2SqlResponse(BaseModel):
     answer: str
     error: str
     trace: list[dict[str, Any]]
+    tool_trace: list[dict[str, Any]] | None = None
     pending_memory_updates: list[dict[str, Any]] = Field(default_factory=list)
 
 
@@ -150,6 +153,8 @@ class ConversationMessageRequest(BaseModel):
     max_limit: int = Field(default=1_000, ge=1, le=10_000)
     max_validation_attempts: int = Field(default=2, ge=1, le=5)
     memory_history_limit: int = Field(default=8, ge=0, le=50)
+    agent_mode: Literal["fixed", "dynamic"] = "dynamic"
+    include_tool_trace: bool = False
 
     @field_validator("question")
     @classmethod
@@ -200,6 +205,7 @@ class ConversationNl2SqlResponse(BaseModel):
     answer: str
     error: str
     trace: list[dict[str, Any]]
+    tool_trace: list[dict[str, Any]] | None = None
     pending_memory_updates: list[dict[str, Any]] = Field(default_factory=list)
 
 

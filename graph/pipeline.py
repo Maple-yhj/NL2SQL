@@ -21,6 +21,7 @@ from graph.node import (
     finalize_node,
     generate_sql_node,
     initialize_node,
+    dynamic_execute_node,
     load_memory_node,
     parse_intent_node,
     plan_query_node,
@@ -60,6 +61,17 @@ def _route_execute(state: GraphState) -> str:
     return "persist_memory" if destination == "finalize" else destination
 
 
+def _route_after_plan(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> str:
+    if state.get("error"):
+        return "persist_memory"
+    execution_graph = state.get("execution_graph") if isinstance(state.get("execution_graph"), dict) else {}
+    mode = str(execution_graph.get("mode") or runtime.context.agent_mode)
+    return "dynamic_execute" if mode == "dynamic" else "search_metrics"
+
+
 def build_graph():
     builder = StateGraph(
         GraphState,
@@ -73,6 +85,7 @@ def build_graph():
     builder.add_node("recall_data_memory", recall_data_memory_node)
     builder.add_node("parse_intent", parse_intent_node)
     builder.add_node("plan_query", plan_query_node)
+    builder.add_node("dynamic_execute", dynamic_execute_node)
     builder.add_node("search_metrics", search_metrics_node)
     builder.add_node("search_schema", search_schema_node)
     builder.add_node("generate_sql", generate_sql_node)
@@ -107,9 +120,10 @@ def build_graph():
     )
     builder.add_conditional_edges(
         "plan_query",
-        partial(_route_next, next_node="search_metrics"),
-        ["search_metrics", "persist_memory"],
+        _route_after_plan,
+        ["dynamic_execute", "search_metrics", "persist_memory"],
     )
+    builder.add_edge("dynamic_execute", "persist_memory")
     builder.add_conditional_edges(
         "search_metrics",
         partial(_route_next, next_node="search_schema"),
@@ -164,6 +178,8 @@ async def run_nl2sql(
     max_limit: int = 1000,
     max_validation_attempts: int = 2,
     memory_history_limit: int = 8,
+    agent_mode: str = "dynamic",
+    include_tool_trace: bool = False,
 ) -> OutputState:
     if max_validation_attempts <= 0:
         raise ValueError("max_validation_attempts must be positive")
@@ -171,6 +187,8 @@ async def run_nl2sql(
         raise ValueError("memory_history_limit must be non-negative")
     if data_memory_recall_limit < 0:
         raise ValueError("data_memory_recall_limit must be non-negative")
+    if agent_mode not in {"fixed", "dynamic"}:
+        raise ValueError("agent_mode must be 'fixed' or 'dynamic'")
     context = GraphContext(
         llm=llm or create_llm(),
         embeddings=embeddings or create_embedding_client(),
@@ -184,6 +202,7 @@ async def run_nl2sql(
         max_limit=max_limit,
         max_validation_attempts=max_validation_attempts,
         memory_history_limit=memory_history_limit,
+        agent_mode=agent_mode,
     )
     input_state: InputState = {
         "question": question,
@@ -197,11 +216,14 @@ async def run_nl2sql(
     config = {"recursion_limit": 16 + max_validation_attempts * 2}
     if conversation_id:
         config["configurable"] = {"thread_id": conversation_id}
-    return await graph.ainvoke(
+    result = await graph.ainvoke(
         input_state,
         context=context,
         config=config,
     )
+    if not include_tool_trace:
+        result.pop("tool_trace", None)
+    return result
 
 
 async def run_graph(

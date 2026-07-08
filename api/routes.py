@@ -156,21 +156,29 @@ async def logout(request: LogoutRequest):
     return LogoutResponse()
 
 
-@router.post("/api/nl2sql", response_model=Nl2SqlResponse)
+@router.post("/api/nl2sql", response_model=Nl2SqlResponse, response_model_exclude_none=True)
 async def nl2sql(
     request: Nl2SqlRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
 ):
     tenant_id = _resolve_tenant(principal, request.tenant_id)
     try:
-        return await run_nl2sql(
+        graph_kwargs = {
+            "timeout_ms": request.timeout_ms,
+            "max_limit": request.max_limit,
+            "max_validation_attempts": request.max_validation_attempts,
+        }
+        if request.agent_mode != "dynamic":
+            graph_kwargs["agent_mode"] = request.agent_mode
+        if request.include_tool_trace:
+            graph_kwargs["include_tool_trace"] = True
+        result = await run_nl2sql(
             request.question,
             tenant_id=tenant_id,
             execute=request.execute,
-            timeout_ms=request.timeout_ms,
-            max_limit=request.max_limit,
-            max_validation_attempts=request.max_validation_attempts,
+            **graph_kwargs,
         )
+        return _filter_tool_trace(result, include=request.include_tool_trace)
     except Exception as exc:
         return _internal_error_response(exc)
 
@@ -305,6 +313,7 @@ async def list_conversation_messages(
 @router.post(
     "/api/conversations/{conversation_id}/messages",
     response_model=ConversationNl2SqlResponse,
+    response_model_exclude_none=True,
 )
 async def send_conversation_message(
     conversation_id: str,
@@ -322,18 +331,26 @@ async def send_conversation_message(
         )
         if conversation is None:
             raise HTTPException(status_code=404, detail="Conversation not found")
-        return await run_nl2sql(
+        graph_kwargs = {
+            "timeout_ms": request.timeout_ms,
+            "max_limit": request.max_limit,
+            "max_validation_attempts": request.max_validation_attempts,
+            "memory_history_limit": request.memory_history_limit,
+            "memory_store": store,
+        }
+        if request.agent_mode != "dynamic":
+            graph_kwargs["agent_mode"] = request.agent_mode
+        if request.include_tool_trace:
+            graph_kwargs["include_tool_trace"] = True
+        result = await run_nl2sql(
             request.question,
             tenant_id=tenant_id,
             execute=request.execute,
             conversation_id=conversation_id.strip(),
             user_id=user_id,
-            timeout_ms=request.timeout_ms,
-            max_limit=request.max_limit,
-            max_validation_attempts=request.max_validation_attempts,
-            memory_history_limit=request.memory_history_limit,
-            memory_store=store,
+            **graph_kwargs,
         )
+        return _filter_tool_trace(result, include=request.include_tool_trace)
     except HTTPException:
         raise
     except Exception as exc:
@@ -349,6 +366,13 @@ def _internal_error_response(exc: Exception) -> JSONResponse:
             "detail": str(exc),
         },
     )
+
+
+def _filter_tool_trace(result: dict, *, include: bool) -> dict:
+    output = dict(result)
+    if not include:
+        output.pop("tool_trace", None)
+    return output
 
 
 def _resolve_tenant(principal: AuthPrincipal, requested_tenant_id: str | None) -> str:

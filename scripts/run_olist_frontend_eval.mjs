@@ -104,6 +104,7 @@ async function sendMessage(tenantId, conversationId, question) {
       max_limit: 1_000,
       max_validation_attempts: 2,
       memory_history_limit: 8,
+      include_tool_trace: true,
     }),
   });
 }
@@ -134,6 +135,8 @@ function authorizationHeaders(session) {
 }
 
 function normalizeResponse(row, index, response, durationMs) {
+  const toolTrace = Array.isArray(response.tool_trace) ? response.tool_trace : [];
+  const toolMetrics = summarizeToolTrace(toolTrace);
   return {
     id: row.id,
     index,
@@ -147,6 +150,8 @@ function normalizeResponse(row, index, response, durationMs) {
     sql: response.sql || "",
     contextualized_question: response.contextualized_question || "",
     trace: Array.isArray(response.trace) ? response.trace : [],
+    tool_trace: toolTrace,
+    ...toolMetrics,
     duration_ms: durationMs,
   };
 }
@@ -159,8 +164,34 @@ function summarize(result) {
     message_type: result.message_type,
     error: result.error,
     duration_ms: result.duration_ms,
+    tool_call_count: result.tool_call_count || 0,
+    validation_retry_count: result.validation_retry_count || 0,
+    tool_error_count: result.tool_error_count || 0,
+    total_tool_duration_ms: result.total_tool_duration_ms || 0,
+    policy_block_count: result.policy_block_count || 0,
     contextualized_question: result.contextualized_question,
     sql: result.sql.replace(/\s+/g, " ").slice(0, 240),
+  };
+}
+
+function summarizeToolTrace(toolTrace) {
+  const validationTools = new Set(["prepare_sql", "validate_sql"]);
+  const policyErrorCodes = new Set([
+    "tool_risk_not_allowed",
+    "missing_tenant_id",
+    "tool_call_budget_exceeded",
+    "tool_write_blocked",
+  ]);
+  return {
+    tool_call_count: toolTrace.length,
+    validation_retry_count: toolTrace.filter(
+      (event) => validationTools.has(event.canonical_name) && event.ok === false,
+    ).length,
+    tool_error_count: toolTrace.filter((event) => event.ok === false).length,
+    total_tool_duration_ms: Math.round(
+      toolTrace.reduce((total, event) => total + Number(event.duration_ms || 0), 0),
+    ),
+    policy_block_count: toolTrace.filter((event) => policyErrorCodes.has(event.error_code)).length,
   };
 }
 

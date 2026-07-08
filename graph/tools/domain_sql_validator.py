@@ -108,8 +108,31 @@ def validate_domain_sql(
     return result
 
 
-def _violation(code: str, message: str) -> dict[str, str]:
-    return {"code": code, "message": message}
+def _violation(code: str, message: str) -> dict[str, Any]:
+    return {
+        "code": code,
+        "message": message,
+        "severity": "error",
+        "recoverable": True,
+        "retry_hint": _retry_hint_for_domain_violation(code),
+    }
+
+
+def _retry_hint_for_domain_violation(code: str) -> str:
+    hints = {
+        "domain_parse_error": "Regenerate a valid PostgreSQL SELECT statement before applying domain rules.",
+        "domain_missing_table": "Include all domain-required tables in the SQL.",
+        "domain_forbidden_table": "Remove tables that the matched domain rule forbids.",
+        "domain_missing_column": "Select or reference the required domain column.",
+        "domain_missing_default_column": "Include the required default detail column in SELECT.",
+        "domain_select_star_forbidden": "Replace SELECT * with explicit columns.",
+        "domain_missing_filter": "Add the required domain filter.",
+        "domain_missing_group_by": "Add the required GROUP BY expression.",
+        "domain_missing_order_by": "Add the required ORDER BY expression.",
+        "domain_missing_sql_fragment": "Use the required SQL shape from the domain rule.",
+        "domain_forbidden_sql_fragment": "Remove the forbidden SQL fragment from the query.",
+    }
+    return hints.get(code, "Regenerate SQL using the domain validation feedback.")
 
 
 def _string_list(value: Any) -> list[str]:

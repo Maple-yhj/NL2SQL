@@ -87,6 +87,8 @@ class DomainProfileTests(unittest.TestCase):
         self.assertIn("olist_order_payments_dataset.payment_type", resolution.required_columns)
         self.assertIn("olist_order_payments_dataset.payment_installments", resolution.required_columns)
         self.assertIn("payment_type = 'credit_card'", resolution.required_filters)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+        self.assertIn("olist_order_reviews_dataset", resolution.forbidden_tables)
         self.assertIn("credit_card_installments", resolution.matched_rules)
 
     def test_resolves_payment_detail_rule_with_default_columns(self):
@@ -159,7 +161,7 @@ class DomainProfileTests(unittest.TestCase):
 
         resolution = resolve_domain_context(
             profile=profile,
-            question="payment type order count and total payment amount",
+            question="各支付方式的订单数和支付金额合计是多少？",
             intent=QueryIntent(dimensions=["payment_type"]),
             metrics_result={"metrics": []},
         )
@@ -174,6 +176,7 @@ class DomainProfileTests(unittest.TestCase):
         self.assertIn("SUM(payment_value)", getattr(resolution, "required_sql_fragments", []))
         self.assertIn("COUNT(DISTINCT", getattr(resolution, "required_sql_fragments", []))
         self.assertIn("olist_order_items_dataset", getattr(resolution, "forbidden_tables", []))
+        self.assertIn("olist_order_reviews_dataset", getattr(resolution, "forbidden_tables", []))
 
     def test_resolves_freight_exceeds_price_detail_rule_without_select_star(self):
         profile = load_domain_profile("olist")
@@ -237,6 +240,85 @@ class DomainProfileTests(unittest.TestCase):
         self.assertIn("AS month", getattr(resolution, "required_sql_fragments", []))
         self.assertIn("TO_CHAR(", getattr(resolution, "forbidden_sql_fragments", []))
         self.assertIn("EXTRACT(MONTH", getattr(resolution, "forbidden_sql_fragments", []))
+        self.assertIn("olist_order_reviews_dataset", getattr(resolution, "forbidden_tables", []))
+
+    def test_resolves_chinese_monthly_gmv_trend_rule(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="统计 2018 年每个月的 GMV 趋势",
+            intent=QueryIntent(metrics=["gmv"]),
+            metrics_result={
+                "metrics": [
+                    {
+                        "metric_name": "gmv",
+                        "base_table": "olist_order_items_dataset",
+                        "join_tables": [],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("monthly_gmv_trend", resolution.matched_rules)
+        self.assertIn("olist_order_reviews_dataset", resolution.forbidden_tables)
+
+    def test_resolves_seller_state_average_price_rule_with_required_sort(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="average item price by seller_state",
+            intent=QueryIntent(metrics=["avg_item_price"], dimensions=["seller_state"]),
+            metrics_result={
+                "metrics": [
+                    {
+                        "metric_name": "avg_item_price",
+                        "base_table": "olist_order_items_dataset",
+                        "join_tables": [],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("seller_state_avg_item_price", resolution.matched_rules)
+        self.assertIn("avg_item_price DESC", getattr(resolution, "required_order_by", []))
+
+    def test_resolves_chinese_seller_state_average_price_rule(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="每个卖家州的平均客单商品价格是多少？",
+            intent=QueryIntent(metrics=["avg_item_price"], dimensions=["seller_state"]),
+            metrics_result={
+                "metrics": [
+                    {
+                        "metric_name": "avg_item_price",
+                        "base_table": "olist_order_items_dataset",
+                        "join_tables": [],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("seller_state_avg_item_price", resolution.matched_rules)
+        self.assertIn("avg_item_price DESC", resolution.required_order_by)
+
+    def test_resolves_order_status_payment_summary_without_payment_type_breakdown(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="payment amount and order count by order_status",
+            intent=QueryIntent(dimensions=["order_status"]),
+            metrics_result={"metrics": []},
+        )
+
+        self.assertIn("order_status_payment_summary", resolution.matched_rules)
+        self.assertNotIn("payment_amount_by_type", resolution.matched_rules)
+        self.assertIn("order_status", getattr(resolution, "required_group_by", []))
+        self.assertIn("payment_type", getattr(resolution, "forbidden_sql_fragments", []))
 
     def test_resolves_monthly_gmv_growth_rule_without_month_ascending_order_constraint(self):
         profile = load_domain_profile("olist")
@@ -260,7 +342,135 @@ class DomainProfileTests(unittest.TestCase):
         self.assertNotIn("monthly_gmv_trend", resolution.matched_rules)
         self.assertEqual(getattr(resolution, "required_group_by", []), [])
         self.assertEqual(getattr(resolution, "required_order_by", []), [])
+        self.assertIn("olist_order_reviews_dataset", resolution.forbidden_tables)
+        self.assertIn("date_trunc('month'", resolution.required_sql_fragments)
         self.assertIn("Order by the growth expression DESC and limit to 1.", resolution.sql_hints)
+
+    def test_resolves_payment_sequential_count_rule_as_payment_only(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="哪些订单使用了多次支付？列出 payment_sequential 大于 1 的订单数量",
+            intent=QueryIntent(dimensions=["payment_sequential"]),
+            metrics_result={"metrics": []},
+        )
+
+        self.assertIn("multiple_payment_order_count", resolution.matched_rules)
+        self.assertEqual(resolution.required_tables, ["olist_order_payments_dataset"])
+        self.assertIn("payment_sequential > 1", resolution.required_filters)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+        self.assertIn("olist_order_reviews_dataset", resolution.forbidden_tables)
+
+    def test_resolves_review_score_distribution_as_review_only(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="按评分统计评价数量分布",
+            intent=QueryIntent(dimensions=["review_score"]),
+            metrics_result={"metrics": []},
+        )
+
+        self.assertIn("review_score_distribution", resolution.matched_rules)
+        self.assertEqual(resolution.required_tables, ["olist_order_reviews_dataset"])
+        self.assertIn("review_score", resolution.required_group_by)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+
+    def test_resolves_admin_monthly_review_score_rule_as_review_only(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="2018 年每个月的平均评价分趋势",
+            intent=QueryIntent(metrics=["avg_review_score"], dimensions=["month"]),
+            metrics_result={
+                "metrics": [
+                    {
+                        "metric_name": "avg_review_score",
+                        "base_table": "olist_order_reviews_dataset",
+                        "join_tables": [],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("monthly_review_score_admin", resolution.matched_rules)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+
+    def test_resolves_customer_state_review_score_rule_without_order_items(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="2018 年每个客户州的平均评价分是多少？",
+            intent=QueryIntent(metrics=["avg_review_score"], dimensions=["customer_state"]),
+            metrics_result={
+                "metrics": [
+                    {
+                        "metric_name": "avg_review_score",
+                        "base_table": "olist_order_reviews_dataset",
+                        "join_tables": [],
+                    }
+                ]
+            },
+        )
+
+        self.assertIn("customer_state_avg_review_score", resolution.matched_rules)
+        self.assertIn("olist_order_reviews_dataset", resolution.required_tables)
+        self.assertIn("olist_orders_dataset", resolution.required_tables)
+        self.assertIn("olist_customers_dataset", resolution.required_tables)
+        self.assertIn("customer_state", resolution.required_group_by)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+
+    def test_resolves_bad_review_detail_rule_with_required_columns(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="列出 2018 年评分为 1 星且有评论内容的差评订单，返回评论标题和评论文本",
+            intent=QueryIntent(dimensions=["review_score", "review_comment"]),
+            metrics_result={"metrics": []},
+        )
+
+        self.assertIn("bad_review_detail", resolution.matched_rules)
+        self.assertIn("olist_order_reviews_dataset.review_id", resolution.default_columns)
+        self.assertIn("olist_order_reviews_dataset.order_id", resolution.default_columns)
+        self.assertIn("review_score = 1", resolution.required_filters)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+
+    def test_resolves_geolocation_coverage_count_as_single_aggregate(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="按客户邮编前缀关联经纬度，找出 SP 州客户覆盖的经纬度点数量",
+            intent=QueryIntent(dimensions=["customer_zip_prefix", "geolocation"]),
+            metrics_result={"metrics": []},
+        )
+
+        self.assertIn("customer_sp_geolocation_coverage_count", resolution.matched_rules)
+        self.assertIn("GROUP BY", resolution.forbidden_sql_fragments)
+        self.assertIn("SELECT DISTINCT", resolution.required_sql_fragments)
+        self.assertIn("COUNT(DISTINCT", resolution.required_sql_fragments)
+        self.assertIn("geolocation_lat", resolution.required_sql_fragments)
+        self.assertIn("olist_orders_dataset", resolution.forbidden_tables)
+        self.assertIn("olist_order_items_dataset", resolution.forbidden_tables)
+        self.assertIn("olist_order_reviews_dataset", resolution.forbidden_tables)
+
+    def test_resolves_carrier_handoff_rule_without_review_table(self):
+        profile = load_domain_profile("olist")
+
+        resolution = resolve_domain_context(
+            profile=profile,
+            question="从购买到交给承运商平均需要多久？按卖家州统计",
+            intent=QueryIntent(dimensions=["seller_state"]),
+            metrics_result={"metrics": []},
+        )
+
+        self.assertIn("carrier_handoff_by_seller_location", resolution.matched_rules)
+        self.assertIn("seller_state", resolution.required_group_by)
+        self.assertIn("olist_order_reviews_dataset", resolution.forbidden_tables)
 
     def test_resolves_monthly_review_score_rule_with_review_date_trunc(self):
         profile = load_domain_profile("olist")

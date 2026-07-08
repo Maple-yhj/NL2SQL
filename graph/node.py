@@ -11,11 +11,13 @@ from catalog.domain_resolver import format_domain_context, resolve_domain_contex
 from engine.intent_parser import parse_intent
 from engine.models import coerce_positive_int
 from engine.plan_models import (
+    ExecutionMode,
     PlanDSL,
     format_plan_context,
     plan_search_query,
 )
 from engine.planner import plan_query
+from graph.dynamic_executor import execute_dynamic_graph
 from graph.context import GraphContext
 from graph.data_memory import data_memory_to_dict, extract_pending_memory_updates
 from graph.message_type import classify_message_type
@@ -27,6 +29,8 @@ from graph.tools.explain_table_result import explain_table_result
 from graph.tools.domain_sql_validator import validate_domain_sql
 from graph.tools.sql_generator import generate_sql
 from graph.tools.sql_store import search_metrics, search_schema
+from graph.tools.tenant_scope import apply_tenant_scope
+from graph.tools.runtime_registry import build_runtime_tool_registry
 from graph.tools.validate_sql import validate_sql
 
 
@@ -323,6 +327,11 @@ async def plan_query_node(
             intent=state.get("intent"),
             llm=runtime.context.llm,
             execute=state.get("execute", False),
+            execution_mode=(
+                ExecutionMode.DYNAMIC
+                if runtime.context.agent_mode == "dynamic"
+                else ExecutionMode.FIXED_DAG
+            ),
         )
         plan = bundle.plan
         execution_graph = bundle.execution_graph
@@ -473,6 +482,16 @@ async def validate_sql_node(
                     ],
                     "domain_validation": domain_result,
                 }
+        if result.get("ok") is True:
+            logical_sql = str(result.get("normalized_sql", ""))
+            executable_sql = apply_tenant_scope(logical_sql, tenant_id=state["tenant_id"])
+            result = {
+                **result,
+                "logical_sql": logical_sql,
+                "tenant_scoped_sql": executable_sql,
+                "executable_sql": executable_sql,
+                "normalized_sql": executable_sql,
+            }
         attempts = state.get("validation_attempts", 0) + 1
         ok = result.get("ok") is True
         return {
@@ -493,6 +512,31 @@ async def validate_sql_node(
         } # type: ignore
     except Exception as exc:
         return _error(state, "validate_sql", exc)
+
+
+async def dynamic_execute_node(
+    state: GraphState,
+    runtime: Runtime[GraphContext],
+) -> GraphState:
+    try:
+        return await execute_dynamic_graph(
+            state,
+            runtime,
+            registry=build_runtime_tool_registry(
+                {
+                    "search_metrics": lambda state, runtime, inputs: search_metrics_node(state, runtime),
+                    "search_schema": lambda state, runtime, inputs: search_schema_node(state, runtime),
+                    "generate_sql": lambda state, runtime, inputs: generate_sql_node(state, runtime),
+                    "prepare_sql": lambda state, runtime, inputs: validate_sql_node(state, runtime),
+                    "validate_sql": lambda state, runtime, inputs: validate_sql_node(state, runtime),
+                    "execute_sql": lambda state, runtime, inputs: execute_sql_node(state, runtime),
+                    "explain_result": lambda state, runtime, inputs: explain_node(state, runtime),
+                    "explain_table_result": lambda state, runtime, inputs: explain_node(state, runtime),
+                }
+            ),
+        ) # type: ignore
+    except Exception as exc:
+        return _error(state, "dynamic_execute", exc)
 
 
 async def execute_sql_node(
@@ -617,7 +661,7 @@ async def propose_memory_updates_node(
 async def finalize_node(state: GraphState) -> OutputState:
     intent = state.get("planned_intent") or state.get("intent")
     sql = state.get("validated_sql", "")
-    return {
+    output: OutputState = {
         "ok": _state_ok(state),
         "question": state["question"],
         "contextualized_question": _question_for_model(state),
@@ -633,3 +677,6 @@ async def finalize_node(state: GraphState) -> OutputState:
         "trace": state.get("trace", []),
         "pending_memory_updates": state.get("pending_memory_updates", []),
     }
+    if "tool_trace" in state:
+        output["tool_trace"] = state.get("tool_trace", [])
+    return output

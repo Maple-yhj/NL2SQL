@@ -46,6 +46,19 @@ def graph_output(**overrides):
         "answer": "",
         "error": "",
         "trace": [{"node": "initialize", "ok": True, "message": "success"}],
+        "tool_trace": [
+            {
+                "tool_name": "sql.generate",
+                "canonical_name": "generate_sql",
+                "started_at": "2026-07-08T00:00:00+00:00",
+                "duration_ms": 1.0,
+                "ok": True,
+                "error_code": "",
+                "input_summary": {"keys": ["question"]},
+                "output_summary": {"keys": ["candidate_sql"]},
+                "retry_count": 0,
+            }
+        ],
         "pending_memory_updates": [],
     }
     output.update(overrides)
@@ -289,6 +302,7 @@ class ApiConversationTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["message_type"], "text")
+        self.assertNotIn("tool_trace", response.json())
         run_nl2sql.assert_awaited_once_with(
             "那按地区呢",
             tenant_id="demo",
@@ -300,6 +314,48 @@ class ApiConversationTests(unittest.TestCase):
             max_validation_attempts=3,
             memory_history_limit=6,
             memory_store=store,
+        )
+
+    def test_post_message_includes_tool_trace_when_requested(self):
+        client = TestClient(create_app())
+        store = InMemoryConversationStore()
+
+        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
+            "api.routes.create_conversation_store", return_value=store
+        ), mock.patch(
+            "api.routes.run_nl2sql",
+            new=mock.AsyncMock(return_value=graph_output(question="show gmv")),
+        ) as run_nl2sql:
+            created = client.post(
+                "/api/conversations",
+                headers=auth_headers(),
+                json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
+            ).json()
+            response = client.post(
+                f"/api/conversations/{created['conversation_id']}/messages",
+                headers=auth_headers(),
+                json={
+                    "tenant_id": "demo",
+                    "user_id": "user-1",
+                    "question": "show gmv",
+                    "include_tool_trace": True,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["tool_trace"][0]["canonical_name"], "generate_sql")
+        run_nl2sql.assert_awaited_once_with(
+            "show gmv",
+            tenant_id="demo",
+            execute=True,
+            conversation_id=created["conversation_id"],
+            user_id="user-1",
+            timeout_ms=10000,
+            max_limit=1000,
+            max_validation_attempts=2,
+            memory_history_limit=8,
+            memory_store=store,
+            include_tool_trace=True,
         )
 
     def test_post_message_response_includes_pending_memory_updates(self):

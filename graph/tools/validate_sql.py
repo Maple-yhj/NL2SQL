@@ -17,8 +17,38 @@ DANGEROUS_EXPRESSIONS = (
 )
 
 
-def _violation(code: str, message: str) -> dict[str, str]:
-    return {"code": code, "message": message}
+def _violation(code: str, message: str) -> dict[str, Any]:
+    return {
+        "code": code,
+        "message": message,
+        "severity": "error",
+        "recoverable": code
+        in {
+            "missing_allowed_tables",
+            "parse_error",
+            "multiple_statements",
+            "not_select",
+            "not_readonly",
+            "table_not_allowed",
+            "unknown_table_alias",
+            "invalid_limit",
+        },
+        "retry_hint": _retry_hint_for_violation(code),
+    }
+
+
+def _retry_hint_for_violation(code: str) -> str:
+    hints = {
+        "missing_allowed_tables": "Retrieve schema context before validating SQL.",
+        "parse_error": "Regenerate a single valid PostgreSQL SELECT statement.",
+        "multiple_statements": "Return exactly one SQL statement.",
+        "not_select": "Use a SELECT or WITH ... SELECT query.",
+        "not_readonly": "Remove any DDL, DML, or mutation statements.",
+        "table_not_allowed": "Use only tables returned by authorized schema search.",
+        "unknown_table_alias": "Use a declared table alias or qualify columns with an available table name.",
+        "invalid_limit": "Use a numeric LIMIT literal.",
+    }
+    return hints.get(code, "Regenerate SQL using the validation feedback.")
 
 
 def _set_limit(expression: Any, limit_value: int) -> None:
@@ -116,6 +146,14 @@ async def validate_sql(
         )
 
     result["columns"] = sorted({column.name for column in expression.find_all(exp.Column)})
+    unknown_aliases = _unknown_table_aliases(expression)
+    if unknown_aliases:
+        result["violations"].append(
+            _violation(
+                "unknown_table_alias",
+                "SQL references undefined table aliases: " + ", ".join(unknown_aliases),
+            )
+        )
 
     limit = expression.args.get("limit")
     if limit is None:
@@ -140,3 +178,40 @@ async def validate_sql(
     result["ok"] = not result["violations"]
     result["message"] = "success" if result["ok"] else "SQL validation failed."
     return result
+
+
+def _unknown_table_aliases(expression: Any) -> list[str]:
+    available = _available_table_qualifiers(expression)
+    unknown = {
+        _qualifier_name(column.table)
+        for column in expression.find_all(exp.Column)
+        if column.table and _qualifier_name(column.table) not in available
+    }
+    return sorted(value for value in unknown if value)
+
+
+def _available_table_qualifiers(expression: Any) -> set[str]:
+    qualifiers: set[str] = set()
+    for table in expression.find_all(exp.Table):
+        qualifiers.add(_qualifier_name(table.name))
+        qualifiers.add(_qualifier_name(_alias_name(table)))
+    for subquery in expression.find_all(exp.Subquery):
+        qualifiers.add(_qualifier_name(_alias_name(subquery)))
+    for cte in expression.find_all(exp.CTE):
+        qualifiers.add(_qualifier_name(_alias_name(cte)))
+    return {value for value in qualifiers if value}
+
+
+def _alias_name(expression: Any) -> str:
+    alias = getattr(expression, "alias", "")
+    if alias:
+        return str(alias)
+    alias_arg = getattr(expression, "args", {}).get("alias")
+    if alias_arg is None:
+        return ""
+    alias_value = getattr(alias_arg, "this", None)
+    return getattr(alias_value, "name", "") or str(alias_value or "")
+
+
+def _qualifier_name(value: Any) -> str:
+    return str(value or "").strip().strip('"').casefold()

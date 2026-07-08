@@ -192,7 +192,15 @@ class ExecutionGraph:
         }
 
 
-def build_execution_graph(plan: PlanDSL, *, execute: bool) -> ExecutionGraph:
+def build_execution_graph(
+    plan: PlanDSL,
+    *,
+    execute: bool,
+    mode: ExecutionMode = ExecutionMode.FIXED_DAG,
+) -> ExecutionGraph:
+    if mode == ExecutionMode.DYNAMIC:
+        return _build_dynamic_execution_graph(plan, execute=execute)
+
     steps = [
         ExecutionStep(
             id="metric_context",
@@ -242,6 +250,60 @@ def build_execution_graph(plan: PlanDSL, *, execute: bool) -> ExecutionGraph:
         metadata={
             "projection": "fixed_dag",
             "future_modes": [ExecutionMode.SEMI_DYNAMIC.value, ExecutionMode.DYNAMIC.value],
+        },
+    )
+
+
+def _build_dynamic_execution_graph(plan: PlanDSL, *, execute: bool) -> ExecutionGraph:
+    steps = [
+        ExecutionStep(
+            id="metric_context",
+            tool="search_metrics",
+            outputs=["metrics_result", "table_names", "domain_context", "domain_constraints"],
+            metadata={"analysis_type": plan.analysis_type.value},
+        ),
+        ExecutionStep(
+            id="schema_context",
+            tool="search_schema",
+            depends_on=["metric_context"],
+            outputs=["schema_result", "allowed_tables"],
+        ),
+        ExecutionStep(
+            id="sql_generation",
+            tool="generate_sql",
+            depends_on=["metric_context", "schema_context"],
+            outputs=["candidate_sql"],
+        ),
+        ExecutionStep(
+            id="sql_preparation",
+            tool="prepare_sql",
+            depends_on=["sql_generation"],
+            outputs=["validated_sql", "validation_result", "executable_sql"],
+        ),
+    ]
+    if execute:
+        steps.extend(
+            [
+                ExecutionStep(
+                    id="sql_execution",
+                    tool="execute_sql",
+                    depends_on=["sql_preparation"],
+                    outputs=["rows", "execution_result"],
+                ),
+                ExecutionStep(
+                    id="result_explanation",
+                    tool="explain_result",
+                    depends_on=["sql_execution"],
+                    outputs=["answer"],
+                ),
+            ]
+        )
+    return ExecutionGraph(
+        mode=ExecutionMode.DYNAMIC,
+        steps=steps,
+        metadata={
+            "projection": "dynamic_registry",
+            "fallback_mode": ExecutionMode.FIXED_DAG.value,
         },
     )
 

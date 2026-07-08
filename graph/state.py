@@ -20,7 +20,7 @@ class InputState(RequiredInputState, OptionalInputState):
     pass
 
 
-class OutputState(TypedDict):
+class RequiredOutputState(TypedDict):
     ok: bool
     question: str
     contextualized_question: str
@@ -35,6 +35,14 @@ class OutputState(TypedDict):
     error: str
     trace: list[dict[str, Any]]
     pending_memory_updates: list[dict[str, Any]]
+
+
+class OptionalOutputState(TypedDict, total=False):
+    tool_trace: list[dict[str, Any]]
+
+
+class OutputState(RequiredOutputState, OptionalOutputState):
+    pass
 
 
 class GraphOptionalState(TypedDict, total=False):
@@ -64,6 +72,7 @@ class GraphOptionalState(TypedDict, total=False):
     answer: str
     error: str
     trace: list[dict[str, Any]]
+    tool_trace: list[dict[str, Any]]
     ok: bool
     sql: str
     message_type: str
