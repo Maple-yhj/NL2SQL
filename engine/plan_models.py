@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
-from engine.models import QueryIntent
+from engine.models import QueryIntent, coerce_positive_int
 
 
 class AnalysisType(str, Enum):
@@ -91,11 +91,9 @@ class PlanResultShape:
     def from_dict(cls, value: Any) -> "PlanResultShape":
         if not isinstance(value, dict):
             return cls()
-        limit = value.get("limit")
-        parsed_limit = int(limit) if isinstance(limit, int) and limit > 0 else None
         return cls(
             order_by=[item for item in (PlanOrder.from_value(v) for v in value.get("order_by", []) or []) if item.field],
-            limit=parsed_limit,
+            limit=coerce_positive_int(value.get("limit")),
         )
 
 
@@ -146,6 +144,7 @@ class PlanDSL:
             dimensions=dimensions,
             filters=list(intent.filters),
             time_grain=time_grain,
+            result_shape=PlanResultShape(limit=intent.limit),
         )
 
     def to_query_intent(self) -> QueryIntent:
@@ -154,6 +153,7 @@ class PlanDSL:
             time_range=dict(self.time_range),
             dimensions=[dimension.name for dimension in self.dimensions],
             filters=list(self.filters),
+            limit=self.result_shape.limit,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -269,6 +269,8 @@ def plan_search_query(*, question: str, plan: PlanDSL | None) -> str:
     ]
     if plan.time_grain:
         parts.append(f"time_grain: {plan.time_grain}")
+    if plan.result_shape.limit is not None:
+        parts.append(f"limit: {plan.result_shape.limit}")
     return "\n".join(part for part in parts if not part.endswith(": "))
 
 

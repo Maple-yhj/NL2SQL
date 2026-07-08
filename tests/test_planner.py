@@ -15,6 +15,11 @@ class JsonLLM:
         return '{"analysis_type":"trend","metrics":[{"name":"gmv"}],"dimensions":[{"name":"paid_date","role":"time"}],"time_grain":"day"}'
 
 
+class JsonWithoutLimitLLM:
+    async def complete(self, prompt, system="", max_output_tokens=2048):
+        return '{"analysis_type":"multi_dimensional","metrics":[{"name":"gmv"}],"dimensions":[{"name":"customer_city"}]}'
+
+
 class PlannerTests(unittest.IsolatedAsyncioTestCase):
     async def test_plan_query_falls_back_to_intent_when_llm_output_is_invalid(self):
         bundle = await plan_query(
@@ -41,6 +46,17 @@ class PlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bundle.plan.time_grain, "day")
         self.assertEqual(bundle.intent.dimensions, ["paid_date"])
         self.assertEqual(bundle.execution_graph.steps[-1].id, "result_explanation")
+
+    async def test_plan_query_preserves_intent_limit_when_planner_omits_it(self):
+        bundle = await plan_query(
+            question="show top customer cities, return 20",
+            intent=QueryIntent(metrics=["gmv"], dimensions=["customer_city"], limit=20),
+            llm=JsonWithoutLimitLLM(),
+            execute=False,
+        )
+
+        self.assertEqual(bundle.plan.result_shape.limit, 20)
+        self.assertEqual(bundle.intent.limit, 20)
 
 
 if __name__ == "__main__":

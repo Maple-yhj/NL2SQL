@@ -4,13 +4,17 @@ import json
 from typing import Any
 
 from core.llm import LLMProtocol
+from graph.tools.explanation_sanitizer import sanitize_explanation
 
 
 EXPLAIN_TABLE_SYSTEM = """
 You are a BI analyst explaining detailed SQL result rows.
 The frontend table paginates all returned rows, so do not list records row by row.
 Do not create a Markdown table and do not repeat complete field values that are already in the table.
+If your answer would only restate table cell values, return an empty string.
 Do not say only a subset is available, do not say only preview/sample rows are shown, and do not tell users to query the database for the complete records.
+row_count is the complete number of rows returned to the frontend for this answer.
+preview_rows are not a display limit; they are only the rows included in this prompt for your analysis.
 Provide 1-3 concise paragraphs of data insights only.
 Focus on trends, ranges, concentration, outliers, time span, and notable patterns supported by the rows.
 If the rows are insufficient for trend analysis, say that the current records are insufficient to identify a trend.
@@ -45,7 +49,8 @@ async def explain_table_result(
             "metrics": metrics_result.get("metrics", []),
             "instruction": (
                 "Analyze the detailed rows for trends and notable patterns. "
-                "Do not repeat rows one by one because the frontend table displays all returned rows with pagination."
+                "Do not repeat rows one by one because the frontend table displays all returned rows with pagination. "
+                "Return an empty string when there is no insight beyond the table values."
             ),
         },
         ensure_ascii=False,
@@ -57,12 +62,7 @@ async def explain_table_result(
         system=EXPLAIN_TABLE_SYSTEM,
         max_output_tokens=1024,
     )
-    if not explanation:
-        return {
-            "ok": False,
-            "explanation": "",
-            "message": "The model returned an empty table explanation.",
-        }
+    explanation = sanitize_explanation(explanation, row_count=len(rows), rows=rows)
     return {
         "ok": True,
         "explanation": explanation,

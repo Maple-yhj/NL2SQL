@@ -394,6 +394,37 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SELECT * FROM users", result["retry_feedback"])
         self.assertIn("table_not_allowed", result["retry_feedback"])
 
+    async def test_validation_uses_explicit_intent_limit_as_max_limit(self):
+        validation = {
+            "ok": True,
+            "normalized_sql": "SELECT amount FROM orders LIMIT 20",
+            "message": "success",
+            "violations": [],
+            "warnings": [],
+        }
+        rt = runtime(max_limit=100)
+        state = {
+            "question": "show top orders, return 20",
+            "tenant_id": "demo",
+            "execute": False,
+            "candidate_sql": "SELECT amount FROM orders",
+            "allowed_tables": ["orders"],
+            "planned_intent": QueryIntent(dimensions=["order_id"], limit=20),
+            "validation_attempts": 0,
+        }
+        with mock.patch.object(
+            node, "validate_sql", new=mock.AsyncMock(return_value=validation)
+        ) as validator:
+            result = await node.validate_sql_node(state, rt)
+
+        self.assertEqual(result["validated_sql"], "SELECT amount FROM orders LIMIT 20")
+        validator.assert_awaited_once_with(
+            sql="SELECT amount FROM orders",
+            tenant_id="demo",
+            allowed_tables=["orders"],
+            max_limit=20,
+        )
+
     async def test_validation_failure_applies_domain_constraints_after_safe_sql_check(self):
         rt = runtime()
         state = {
@@ -477,6 +508,47 @@ class GraphNodeTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["answer"], "Orders are concentrated late in the day.")
+        table_explainer.assert_awaited_once()
+        summary_explainer.assert_not_awaited()
+
+    async def test_explain_node_uses_table_explanation_for_topn_aggregate_lists(self):
+        rt = runtime()
+        with mock.patch.object(
+            node,
+            "explain_table_result",
+            new=mock.AsyncMock(
+                return_value={
+                    "ok": True,
+                    "explanation": "Sao Paulo leads the returned city ranking.",
+                    "message": "success",
+                }
+            ),
+        ) as table_explainer, mock.patch.object(
+            node,
+            "explain_result",
+            new=mock.AsyncMock(return_value={"ok": True, "explanation": "unused"}),
+        ) as summary_explainer:
+            result = await node.explain_node(
+                {
+                    "question": "top 20 customer state-city combinations by customer count",
+                    "tenant_id": "demo",
+                    "execute": True,
+                    "validated_sql": (
+                        "SELECT customer_state, customer_city, COUNT(*) AS customer_count "
+                        "FROM customers GROUP BY customer_state, customer_city "
+                        "ORDER BY customer_count DESC LIMIT 20"
+                    ),
+                    "rows": [
+                        {"customer_state": "SP", "customer_city": "sao paulo", "customer_count": 15540},
+                        {"customer_state": "RJ", "customer_city": "rio de janeiro", "customer_count": 6882},
+                    ],
+                    "metrics_result": {},
+                    "trace": [],
+                },
+                rt,
+            )
+
+        self.assertEqual(result["answer"], "Sao Paulo leads the returned city ranking.")
         table_explainer.assert_awaited_once()
         summary_explainer.assert_not_awaited()
 

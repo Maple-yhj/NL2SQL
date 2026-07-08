@@ -51,6 +51,24 @@ class MessageTypeClassifierTests(unittest.TestCase):
 
         self.assertEqual(message_type, "text")
 
+    def test_topn_aggregate_list_uses_table(self):
+        message_type = classify_message_type(
+            question="top 20 customer state-city combinations by customer count",
+            contextualized_question="",
+            sql=(
+                "SELECT customer_state, customer_city, COUNT(*) AS customer_count "
+                "FROM customers GROUP BY customer_state, customer_city "
+                "ORDER BY customer_count DESC LIMIT 20"
+            ),
+            rows=[
+                {"customer_state": "SP", "customer_city": "sao paulo", "customer_count": 15540},
+                {"customer_state": "RJ", "customer_city": "rio de janeiro", "customer_count": 6882},
+            ],
+            error="",
+        )
+
+        self.assertEqual(message_type, "table")
+
     def test_product_volume_topn_detail_uses_table_despite_summary_words(self):
         message_type = classify_message_type(
             question="查看体积最大的商品，返回商品 id、品类、长宽高和重量，取前 25 个",

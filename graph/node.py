@@ -9,6 +9,7 @@ from langgraph.runtime import Runtime
 from catalog.domain_loader import try_load_domain_profile
 from catalog.domain_resolver import format_domain_context, resolve_domain_context
 from engine.intent_parser import parse_intent
+from engine.models import coerce_positive_int
 from engine.plan_models import (
     PlanDSL,
     format_plan_context,
@@ -61,6 +62,28 @@ def _plan_from_state(state: GraphState) -> PlanDSL | None:
         return None
 
 
+def _effective_max_limit(state: GraphState, configured_max_limit: int) -> int:
+    intent_limit = _intent_limit_from_state(state)
+    if intent_limit is None:
+        plan = _plan_from_state(state)
+        intent_limit = plan.result_shape.limit if plan is not None else None
+    if intent_limit is None:
+        return configured_max_limit
+    return min(intent_limit, configured_max_limit)
+
+
+def _intent_limit_from_state(state: GraphState) -> int | None:
+    for key in ("planned_intent", "intent"):
+        intent = state.get(key)
+        if isinstance(intent, dict):
+            limit = coerce_positive_int(intent.get("limit"))
+        else:
+            limit = coerce_positive_int(getattr(intent, "limit", None))
+        if limit is not None:
+            return limit
+    return None
+
+
 def _query_for_retrieval(state: GraphState) -> str:
     return plan_search_query(
         question=_question_for_model(state),
@@ -85,6 +108,15 @@ def _message_type(state: GraphState) -> str:
         rows=state.get("rows", []),
         error=state.get("error", ""),
     )
+
+
+def _intent_output(intent: Any) -> dict[str, Any]:
+    if intent is None:
+        return {}
+    value = dict(intent) if isinstance(intent, dict) else asdict(intent)
+    if value.get("limit") is None:
+        value.pop("limit", None)
+    return value
 
 
 def _metric_table_names(metrics_result: dict[str, Any]) -> list[str]:
@@ -419,7 +451,7 @@ async def validate_sql_node(
             sql=state.get("candidate_sql", ""),
             tenant_id=state["tenant_id"],
             allowed_tables=allowed_tables,
-            max_limit=runtime.context.max_limit,
+            max_limit=_effective_max_limit(state, runtime.context.max_limit),
         )
         if result.get("ok") is True:
             domain_result = validate_domain_sql(
@@ -473,7 +505,7 @@ async def execute_sql_node(
             tenant_id=state["tenant_id"],
             dsn=runtime.context.dsn,
             timeout_ms=runtime.context.timeout_ms,
-            max_limit=runtime.context.max_limit,
+            max_limit=_effective_max_limit(state, runtime.context.max_limit),
             allowed_tables=state.get("allowed_tables") or [],
         )
         ok = result.get("ok") is True
@@ -592,7 +624,7 @@ async def finalize_node(state: GraphState) -> OutputState:
         "conversation_id": state.get("conversation_id", ""),
         "user_id": state.get("user_id", ""),
         "tenant_id": state["tenant_id"],
-        "intent": asdict(intent) if intent is not None else {},
+        "intent": _intent_output(intent),
         "sql": sql,
         "message_type": _message_type(state),
         "rows": state.get("rows", []),

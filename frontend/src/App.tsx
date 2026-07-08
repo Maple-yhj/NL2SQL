@@ -702,6 +702,7 @@ function UserBubble({ message }: { message: ChatMessage }) {
 
 function AssistantBubble({ message }: { message: ChatMessage }) {
   const viewModel = createAssistantViewModel(message);
+  const answerText = viewModel.answer || (viewModel.showTable ? "" : viewModel.status);
 
   return (
     <div className="message ai">
@@ -715,7 +716,7 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
         ) : (
           <>
             {viewModel.showTable && <div className="insight-label">数据洞察</div>}
-            <MarkdownAnswer text={viewModel.answer || viewModel.status} />
+            {answerText && <MarkdownAnswer text={answerText} />}
             {viewModel.showTable && (
               <div className="assistant-grid">
                 <div className="mini-card">

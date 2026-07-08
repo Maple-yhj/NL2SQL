@@ -48,6 +48,18 @@ class SqlGeneratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("[PLAN DSL]", prompt)
         self.assertIn('"analysis_type":"trend"', prompt)
 
+    def test_prompt_includes_parsed_result_limit(self):
+        prompt = build_sql_prompt(
+            question="show top customer cities, return 20",
+            intent=QueryIntent(metrics=["gmv"], dimensions=["customer_city"], limit=20),
+            metrics_result={"metrics": []},
+            schema_result={"schema": []},
+            retry_feedback=None,
+        )
+
+        self.assertIn("limit: 20", prompt)
+        self.assertIn("Respect the parsed limit", prompt)
+
     def test_prompt_includes_domain_context_when_provided(self):
         prompt = build_sql_prompt(
             question="按客户州统计 GMV",

@@ -149,6 +149,42 @@ class GraphToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("show gmv", llm.calls[0]["prompt"])
         self.assertIn("100", llm.calls[0]["prompt"])
 
+    async def test_explanation_removes_false_preview_limit_claims(self):
+        class PreviewLimitLLM(FakeLLM):
+            async def complete(self, prompt, system="", max_output_tokens=2048):
+                self.calls.append({"prompt": prompt, "system": system})
+                return (
+                    "查询返回的是按客户数降序排列的前20个州-城市组合，"
+                    "以下为前10个城市及其客户数（由于只显示了10行，其余10个未列出）。"
+                    "如需完整的前20个城市列表，请执行原查询获取全部20行数据。"
+                    "圣保罗客户数明显领先。"
+                )
+
+        llm = PreviewLimitLLM()
+        rows = [
+            {"customer_state": "SP", "customer_city": f"city-{index}", "customer_count": index}
+            for index in range(20)
+        ]
+
+        result = await explain_result(
+            question="top 20 customer state-city combinations by customer count",
+            sql=(
+                "SELECT customer_state, customer_city, COUNT(*) AS customer_count "
+                "FROM customers GROUP BY customer_state, customer_city "
+                "ORDER BY customer_count DESC LIMIT 20"
+            ),
+            rows=rows,
+            metrics_result={},
+            llm=llm,
+        )
+
+        self.assertNotIn("前10", result["explanation"])
+        self.assertNotIn("只显示", result["explanation"])
+        self.assertNotIn("未列出", result["explanation"])
+        self.assertNotIn("执行原查询", result["explanation"])
+        self.assertIn("圣保罗客户数明显领先", result["explanation"])
+        self.assertIn("row_count", llm.calls[0]["prompt"])
+
     async def test_table_explanation_requests_insights_without_repeating_rows(self):
         llm = FakeLLM()
         result = await explain_table_result(
@@ -168,6 +204,72 @@ class GraphToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("do not list records row by row", llm.calls[0]["system"].lower())
         self.assertIn("frontend table paginates all returned rows", llm.calls[0]["system"].lower())
         self.assertIn("do not say only a subset is available", llm.calls[0]["system"].lower())
+
+    async def test_table_explanation_removes_false_preview_limit_claims(self):
+        class PreviewLimitLLM(FakeLLM):
+            async def complete(self, prompt, system="", max_output_tokens=2048):
+                self.calls.append({"prompt": prompt, "system": system})
+                return (
+                    "以下是客户数排名前 10 的城市"
+                    "（因数据只展示了前 10 行，实际应返回前 20 个城市）。"
+                    "圣保罗客户数明显领先。"
+                )
+
+        llm = PreviewLimitLLM()
+        rows = [
+            {"customer_state": "SP", "customer_city": f"city-{index}", "customer_count": index}
+            for index in range(20)
+        ]
+
+        result = await explain_table_result(
+            question="客户最多的州和城市分别有哪些？返回前 20 个城市",
+            sql="SELECT customer_state, customer_city, customer_count FROM customers LIMIT 20",
+            rows=rows,
+            metrics_result={},
+            llm=llm,
+        )
+
+        self.assertNotIn("前 10", result["explanation"])
+        self.assertNotIn("只展示", result["explanation"])
+        self.assertNotIn("实际应返回", result["explanation"])
+        self.assertIn("圣保罗客户数明显领先", result["explanation"])
+        self.assertIn("row_count is the complete number", llm.calls[0]["system"].lower())
+        self.assertIn("preview_rows are not a display limit", llm.calls[0]["system"].lower())
+
+    async def test_table_explanation_removes_row_by_row_bullet_descriptions(self):
+        class RowListLLM(FakeLLM):
+            async def complete(self, prompt, system="", max_output_tokens=2048):
+                self.calls.append({"prompt": prompt, "system": system})
+                return "\n".join(
+                    [
+                        "\u6839\u636e\u67e5\u8be2\u7ed3\u679c\uff0c\u6309\u5356\u5bb6\u5dde\u7edf\u8ba1\u7684\u5e73\u5747\u4ece\u8d2d\u4e70\u5230\u4ea4\u7ed9\u627f\u8fd0\u5546\u7684\u65f6\u95f4\u5982\u4e0b\uff1a",
+                        "",
+                        "- AC: \u65e0\u6570\u636e (null)",
+                        "- AM: 3\u592910\u5c0f\u65f619\u520612\u79d2",
+                        "- BA: 3\u59299\u5c0f\u65f630\u520616\u79d2",
+                        "\uff08\u5171\u8fd4\u56de23\u6761\u8bb0\u5f55\uff0c\u4ec5\u5217\u51fa\u63d0\u4f9b\u768410\u6761\u3002\u5176\u4f59\u5dde\u7684\u5e73\u5747\u65f6\u957f\u672a\u5728\u7ed3\u679c\u4e2d\u5c55\u793a\u3002\uff09",
+                    ]
+                )
+
+        rows = [
+            {"seller_state": "AC", "avg_carrier_handoff_duration": None},
+            {"seller_state": "AM", "avg_carrier_handoff_duration": "P3DT10H19M12.333333S"},
+            {"seller_state": "BA", "avg_carrier_handoff_duration": "P3DT9H30M16.553259S"},
+        ]
+
+        result = await explain_table_result(
+            question="\u6309\u5356\u5bb6\u5dde\u7edf\u8ba1\u5e73\u5747\u4ece\u8d2d\u4e70\u5230\u4ea4\u7ed9\u627f\u8fd0\u5546\u7684\u65f6\u95f4",
+            sql=(
+                "SELECT seller_state, AVG(order_delivered_carrier_date - order_purchase_timestamp) "
+                "AS avg_carrier_handoff_duration FROM orders GROUP BY seller_state"
+            ),
+            rows=rows,
+            metrics_result={},
+            llm=RowListLLM(),
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["explanation"], "")
 
     async def test_execute_sql_reads_environment_without_runtime_dotenv_load(self):
         execute_sql_module = importlib.import_module("graph.tools.execute_sql")

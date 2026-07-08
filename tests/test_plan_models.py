@@ -22,6 +22,14 @@ class PlanModelTests(unittest.TestCase):
         self.assertEqual(plan.time_range["start"], "2026-06-01")
         self.assertEqual(plan.to_query_intent(), intent)
 
+    def test_explicit_limit_round_trips_through_plan_result_shape(self):
+        intent = QueryIntent(metrics=["gmv"], dimensions=["customer_city"], limit=20)
+
+        plan = PlanDSL.from_intent(intent, question="show top customer cities, return 20")
+
+        self.assertEqual(plan.result_shape.limit, 20)
+        self.assertEqual(plan.to_query_intent(), intent)
+
     def test_dimensions_build_multi_dimensional_plan(self):
         intent = QueryIntent(metrics=["gmv"], dimensions=["region", "category"])
 

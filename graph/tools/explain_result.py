@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from core.llm import LLMProtocol
+from graph.tools.explanation_sanitizer import sanitize_explanation
 
 
 EXPLAIN_SYSTEM = """
@@ -12,6 +13,9 @@ Answer the user's question directly and concisely.
 Use only the supplied rows and metric context.
 Do not invent causes, trends, or values that are not present in the data.
 If rows are empty, state that the query returned no data.
+row_count is the complete number of rows returned to the frontend for this answer.
+rows are the analysis sample included in this prompt, not a display limit.
+Do not say only a subset is available, do not say only preview/sample rows are shown, and do not tell users to query the database for the complete records.
 """.strip()
 
 
@@ -49,6 +53,7 @@ async def explain_result(
         system=EXPLAIN_SYSTEM,
         max_output_tokens=1024,
     )
+    explanation = sanitize_explanation(explanation, row_count=len(rows))
     if not explanation:
         return {
             "ok": False,

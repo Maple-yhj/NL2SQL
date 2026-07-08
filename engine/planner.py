@@ -41,6 +41,7 @@ JSON shape:
   "operations": [],
   "metadata": {}
 }
+If Parsed intent includes a positive limit, preserve it in result_shape.limit.
 """.strip()
 
 
@@ -68,6 +69,8 @@ async def plan_query(
             max_output_tokens=1536,
         )
         plan = PlanDSL.from_dict(extract_json_object(raw))
+        if base_intent.limit is not None:
+            plan.result_shape.limit = base_intent.limit
         message = "success"
         ok = True
     except Exception as exc:
@@ -95,4 +98,5 @@ metrics: {intent.metrics}
 time_range: {intent.time_range}
 dimensions: {intent.dimensions}
 filters: {intent.filters}
+limit: {intent.limit}
 """.strip()

@@ -68,6 +68,27 @@ _SUMMARY_TERMS = (
 )
 
 _AGGREGATE_SQL_RE = re.compile(r"\b(sum|count|avg|min|max)\s*\(|\bgroup\s+by\b", re.IGNORECASE)
+_ORDER_BY_SQL_RE = re.compile(r"\border\s+by\b", re.IGNORECASE)
+_LIMIT_SQL_RE = re.compile(r"\blimit\s+\d+\b", re.IGNORECASE)
+_TOPN_LIST_TERMS = (
+    "\u524d",
+    "\u6392\u540d",
+    "\u6392\u884c",
+    "\u6700\u591a",
+    "\u6700\u5c11",
+    "\u6700\u5927",
+    "\u6700\u5c0f",
+    "\u54ea\u4e9b",
+    "top",
+    "rank",
+    "ranking",
+    "most",
+    "least",
+    "highest",
+    "lowest",
+    "largest",
+    "smallest",
+)
 _DETAIL_COLUMN_RE = re.compile(
     r"\b("
     r"order_id|customer_id|created_at|updated_at|amount|status|"
@@ -99,6 +120,8 @@ def classify_message_type(
         return "table"
     if _contains_any(prompt, _DOMAIN_DETAIL_TERMS):
         return "table"
+    if _looks_like_ranked_result_list(prompt=prompt, sql=sql, row_count=row_count):
+        return "table"
     if _contains_any(prompt, _SUMMARY_TERMS):
         return "text"
 
@@ -120,3 +143,11 @@ def _looks_like_detail_sql(sql: str) -> bool:
     if _AGGREGATE_SQL_RE.search(sql):
         return False
     return bool(_DETAIL_COLUMN_RE.search(sql))
+
+
+def _looks_like_ranked_result_list(*, prompt: str, sql: str, row_count: int) -> bool:
+    if row_count <= 1:
+        return False
+    if not (_ORDER_BY_SQL_RE.search(sql) and _LIMIT_SQL_RE.search(sql)):
+        return False
+    return _contains_any(prompt, _TOPN_LIST_TERMS)

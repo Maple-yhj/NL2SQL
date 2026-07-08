@@ -99,6 +99,7 @@ metrics: {intent.metrics}
 time_range: {intent.time_range}
 dimensions: {intent.dimensions}
 filters: {intent.filters}
+limit: {intent.limit}
 
 [METRIC CONTEXT]
 {metrics_content}
@@ -118,6 +119,12 @@ filters: {intent.filters}
         )
     if plan_context:
         prompt += f"\n\n[PLAN DSL]\n{plan_context}"
+    if intent.limit is not None:
+        prompt += (
+            "\n\n[RESULT LIMIT]\n"
+            f"Respect the parsed limit: generate LIMIT {intent.limit}. "
+            "Do not replace an explicit user-requested count with a default top 10."
+        )
     if tenant_scope_content:
         prompt += f"\n\n[TENANT SCOPE]\n{tenant_scope_content}"
     if data_memory_content:
