@@ -25,6 +25,14 @@ class SrcPackagingContractTests(unittest.TestCase):
         self.assertIn("data_agent*", setuptools["packages"]["find"]["include"])
         self.assertNotIn("scripts", document["project"])
 
+        dev_dependencies = {
+            dependency.lower()
+            for dependency in document["project"]["optional-dependencies"]["dev"]
+        }
+        self.assertTrue(
+            any(item.startswith("jsonschema>=") for item in dev_dependencies)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

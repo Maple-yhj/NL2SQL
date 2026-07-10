@@ -27,7 +27,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["langgraph-cli[inmem]>=0.4"]
+dev = [
+  "jsonschema>=4.23",
+  "langgraph-cli[inmem]>=0.4",
+]
 memory = ["graphiti-core>=0.19"]
 
 [tool.setuptools]

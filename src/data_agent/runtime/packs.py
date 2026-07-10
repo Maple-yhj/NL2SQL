@@ -25,9 +25,12 @@ NonBlankText = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
 _PACK_NAME_BODY = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+_SEMVER_PRERELEASE_ID = (
+    r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+)
 _SEMVER_BODY = (
     r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
-    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    rf"(?:-{_SEMVER_PRERELEASE_ID}(?:\.{_SEMVER_PRERELEASE_ID})*)?"
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
 )
 PackName = Annotated[
@@ -388,15 +391,17 @@ class DeploymentProfileSpec(PackModel):
     enterprise_pack: PackReferenceText
     environment: NonBlankText
     secrets_provider: Literal["environment"]
-    datasource_secrets: dict[str, EnvironmentVariable] = Field(min_length=1)
+    datasource_secrets: dict[SecretReference, EnvironmentVariable] = Field(
+        min_length=1
+    )
     memory_database_ref: EnvironmentVariable | None = None
     runtime: RuntimeLimits = Field(default_factory=RuntimeLimits)
 
     @field_validator("datasource_secrets")
     @classmethod
     def validate_datasource_secret_refs(
-        cls, value: dict[str, EnvironmentVariable]
-    ) -> dict[str, EnvironmentVariable]:
+        cls, value: dict[SecretReference, EnvironmentVariable]
+    ) -> dict[SecretReference, EnvironmentVariable]:
         secret_pattern = re.compile(
             r"^secret://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+$"
         )

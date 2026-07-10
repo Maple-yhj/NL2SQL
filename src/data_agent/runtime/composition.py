@@ -146,10 +146,11 @@ def _validate_pack_references(
         domain_pack.metadata.name,
         domain_pack.metadata.version,
     )
-    declared_domains = {item.ref for item in enterprise_binding.spec.domains}
-    if domain_ref not in declared_domains:
+    declared_domains = tuple(item.ref for item in enterprise_binding.spec.domains)
+    if declared_domains != (domain_ref,):
         raise ValueError(
-            f"enterprise binding does not reference domain pack {domain_ref!r}"
+            "enterprise binding must reference exactly one domain pack: "
+            f"{domain_ref!r}"
         )
 
     enterprise_ref = _pack_ref(
@@ -184,6 +185,8 @@ def _validate_pack_references(
         canonical_fields = set(declared_entities[entity_id].fields)
         if set(binding.fields) - canonical_fields:
             raise ValueError(f"binding {entity_id!r} references missing fields")
+        if tuple(binding.grain) != tuple(declared_entities[entity_id].grain):
+            raise ValueError(f"binding {entity_id!r} grain does not match domain")
         if set(binding.grain) - set(binding.fields):
             raise ValueError(f"binding {entity_id!r} grain is not fully mapped")
         if relation_allowlist and binding.relation not in relation_allowlist:
@@ -200,6 +203,11 @@ def _validate_pack_references(
         and tenant_scope.canonical_field not in declared_domain_fields
     ):
         raise ValueError("tenant scope references a missing canonical field")
+    if tenant_scope is not None:
+        tenant_entity, tenant_field = tenant_scope.canonical_field.rsplit(".", 1)
+        tenant_binding = enterprise_binding.spec.bindings.get(tenant_entity)
+        if tenant_binding is None or tenant_field not in tenant_binding.fields:
+            raise ValueError("tenant scope has no physical field mapping")
 
 
 def compile_runtime_bundle(

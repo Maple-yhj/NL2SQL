@@ -291,6 +291,17 @@ class PackModelContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.packs.DomainPack.model_validate(invalid_version)
 
+        for version in ("1.0.0-01", "1.0.0-alpha.01"):
+            invalid_prerelease = _domain_document()
+            invalid_prerelease["metadata"]["version"] = version
+            with self.subTest(version=version), self.assertRaises(ValidationError):
+                self.packs.DomainPack.model_validate(invalid_prerelease)
+
+        invalid_ref = _enterprise_document()
+        invalid_ref["spec"]["domains"] = [{"ref": "commerce@1.0.0-01"}]
+        with self.assertRaises(ValidationError):
+            self.packs.EnterpriseDataBinding.model_validate(invalid_ref)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,16 +4,22 @@
       "additionalProperties": false,
       "properties": {
         "datasourceSecrets": {
-          "additionalProperties": {
-            "pattern": "^[A-Z][A-Z0-9_]*$",
-            "type": "string"
-          },
+          "additionalProperties": false,
           "minProperties": 1,
+          "patternProperties": {
+            "^secret://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+$": {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            }
+          },
+          "propertyNames": {
+            "pattern": "^secret://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+$"
+          },
           "title": "Datasourcesecrets",
           "type": "object"
         },
         "enterprisePack": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Enterprisepack",
           "type": "string"
         },
@@ -63,7 +69,7 @@
         },
         "version": {
           "default": "1.0.0",
-          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Version",
           "type": "string"
         }

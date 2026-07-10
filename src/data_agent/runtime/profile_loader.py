@@ -41,9 +41,26 @@ def load_pack_yaml(path: str | Path, model: type[PackType]) -> PackType:
 def _schema_bytes(model: type[BaseModel]) -> bytes:
     schema = model.model_json_schema(by_alias=True, mode="validation")
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    _close_pattern_mappings(schema)
     return (
         json.dumps(schema, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     ).encode("utf-8")
+
+
+def _close_pattern_mappings(value: object) -> None:
+    if isinstance(value, dict):
+        pattern_properties = value.get("patternProperties")
+        if isinstance(pattern_properties, dict) and pattern_properties:
+            patterns = [{"pattern": pattern} for pattern in pattern_properties]
+            value["propertyNames"] = (
+                patterns[0] if len(patterns) == 1 else {"anyOf": patterns}
+            )
+            value["additionalProperties"] = False
+        for nested in tuple(value.values()):
+            _close_pattern_mappings(nested)
+    elif isinstance(value, list):
+        for nested in value:
+            _close_pattern_mappings(nested)
 
 
 def export_pack_schemas(output_dir: str | Path) -> tuple[Path, ...]:

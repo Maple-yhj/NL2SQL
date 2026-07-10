@@ -4,10 +4,14 @@
       "additionalProperties": false,
       "properties": {
         "bindings": {
+          "additionalProperties": false,
           "patternProperties": {
             "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$": {
               "$ref": "#/$defs/PhysicalEntityBinding"
             }
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$"
           },
           "title": "Bindings",
           "type": "object"
@@ -24,11 +28,15 @@
           "$ref": "#/$defs/EnterprisePolicies"
         },
         "sources": {
+          "additionalProperties": false,
           "minProperties": 1,
           "patternProperties": {
             "^[a-z_][a-z0-9_]*$": {
               "$ref": "#/$defs/EnterpriseSource"
             }
+          },
+          "propertyNames": {
+            "pattern": "^[a-z_][a-z0-9_]*$"
           },
           "title": "Sources",
           "type": "object"
@@ -117,7 +125,7 @@
         },
         "version": {
           "default": "1.0.0",
-          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Version",
           "type": "string"
         }
@@ -132,7 +140,7 @@
       "additionalProperties": false,
       "properties": {
         "ref": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Ref",
           "type": "string"
         }
@@ -147,10 +155,14 @@
       "additionalProperties": false,
       "properties": {
         "fields": {
+          "additionalProperties": false,
           "patternProperties": {
             "^[a-z][a-z0-9_]*$": {
               "$ref": "#/$defs/PhysicalFieldBinding"
             }
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9_]*$"
           },
           "title": "Fields",
           "type": "object"

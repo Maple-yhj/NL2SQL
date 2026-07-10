@@ -186,6 +186,54 @@ class RuntimeBundleCompositionTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.composition.ResolvedRuntimeBundle.model_validate(tampered)
 
+    def test_compile_requires_binding_grain_to_equal_domain_grain(self) -> None:
+        domain, enterprise, deployment = _documents()
+        domain["spec"]["entities"]["commerce.Order"]["fields"]["customer_id"] = {
+            "type": "string"
+        }
+        enterprise["spec"]["bindings"]["commerce.Order"]["grain"] = [
+            "customer_id"
+        ]
+        enterprise["spec"]["bindings"]["commerce.Order"]["fields"][
+            "customer_id"
+        ] = {"column": "customer_id"}
+
+        with self.assertRaisesRegex(ValueError, "grain"):
+            self._compile(domain, enterprise, deployment)
+
+    def test_compile_requires_tenant_scope_to_have_a_physical_mapping(self) -> None:
+        domain, enterprise, deployment = _documents()
+        domain["spec"]["entities"]["commerce.Seller"] = {
+            "grain": ["seller_id"],
+            "fields": {"seller_id": {"type": "string"}},
+        }
+        enterprise["spec"]["policies"]["tenantScope"] = {
+            "mode": "seller_id",
+            "canonicalField": "commerce.Seller.seller_id",
+            "principalClaim": "tenant_id",
+        }
+        with self.assertRaisesRegex(ValueError, "tenant scope"):
+            self._compile(domain, enterprise, deployment)
+
+        domain, enterprise, deployment = _documents()
+        domain["spec"]["entities"]["commerce.Order"]["fields"]["seller_id"] = {
+            "type": "string"
+        }
+        enterprise["spec"]["policies"]["tenantScope"] = {
+            "mode": "seller_id",
+            "canonicalField": "commerce.Order.seller_id",
+            "principalClaim": "tenant_id",
+        }
+        with self.assertRaisesRegex(ValueError, "tenant scope"):
+            self._compile(domain, enterprise, deployment)
+
+    def test_compile_requires_exactly_one_matching_domain_reference(self) -> None:
+        domain, enterprise, deployment = _documents()
+        enterprise["spec"]["domains"].append({"ref": "finance@1.0.0"})
+
+        with self.assertRaisesRegex(ValueError, "domain pack"):
+            self._compile(domain, enterprise, deployment)
+
 
 if __name__ == "__main__":
     unittest.main()
