@@ -1,0 +1,201 @@
+evals:
+  - id: commerce.metric_001
+    question: 统计 2018 年每个月的 GMV 趋势
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem]
+  - id: commerce.metric_002
+    question: 2017 年 GMV 最高的 10 个卖家是谁？
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Seller]
+  - id: commerce.metric_003
+    question: 按商品品类统计 2018 年上半年的 GMV，返回前 15 个品类
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Product]
+  - id: commerce.metric_004
+    question: 各客户州的订单数排名，统计 2018 年的去重订单
+    expectedMetrics: [commerce.order_count]
+    expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+  - id: commerce.metric_005
+    question: 每个卖家州的平均客单商品价格是多少？
+    expectedMetrics: [commerce.average_item_price]
+    expectedEntities: [commerce.OrderItem, commerce.Seller]
+  - id: commerce.metric_006
+    question: 2018 年不同支付方式贡献的 GMV 分别是多少？
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Payment]
+  - id: commerce.metric_007
+    question: 按月份统计 2018 年订单量和 GMV，一起展示
+    expectedMetrics: [commerce.order_count, commerce.gmv]
+    expectedEntities: [commerce.OrderItem]
+  - id: commerce.metric_008
+    question: Which product categories generated the most sales revenue in 2018?
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Product, commerce.CategoryTranslation]
+  - id: commerce.metric_009
+    question: 2018 年每个客户州的平均评价分是多少？
+    expectedMetrics: [commerce.average_review_score]
+    expectedEntities: [commerce.Review, commerce.Order, commerce.Customer]
+  - id: commerce.metric_010
+    question: 找出 2018 年 GMV 增长最快的月份
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem]
+  - id: commerce.metric_011
+    question: 2017 年到 2018 年，各卖家州的 GMV 同比变化是多少？
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Seller]
+  - id: commerce.metric_012
+    question: 按商品品类和支付方式交叉统计 GMV，查看 2018 年前 20 个组合
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Product, commerce.Order, commerce.Payment]
+
+  - id: commerce.detail_001
+    question: 列出最近 20 条订单明细，包括订单号、卖家、商品、价格、运费和发货截止时间
+    expectedMetrics: []
+    expectedEntities: [commerce.OrderItem]
+  - id: commerce.detail_002
+    question: 查看 2018 年 8 月价格最高的 30 个订单商品明细
+    expectedMetrics: []
+    expectedEntities: [commerce.OrderItem]
+  - id: commerce.detail_003
+    question: 找出运费超过商品价格的订单明细，返回 50 条
+    expectedMetrics: []
+    expectedEntities: [commerce.OrderItem]
+  - id: commerce.detail_004
+    question: 查询已取消订单的订单号、购买时间和客户州，按购买时间倒序返回 20 条
+    expectedMetrics: []
+    expectedEntities: [commerce.Order, commerce.Customer]
+  - id: commerce.detail_005
+    question: 列出 2018 年评分为 1 星且有评论内容的差评订单，返回评论标题和评论文本
+    expectedMetrics: []
+    expectedEntities: [commerce.Review]
+  - id: commerce.detail_006
+    question: 查看体积最大的商品，返回商品标识、品类、长宽高和重量，取前 25 个
+    expectedMetrics: []
+    expectedEntities: [commerce.Product]
+
+  - id: commerce.join_001
+    question: 按客户城市统计 2018 年 GMV 前 20 名城市
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+  - id: commerce.join_002
+    question: 按卖家城市统计订单数和 GMV，找出 2018 年排名前 20 的城市
+    expectedMetrics: [commerce.order_count, commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Seller]
+  - id: commerce.join_003
+    question: 健康美容品类 2018 年每个月的 GMV 趋势
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Product, commerce.CategoryTranslation]
+  - id: commerce.join_004
+    question: 比较 SP 和 RJ 两个客户州在 2018 年的 GMV 和订单数
+    expectedMetrics: [commerce.gmv, commerce.order_count]
+    expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+  - id: commerce.join_005
+    question: 哪些商品品类平均评价分最低？至少有 100 条评价，返回前 10 个
+    expectedMetrics: [commerce.average_review_score]
+    expectedEntities: [commerce.Review, commerce.Order, commerce.OrderItem, commerce.Product]
+  - id: commerce.join_006
+    question: 每个订单状态下的支付金额合计和订单数量是多少？
+    expectedMetrics: []
+    expectedEntities: [commerce.Order, commerce.Payment]
+  - id: commerce.join_007
+    question: 不同卖家州发往不同客户州的 GMV 分布，返回 GMV 最高的 30 个州组合
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Seller, commerce.Order, commerce.Customer]
+  - id: commerce.join_008
+    question: 找出平均配送延迟最严重的客户州，按实际送达日期减预计送达日期计算
+    expectedMetrics: []
+    expectedEntities: [commerce.Order, commerce.Customer]
+
+  - id: commerce.payment_001
+    question: 各支付方式的订单数和支付金额合计是多少？
+    expectedMetrics: []
+    expectedEntities: [commerce.Payment]
+  - id: commerce.payment_002
+    question: 信用卡分期数越多，平均支付金额是否更高？按分期数统计平均支付金额
+    expectedMetrics: []
+    expectedEntities: [commerce.Payment]
+  - id: commerce.payment_003
+    question: 列出支付金额最高的 20 个订单支付记录
+    expectedMetrics: []
+    expectedEntities: [commerce.Payment]
+  - id: commerce.payment_004
+    question: 哪些订单使用了多次支付？列出支付序号大于 1 的订单数量
+    expectedMetrics: []
+    expectedEntities: [commerce.Payment]
+
+  - id: commerce.review_001
+    question: 按评分统计评价数量分布
+    expectedMetrics: []
+    expectedEntities: [commerce.Review]
+  - id: commerce.review_002
+    question: 2018 年每个月的平均评价分趋势
+    expectedMetrics: [commerce.average_review_score]
+    expectedEntities: [commerce.Review]
+  - id: commerce.review_003
+    question: 哪些卖家的平均评分最低？至少有 50 条评价，返回前 20 个
+    expectedMetrics: [commerce.average_review_score]
+    expectedEntities: [commerce.Review, commerce.Order, commerce.OrderItem, commerce.Seller]
+  - id: commerce.review_004
+    question: 列出评价回复时间最长的 30 条评价
+    expectedMetrics: []
+    expectedEntities: [commerce.Review]
+
+  - id: commerce.logistics_001
+    question: 2018 年按月统计平均实际配送天数
+    expectedMetrics: []
+    expectedEntities: [commerce.Order]
+  - id: commerce.logistics_002
+    question: 哪些订单实际送达晚于预计送达日期？返回最近 50 条
+    expectedMetrics: []
+    expectedEntities: [commerce.Order]
+  - id: commerce.logistics_003
+    question: 各订单状态的平均审批耗时是多少？
+    expectedMetrics: []
+    expectedEntities: [commerce.Order]
+  - id: commerce.logistics_004
+    question: 从购买到交给承运商平均需要多久？按卖家州统计
+    expectedMetrics: []
+    expectedEntities: [commerce.Order, commerce.OrderItem, commerce.Seller]
+
+  - id: commerce.geo_001
+    question: 客户最多的州和城市分别有哪些？返回前 20 个城市
+    expectedMetrics: []
+    expectedEntities: [commerce.Customer]
+  - id: commerce.geo_002
+    question: 卖家数量最多的州和城市是哪里？
+    expectedMetrics: []
+    expectedEntities: [commerce.Seller]
+  - id: commerce.geo_003
+    question: 按客户邮编前缀关联经纬度，找出 SP 州客户覆盖的经纬度点数量
+    expectedMetrics: []
+    expectedEntities: [commerce.Customer, commerce.GeoLocation]
+
+  - id: commerce.tenant_001
+    question: 我的 2018 年 GMV 是多少？
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Seller]
+  - id: commerce.tenant_002
+    question: 我的最近 20 条订单明细
+    expectedMetrics: []
+    expectedEntities: [commerce.OrderItem, commerce.Seller]
+  - id: commerce.tenant_003
+    question: 我的商品品类 GMV 排名
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Product, commerce.Seller]
+  - id: commerce.tenant_004
+    question: 我的订单平均评价分按月趋势
+    expectedMetrics: [commerce.average_review_score]
+    expectedEntities: [commerce.Review, commerce.Order, commerce.OrderItem, commerce.Seller]
+
+  - id: commerce.followup_001
+    question: 上一轮问题：2018 年 GMV 按月份趋势。追问：那按客户州拆一下
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+  - id: commerce.followup_002
+    question: 上一轮问题：列出 2018 年 GMV 最高的商品品类。追问：只看信用卡支付呢？
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Product, commerce.Order, commerce.Payment]
+  - id: commerce.followup_003
+    question: 上一轮问题：我的 2018 年 GMV 是多少。追问：按月份列出来
+    expectedMetrics: [commerce.gmv]
+    expectedEntities: [commerce.OrderItem, commerce.Seller]

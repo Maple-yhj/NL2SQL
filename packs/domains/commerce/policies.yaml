@@ -1,0 +1,13 @@
+policies:
+  - name: commerce.preserve_requested_grain
+    description: 聚合结果必须保持问题请求的维度粒度，明细结果必须保持规范实体粒度。
+  - name: commerce.prevent_many_to_many_fanout
+    description: 经过多对多关系计算指标时必须先对各侧按连接粒度聚合，避免重复加权。
+  - name: commerce.distinct_orders_from_items
+    description: 订单数量必须在订单商品项上对订单标识去重计数。
+  - name: commerce.gmv_event_time
+    description: 成交总额的时间范围仅使用订单商品项的发货截止事件时间。
+  - name: commerce.half_open_time_ranges
+    description: 时间范围采用包含起点且不包含终点的确定性边界。
+  - name: commerce.preserve_nulls
+    description: 可空字段保持空值；只有问题明确要求时才过滤或替换空值。

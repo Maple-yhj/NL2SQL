@@ -1,0 +1,69 @@
+vocabulary:
+  - term: 成交总额
+    refs: [commerce.gmv]
+  - term: GMV
+    refs: [commerce.gmv]
+  - term: 销售收入
+    refs: [commerce.gmv]
+  - term: 订单量
+    refs: [commerce.order_count]
+  - term: 订单数
+    refs: [commerce.order_count]
+  - term: 平均商品价格
+    refs: [commerce.average_item_price]
+  - term: 平均评价分
+    refs: [commerce.average_review_score]
+  - term: 订单
+    refs: [commerce.Order]
+  - term: 订单明细
+    refs: [commerce.OrderItem]
+  - term: 客户
+    refs: [commerce.Customer]
+  - term: 买家
+    refs: [commerce.Customer]
+  - term: 卖家
+    refs: [commerce.Seller]
+  - term: 商家
+    refs: [commerce.Seller]
+  - term: 商品
+    refs: [commerce.Product]
+  - term: 品类
+    refs:
+      - commerce.Product.category_code
+      - commerce.CategoryTranslation.translated_name
+  - term: 支付方式
+    refs: [commerce.Payment.method]
+  - term: 分期数
+    refs: [commerce.Payment.installment_count]
+  - term: 支付金额
+    refs: [commerce.Payment.amount]
+  - term: 评价
+    refs: [commerce.Review]
+  - term: 评分
+    refs: [commerce.Review.score]
+  - term: 评论内容
+    refs:
+      - commerce.Review.title
+      - commerce.Review.body
+  - term: 发货截止时间
+    refs: [commerce.OrderItem.shipping_limit_at]
+  - term: 购买时间
+    refs: [commerce.Order.purchased_at]
+  - term: 实际送达时间
+    refs: [commerce.Order.delivered_at]
+  - term: 预计送达时间
+    refs: [commerce.Order.estimated_delivery_at]
+  - term: 客户州
+    refs: [commerce.Customer.state]
+  - term: 客户城市
+    refs: [commerce.Customer.city]
+  - term: 卖家州
+    refs: [commerce.Seller.state]
+  - term: 卖家城市
+    refs: [commerce.Seller.city]
+  - term: 经纬度
+    refs:
+      - commerce.GeoLocation.latitude
+      - commerce.GeoLocation.longitude
+  - term: 品类英文名
+    refs: [commerce.CategoryTranslation.translated_name]
