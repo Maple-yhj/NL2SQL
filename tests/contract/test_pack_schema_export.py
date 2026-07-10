@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -26,7 +27,15 @@ class PackSchemaExportTests(unittest.TestCase):
             "enterprise-binding.schema.json",
             "deployment-profile.schema.json",
         }
-        output_dir = PROJECT_ROOT / "packs" / "schemas" / "v1"
+        tracked_dir = PROJECT_ROOT / "packs" / "schemas" / "v1"
+        tracked_before = {
+            name: (tracked_dir / name).read_bytes() for name in expected_names
+        }
+        output_dir = PROJECT_ROOT / "tests" / "contract" / ".schema-export-tmp"
+        self.assertFalse(output_dir.exists(), "previous schema export temp remains")
+        output_dir.mkdir()
+        self.addCleanup(shutil.rmtree, output_dir)
+
         first_paths = self.loader.export_pack_schemas(output_dir)
         first_bytes = {path.name: path.read_bytes() for path in first_paths}
         second_paths = self.loader.export_pack_schemas(output_dir)
@@ -40,8 +49,12 @@ class PackSchemaExportTests(unittest.TestCase):
                 self.assertFalse(schema["additionalProperties"])
                 self.assertEqual(
                     content,
-                    (PROJECT_ROOT / "packs" / "schemas" / "v1" / name).read_bytes(),
+                    (tracked_dir / name).read_bytes(),
                 )
+        self.assertEqual(
+            tracked_before,
+            {name: (tracked_dir / name).read_bytes() for name in expected_names},
+        )
 
     def test_yaml_loader_uses_safe_parsing_and_pydantic_validation(self) -> None:
         fixtures = PROJECT_ROOT / "tests" / "contract" / "fixtures"

@@ -4,11 +4,10 @@
       "additionalProperties": false,
       "properties": {
         "bindings": {
-          "additionalProperties": {
-            "$ref": "#/$defs/PhysicalEntityBinding"
-          },
-          "propertyNames": {
-            "minLength": 1
+          "patternProperties": {
+            "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$": {
+              "$ref": "#/$defs/PhysicalEntityBinding"
+            }
           },
           "title": "Bindings",
           "type": "object"
@@ -25,12 +24,11 @@
           "$ref": "#/$defs/EnterprisePolicies"
         },
         "sources": {
-          "additionalProperties": {
-            "$ref": "#/$defs/EnterpriseSource"
-          },
           "minProperties": 1,
-          "propertyNames": {
-            "minLength": 1
+          "patternProperties": {
+            "^[a-z_][a-z0-9_]*$": {
+              "$ref": "#/$defs/EnterpriseSource"
+            }
           },
           "title": "Sources",
           "type": "object"
@@ -61,7 +59,7 @@
         "relationAllowlist": {
           "default": [],
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$",
             "type": "string"
           },
           "title": "Relationallowlist",
@@ -113,13 +111,13 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
           "title": "Name",
           "type": "string"
         },
         "version": {
           "default": "1.0.0",
-          "minLength": 1,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Version",
           "type": "string"
         }
@@ -134,7 +132,7 @@
       "additionalProperties": false,
       "properties": {
         "ref": {
-          "pattern": "^[a-z][a-z0-9_-]*@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$",
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*@(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Ref",
           "type": "string"
         }
@@ -149,18 +147,17 @@
       "additionalProperties": false,
       "properties": {
         "fields": {
-          "additionalProperties": {
-            "$ref": "#/$defs/PhysicalFieldBinding"
-          },
-          "propertyNames": {
-            "minLength": 1
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/PhysicalFieldBinding"
+            }
           },
           "title": "Fields",
           "type": "object"
         },
         "grain": {
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string"
           },
           "minItems": 1,
@@ -168,12 +165,12 @@
           "type": "array"
         },
         "relation": {
-          "minLength": 1,
+          "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$",
           "title": "Relation",
           "type": "string"
         },
         "source": {
-          "minLength": 1,
+          "pattern": "^[a-z_][a-z0-9_]*$",
           "title": "Source",
           "type": "string"
         }
@@ -210,7 +207,7 @@
           "title": "Cast"
         },
         "column": {
-          "minLength": 1,
+          "pattern": "^[a-z_][a-z0-9_]*$",
           "title": "Column",
           "type": "string"
         },
@@ -259,7 +256,7 @@
       "additionalProperties": false,
       "properties": {
         "canonicalField": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
           "title": "Canonicalfield",
           "type": "string"
         },
@@ -269,7 +266,7 @@
           "type": "string"
         },
         "principalClaim": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
           "title": "Principalclaim",
           "type": "string"
         }

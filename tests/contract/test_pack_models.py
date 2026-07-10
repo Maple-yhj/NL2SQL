@@ -22,6 +22,42 @@ def _domain_document() -> dict:
     }
 
 
+def _domain_semantic_document() -> dict:
+    document = _domain_document()
+    document["spec"] = {
+        "entities": {
+            "commerce.Order": {
+                "grain": ["order_id"],
+                "fields": {
+                    "order_id": {"type": "string", "nullable": False},
+                },
+            }
+        },
+        "relationships": [],
+        "metrics": {
+            "commerce.order_count": {
+                "aggregation": "count_distinct",
+                "inputs": ["commerce.Order.order_id"],
+            }
+        },
+        "vocabulary": [
+            {
+                "term": "订单数",
+                "refs": ["commerce.order_count", "commerce.Order"],
+            }
+        ],
+        "evals": [
+            {
+                "id": "commerce.order_count_basic",
+                "question": "How many orders?",
+                "expectedMetrics": ["commerce.order_count"],
+                "expectedEntities": ["commerce.Order"],
+            }
+        ],
+    }
+    return document
+
+
 def _enterprise_document() -> dict:
     return {
         "apiVersion": "dataagent.io/enterprise/v1",
@@ -113,6 +149,45 @@ class PackModelContractTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             self.packs.EnterpriseDataBinding.model_validate(writable)
 
+    def test_enterprise_bindings_reject_unsafe_relations_and_columns(self) -> None:
+        unsafe_relations = (
+            "public.orders; DROP TABLE users",
+            "public.orders JOIN public.users",
+            "public..orders",
+            "public.orders -- comment",
+        )
+        for relation in unsafe_relations:
+            document = _enterprise_document()
+            document["spec"]["bindings"] = {
+                "commerce.Order": {
+                    "source": "sales",
+                    "relation": relation,
+                    "grain": ["order_id"],
+                    "fields": {"order_id": {"column": "order_id"}},
+                }
+            }
+            with self.subTest(relation=relation), self.assertRaises(ValidationError):
+                self.packs.EnterpriseDataBinding.model_validate(document)
+
+        unsafe_columns = (
+            "order_id; DELETE FROM orders",
+            "price + freight_value",
+            "orders.order_id",
+            "order_id)/*",
+        )
+        for column in unsafe_columns:
+            document = _enterprise_document()
+            document["spec"]["bindings"] = {
+                "commerce.Order": {
+                    "source": "sales",
+                    "relation": "public.olist_orders_dataset",
+                    "grain": ["order_id"],
+                    "fields": {"order_id": {"column": column}},
+                }
+            }
+            with self.subTest(column=column), self.assertRaises(ValidationError):
+                self.packs.EnterpriseDataBinding.model_validate(document)
+
     def test_domain_and_all_config_reject_physical_or_executable_content(self) -> None:
         physical_domain = _domain_document()
         physical_domain["spec"]["relation"] = "public.olist_orders_dataset"
@@ -136,6 +211,85 @@ class PackModelContractTests(unittest.TestCase):
         jinja["spec"]["environment"] = "{{ lookup('env') }}"
         with self.assertRaises(ValidationError):
             self.packs.DeploymentProfile.model_validate(jinja)
+
+    def test_domain_pack_rejects_physical_identifiers_in_logical_positions(self) -> None:
+        invalid_documents = []
+
+        physical_entity = _domain_semantic_document()
+        entity = physical_entity["spec"]["entities"].pop("commerce.Order")
+        physical_entity["spec"]["entities"]["public.olist_orders_dataset"] = entity
+        invalid_documents.append(physical_entity)
+
+        physical_grain = _domain_semantic_document()
+        physical_grain["spec"]["entities"]["commerce.Order"]["grain"] = [
+            "public.olist_orders_dataset.order_id"
+        ]
+        invalid_documents.append(physical_grain)
+
+        physical_metric_input = _domain_semantic_document()
+        physical_metric_input["spec"]["metrics"]["commerce.order_count"][
+            "inputs"
+        ] = ["public.olist_orders_dataset.order_id"]
+        invalid_documents.append(physical_metric_input)
+
+        physical_vocabulary_ref = _domain_semantic_document()
+        physical_vocabulary_ref["spec"]["vocabulary"][0]["refs"] = [
+            "public.olist_orders_dataset"
+        ]
+        invalid_documents.append(physical_vocabulary_ref)
+
+        for document in invalid_documents:
+            with self.subTest(document=document), self.assertRaises(ValidationError):
+                self.packs.DomainPack.model_validate(document)
+
+    def test_domain_pack_requires_all_logical_references_to_resolve(self) -> None:
+        invalid_documents = []
+
+        missing_grain = _domain_semantic_document()
+        missing_grain["spec"]["entities"]["commerce.Order"]["grain"] = [
+            "missing_field"
+        ]
+        invalid_documents.append(missing_grain)
+
+        missing_relationship = _domain_semantic_document()
+        missing_relationship["spec"]["relationships"] = [
+            {
+                "name": "commerce.order_customer",
+                "fromEntity": "commerce.Order",
+                "toEntity": "commerce.Customer",
+                "cardinality": "many_to_one",
+                "fromFields": ["order_id"],
+                "toFields": ["customer_id"],
+            }
+        ]
+        invalid_documents.append(missing_relationship)
+
+        missing_metric_input = _domain_semantic_document()
+        missing_metric_input["spec"]["metrics"]["commerce.order_count"][
+            "inputs"
+        ] = ["commerce.Order.missing_field"]
+        invalid_documents.append(missing_metric_input)
+
+        missing_vocabulary_ref = _domain_semantic_document()
+        missing_vocabulary_ref["spec"]["vocabulary"][0]["refs"] = [
+            "commerce.missing_metric"
+        ]
+        invalid_documents.append(missing_vocabulary_ref)
+
+        for document in invalid_documents:
+            with self.subTest(document=document), self.assertRaises(ValidationError):
+                self.packs.DomainPack.model_validate(document)
+
+    def test_pack_metadata_uses_consistent_pack_name_and_semver_validation(self) -> None:
+        invalid_name = _domain_document()
+        invalid_name["metadata"]["name"] = "Commerce.Production"
+        with self.assertRaises(ValidationError):
+            self.packs.DomainPack.model_validate(invalid_name)
+
+        invalid_version = _domain_document()
+        invalid_version["metadata"]["version"] = "latest"
+        with self.assertRaises(ValidationError):
+            self.packs.DomainPack.model_validate(invalid_version)
 
 
 if __name__ == "__main__":

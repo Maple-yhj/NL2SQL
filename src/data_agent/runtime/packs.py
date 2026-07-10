@@ -24,11 +24,71 @@ NonBlankText = Annotated[
     str,
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
+_PACK_NAME_BODY = r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
+_SEMVER_BODY = (
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?"
+)
+PackName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=rf"^{_PACK_NAME_BODY}$"),
+]
+SemanticVersion = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=rf"^{_SEMVER_BODY}$"),
+]
 PackReferenceText = Annotated[
     str,
     StringConstraints(
         strip_whitespace=True,
-        pattern=r"^[a-z][a-z0-9_-]*@[0-9]+\.[0-9]+\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$",
+        pattern=rf"^{_PACK_NAME_BODY}@{_SEMVER_BODY}$",
+    ),
+]
+LocalFieldName = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=r"^[a-z][a-z0-9_]*$"),
+]
+CanonicalEntityId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        pattern=rf"^{_PACK_NAME_BODY}\.[A-Z][A-Za-z0-9]*$",
+    ),
+]
+CanonicalLogicalId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        pattern=rf"^{_PACK_NAME_BODY}\.[a-z][a-z0-9_]*$",
+    ),
+]
+CanonicalFieldRef = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        pattern=rf"^{_PACK_NAME_BODY}\.[A-Z][A-Za-z0-9]*\.[a-z][a-z0-9_]*$",
+    ),
+]
+CanonicalSemanticRef = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        pattern=(
+            rf"^{_PACK_NAME_BODY}\."
+            r"(?:[A-Z][A-Za-z0-9]*(?:\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$"
+        ),
+    ),
+]
+PostgresIdentifier = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=r"^[a-z_][a-z0-9_]*$"),
+]
+QualifiedPostgresRelation = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        pattern=r"^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$",
     ),
 ]
 SecretReference = Annotated[
@@ -99,8 +159,8 @@ class PackModel(BaseModel):
 
 
 class PackMetadata(PackModel):
-    name: NonBlankText
-    version: NonBlankText = "1.0.0"
+    name: PackName
+    version: SemanticVersion = "1.0.0"
 
 
 class CanonicalField(PackModel):
@@ -120,50 +180,50 @@ class CanonicalField(PackModel):
 
 
 class CanonicalEntity(PackModel):
-    grain: tuple[NonBlankText, ...] = Field(min_length=1)
-    fields: dict[NonBlankText, CanonicalField] = Field(default_factory=dict)
+    grain: tuple[LocalFieldName, ...] = Field(min_length=1)
+    fields: dict[LocalFieldName, CanonicalField] = Field(default_factory=dict)
     description: NonBlankText | None = None
 
 
 class CanonicalRelationship(PackModel):
-    name: NonBlankText
-    from_entity: NonBlankText
-    to_entity: NonBlankText
+    name: CanonicalLogicalId
+    from_entity: CanonicalEntityId
+    to_entity: CanonicalEntityId
     cardinality: Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"]
-    from_fields: tuple[NonBlankText, ...] = Field(min_length=1)
-    to_fields: tuple[NonBlankText, ...] = Field(min_length=1)
+    from_fields: tuple[LocalFieldName, ...] = Field(min_length=1)
+    to_fields: tuple[LocalFieldName, ...] = Field(min_length=1)
 
 
 class CanonicalMetric(PackModel):
     aggregation: Literal["sum", "count", "count_distinct", "average", "min", "max"]
-    inputs: tuple[NonBlankText, ...] = Field(min_length=1)
+    inputs: tuple[CanonicalFieldRef, ...] = Field(min_length=1)
     combine: Literal["identity", "add"] = "identity"
-    event_time: NonBlankText | None = None
+    event_time: CanonicalFieldRef | None = None
     description: NonBlankText | None = None
 
 
 class VocabularyEntry(PackModel):
     term: NonBlankText
-    refs: tuple[NonBlankText, ...] = Field(min_length=1)
+    refs: tuple[CanonicalSemanticRef, ...] = Field(min_length=1)
     locale: NonBlankText = "zh-CN"
 
 
 class DomainPolicy(PackModel):
-    name: NonBlankText
+    name: CanonicalLogicalId
     description: NonBlankText
 
 
 class DomainEvalCase(PackModel):
-    id: NonBlankText
+    id: CanonicalLogicalId
     question: NonBlankText
-    expected_metrics: tuple[NonBlankText, ...] = ()
-    expected_entities: tuple[NonBlankText, ...] = ()
+    expected_metrics: tuple[CanonicalLogicalId, ...] = ()
+    expected_entities: tuple[CanonicalEntityId, ...] = ()
 
 
 class DomainPackSpec(PackModel):
-    entities: dict[NonBlankText, CanonicalEntity] = Field(default_factory=dict)
+    entities: dict[CanonicalEntityId, CanonicalEntity] = Field(default_factory=dict)
     relationships: tuple[CanonicalRelationship, ...] = ()
-    metrics: dict[NonBlankText, CanonicalMetric] = Field(default_factory=dict)
+    metrics: dict[CanonicalLogicalId, CanonicalMetric] = Field(default_factory=dict)
     vocabulary: tuple[VocabularyEntry, ...] = ()
     policies: tuple[DomainPolicy, ...] = ()
     evals: tuple[DomainEvalCase, ...] = ()
@@ -195,6 +255,74 @@ class DomainPack(PackModel):
         walk(value)
         return value
 
+    @model_validator(mode="after")
+    def validate_logical_references(self) -> "DomainPack":
+        domain_prefix = f"{self.metadata.name}."
+        entities = self.spec.entities
+        metrics = self.spec.metrics
+        relationships = {item.name for item in self.spec.relationships}
+        policies = {item.name for item in self.spec.policies}
+
+        for entity_id, entity in entities.items():
+            if not entity_id.startswith(domain_prefix):
+                raise ValueError(f"entity {entity_id!r} is outside the domain pack")
+            missing_grain = set(entity.grain) - set(entity.fields)
+            if missing_grain:
+                raise ValueError(f"entity {entity_id!r} grain references missing fields")
+
+        declared_fields = {
+            f"{entity_id}.{field_name}"
+            for entity_id, entity in entities.items()
+            for field_name in entity.fields
+        }
+
+        for relationship in self.spec.relationships:
+            if not relationship.name.startswith(domain_prefix):
+                raise ValueError("relationship is outside the domain pack")
+            if relationship.from_entity not in entities:
+                raise ValueError("relationship fromEntity is not declared")
+            if relationship.to_entity not in entities:
+                raise ValueError("relationship toEntity is not declared")
+            if set(relationship.from_fields) - set(
+                entities[relationship.from_entity].fields
+            ):
+                raise ValueError("relationship fromFields are not declared")
+            if set(relationship.to_fields) - set(
+                entities[relationship.to_entity].fields
+            ):
+                raise ValueError("relationship toFields are not declared")
+            if len(relationship.from_fields) != len(relationship.to_fields):
+                raise ValueError("relationship field arity does not match")
+
+        for metric_id, metric in metrics.items():
+            if not metric_id.startswith(domain_prefix):
+                raise ValueError(f"metric {metric_id!r} is outside the domain pack")
+            if set(metric.inputs) - declared_fields:
+                raise ValueError(f"metric {metric_id!r} references missing fields")
+            if metric.event_time is not None and metric.event_time not in declared_fields:
+                raise ValueError(f"metric {metric_id!r} eventTime is not declared")
+
+        allowed_vocabulary_refs = (
+            set(entities) | declared_fields | set(metrics) | relationships | policies
+        )
+        for entry in self.spec.vocabulary:
+            if set(entry.refs) - allowed_vocabulary_refs:
+                raise ValueError(f"vocabulary term {entry.term!r} has missing refs")
+
+        for policy in self.spec.policies:
+            if not policy.name.startswith(domain_prefix):
+                raise ValueError("policy is outside the domain pack")
+
+        for case in self.spec.evals:
+            if not case.id.startswith(domain_prefix):
+                raise ValueError("eval case is outside the domain pack")
+            if set(case.expected_metrics) - set(metrics):
+                raise ValueError(f"eval case {case.id!r} has missing metrics")
+            if set(case.expected_entities) - set(entities):
+                raise ValueError(f"eval case {case.id!r} has missing entities")
+
+        return self
+
 
 class PackReference(PackModel):
     ref: PackReferenceText
@@ -207,7 +335,7 @@ class EnterpriseSource(PackModel):
 
 
 class PhysicalFieldBinding(PackModel):
-    column: NonBlankText
+    column: PostgresIdentifier
     cast: Literal["string", "integer", "decimal", "boolean", "date", "datetime"] | None = None
     timezone: NonBlankText | None = None
     null_policy: Literal["preserve", "reject", "coalesce"] = "preserve"
@@ -215,29 +343,29 @@ class PhysicalFieldBinding(PackModel):
 
 
 class PhysicalEntityBinding(PackModel):
-    source: NonBlankText
-    relation: NonBlankText
-    grain: tuple[NonBlankText, ...] = Field(min_length=1)
-    fields: dict[NonBlankText, PhysicalFieldBinding] = Field(default_factory=dict)
+    source: PostgresIdentifier
+    relation: QualifiedPostgresRelation
+    grain: tuple[LocalFieldName, ...] = Field(min_length=1)
+    fields: dict[LocalFieldName, PhysicalFieldBinding] = Field(default_factory=dict)
 
 
 class TenantScopePolicy(PackModel):
     mode: NonBlankText
-    canonical_field: NonBlankText
-    principal_claim: NonBlankText
+    canonical_field: CanonicalFieldRef
+    principal_claim: LocalFieldName
 
 
 class EnterprisePolicies(PackModel):
     tenant_scope: TenantScopePolicy | None = None
     max_rows: int = Field(default=1000, ge=1)
     query_timeout_seconds: int = Field(default=10, ge=1)
-    relation_allowlist: tuple[NonBlankText, ...] = ()
+    relation_allowlist: tuple[QualifiedPostgresRelation, ...] = ()
 
 
 class EnterpriseBindingSpec(PackModel):
     domains: tuple[PackReference, ...] = Field(min_length=1)
-    sources: dict[NonBlankText, EnterpriseSource] = Field(min_length=1)
-    bindings: dict[NonBlankText, PhysicalEntityBinding] = Field(default_factory=dict)
+    sources: dict[PostgresIdentifier, EnterpriseSource] = Field(min_length=1)
+    bindings: dict[CanonicalEntityId, PhysicalEntityBinding] = Field(default_factory=dict)
     policies: EnterprisePolicies = Field(default_factory=EnterprisePolicies)
 
 

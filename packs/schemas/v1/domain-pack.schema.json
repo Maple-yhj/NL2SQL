@@ -17,18 +17,17 @@
           "title": "Description"
         },
         "fields": {
-          "additionalProperties": {
-            "$ref": "#/$defs/CanonicalField"
-          },
-          "propertyNames": {
-            "minLength": 1
+          "patternProperties": {
+            "^[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/CanonicalField"
+            }
           },
           "title": "Fields",
           "type": "object"
         },
         "grain": {
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string"
           },
           "minItems": 1,
@@ -149,7 +148,7 @@
         "eventTime": {
           "anyOf": [
             {
-              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
               "type": "string"
             },
             {
@@ -161,7 +160,7 @@
         },
         "inputs": {
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
             "type": "string"
           },
           "minItems": 1,
@@ -190,13 +189,13 @@
           "type": "string"
         },
         "fromEntity": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
           "title": "Fromentity",
           "type": "string"
         },
         "fromFields": {
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string"
           },
           "minItems": 1,
@@ -204,18 +203,18 @@
           "type": "array"
         },
         "name": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
           "title": "Name",
           "type": "string"
         },
         "toEntity": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
           "title": "Toentity",
           "type": "string"
         },
         "toFields": {
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
             "type": "string"
           },
           "minItems": 1,
@@ -240,7 +239,7 @@
         "expectedEntities": {
           "default": [],
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
             "type": "string"
           },
           "title": "Expectedentities",
@@ -249,14 +248,14 @@
         "expectedMetrics": {
           "default": [],
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
             "type": "string"
           },
           "title": "Expectedmetrics",
           "type": "array"
         },
         "id": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
           "title": "Id",
           "type": "string"
         },
@@ -277,11 +276,10 @@
       "additionalProperties": false,
       "properties": {
         "entities": {
-          "additionalProperties": {
-            "$ref": "#/$defs/CanonicalEntity"
-          },
-          "propertyNames": {
-            "minLength": 1
+          "patternProperties": {
+            "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$": {
+              "$ref": "#/$defs/CanonicalEntity"
+            }
           },
           "title": "Entities",
           "type": "object"
@@ -295,11 +293,10 @@
           "type": "array"
         },
         "metrics": {
-          "additionalProperties": {
-            "$ref": "#/$defs/CanonicalMetric"
-          },
-          "propertyNames": {
-            "minLength": 1
+          "patternProperties": {
+            "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/CanonicalMetric"
+            }
           },
           "title": "Metrics",
           "type": "object"
@@ -341,7 +338,7 @@
           "type": "string"
         },
         "name": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
           "title": "Name",
           "type": "string"
         }
@@ -357,13 +354,13 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$",
           "title": "Name",
           "type": "string"
         },
         "version": {
           "default": "1.0.0",
-          "minLength": 1,
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
           "title": "Version",
           "type": "string"
         }
@@ -385,7 +382,7 @@
         },
         "refs": {
           "items": {
-            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
             "type": "string"
           },
           "minItems": 1,

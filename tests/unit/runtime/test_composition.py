@@ -3,7 +3,10 @@ from __future__ import annotations
 import importlib
 import sys
 import unittest
+from copy import deepcopy
 from pathlib import Path
+
+from pydantic import ValidationError
 
 
 SRC_ROOT = Path(__file__).resolve().parents[3] / "src"
@@ -122,6 +125,66 @@ class RuntimeBundleCompositionTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "domain pack"):
             self._compile(domain, enterprise, deployment)
+
+    def test_compile_runtime_bundle_rejects_unresolved_binding_references(self) -> None:
+        domain, enterprise, deployment = _documents()
+        invalid_enterprises = []
+
+        missing_source = deepcopy(enterprise)
+        missing_source["spec"]["bindings"]["commerce.Order"]["source"] = "missing"
+        invalid_enterprises.append(missing_source)
+
+        missing_entity = deepcopy(enterprise)
+        binding = missing_entity["spec"]["bindings"].pop("commerce.Order")
+        missing_entity["spec"]["bindings"]["commerce.Customer"] = binding
+        invalid_enterprises.append(missing_entity)
+
+        missing_field = deepcopy(enterprise)
+        missing_field["spec"]["bindings"]["commerce.Order"]["fields"] = {
+            "missing_field": {"column": "order_id"}
+        }
+        missing_field["spec"]["bindings"]["commerce.Order"]["grain"] = [
+            "missing_field"
+        ]
+        invalid_enterprises.append(missing_field)
+
+        unmapped_grain = deepcopy(enterprise)
+        unmapped_grain["spec"]["bindings"]["commerce.Order"]["fields"] = {}
+        invalid_enterprises.append(unmapped_grain)
+
+        missing_tenant_scope_field = deepcopy(enterprise)
+        missing_tenant_scope_field["spec"]["policies"]["tenantScope"] = {
+            "mode": "seller_id",
+            "canonicalField": "commerce.Order.missing_field",
+            "principalClaim": "tenant_id",
+        }
+        invalid_enterprises.append(missing_tenant_scope_field)
+
+        for invalid_enterprise in invalid_enterprises:
+            with self.subTest(enterprise=invalid_enterprise), self.assertRaises(
+                ValueError
+            ):
+                self._compile(domain, invalid_enterprise, deployment)
+
+    def test_resolved_runtime_bundle_is_deeply_immutable_and_digest_checked(self) -> None:
+        domain, enterprise, deployment = _documents()
+        bundle = self._compile(domain, enterprise, deployment)
+
+        with self.assertRaises(TypeError):
+            bundle.skill_versions["other.skill"] = "1.0.0"
+        with self.assertRaises(TypeError):
+            bundle.physical_bindings["commerce.Order"]["source"] = "other"
+        with self.assertRaises(TypeError):
+            bundle.semantic_model["entities"]["commerce.Order"]["grain"][0] = (
+                "other_id"
+            )
+        with self.assertRaises(TypeError):
+            bundle.model_copy(update={"schema_fingerprint": "tampered"})
+
+        tampered = bundle.model_dump(mode="json")
+        tampered["schema_fingerprint"] = "tampered"
+        with self.assertRaises(ValidationError):
+            self.composition.ResolvedRuntimeBundle.model_validate(tampered)
 
 
 if __name__ == "__main__":

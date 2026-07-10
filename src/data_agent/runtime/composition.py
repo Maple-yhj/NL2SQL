@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .packs import DeploymentProfile, DomainPack, EnterpriseDataBinding
 
@@ -42,6 +43,38 @@ def _normalized(value: Any) -> Any:
     return json.loads(canonical_json(value))
 
 
+class FrozenDict(dict):
+    """JSON-compatible dictionary that rejects all in-place mutation."""
+
+    def _immutable(self, *args: Any, **kwargs: Any) -> None:
+        raise TypeError("resolved runtime bundle content is immutable")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    __ior__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+    def __copy__(self) -> "FrozenDict":
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> "FrozenDict":
+        return self
+
+
+def _deep_freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return FrozenDict(
+            {str(key): _deep_freeze(item) for key, item in value.items()}
+        )
+    if isinstance(value, (list, tuple)):
+        return tuple(_deep_freeze(item) for item in value)
+    return value
+
+
 class ResolvedRuntimeBundle(BaseModel):
     """Immutable, secret-free snapshot loaded atomically by a runtime."""
 
@@ -60,6 +93,44 @@ class ResolvedRuntimeBundle(BaseModel):
     runtime_limits: dict[str, Any]
     schema_fingerprint: str
     digest: str
+
+    def model_post_init(self, context: Any) -> None:
+        mapping_fields = (
+            "skill_versions",
+            "semantic_model",
+            "physical_bindings",
+            "connector_capabilities",
+            "compiled_access_policy",
+            "runtime_limits",
+        )
+        for field_name in mapping_fields:
+            object.__setattr__(
+                self,
+                field_name,
+                _deep_freeze(getattr(self, field_name)),
+            )
+
+    @model_validator(mode="after")
+    def verify_digest(self) -> "ResolvedRuntimeBundle":
+        payload = {
+            field_name: getattr(self, field_name)
+            for field_name in type(self).model_fields
+            if field_name != "digest"
+        }
+        expected_digest = stable_digest(payload)
+        if not hmac.compare_digest(self.digest, expected_digest):
+            raise ValueError("resolved runtime bundle digest does not match content")
+        return self
+
+    def model_copy(
+        self,
+        *,
+        update: Mapping[str, Any] | None = None,
+        deep: bool = False,
+    ) -> "ResolvedRuntimeBundle":
+        if update:
+            raise TypeError("resolved runtime bundles cannot be updated in place")
+        return super().model_copy(deep=deep)
 
 
 def _pack_ref(name: str, version: str) -> str:
@@ -99,6 +170,36 @@ def _validate_pack_references(
     }
     if missing_secrets:
         raise ValueError("deployment profile does not resolve every source secret")
+
+    declared_sources = set(enterprise_binding.spec.sources)
+    declared_entities = domain_pack.spec.entities
+    relation_allowlist = set(
+        enterprise_binding.spec.policies.relation_allowlist
+    )
+    for entity_id, binding in enterprise_binding.spec.bindings.items():
+        if binding.source not in declared_sources:
+            raise ValueError(f"binding {entity_id!r} references a missing source")
+        if entity_id not in declared_entities:
+            raise ValueError(f"binding {entity_id!r} references a missing entity")
+        canonical_fields = set(declared_entities[entity_id].fields)
+        if set(binding.fields) - canonical_fields:
+            raise ValueError(f"binding {entity_id!r} references missing fields")
+        if set(binding.grain) - set(binding.fields):
+            raise ValueError(f"binding {entity_id!r} grain is not fully mapped")
+        if relation_allowlist and binding.relation not in relation_allowlist:
+            raise ValueError(f"binding {entity_id!r} relation is not allowed")
+
+    tenant_scope = enterprise_binding.spec.policies.tenant_scope
+    declared_domain_fields = {
+        f"{entity_id}.{field_name}"
+        for entity_id, entity in declared_entities.items()
+        for field_name in entity.fields
+    }
+    if (
+        tenant_scope is not None
+        and tenant_scope.canonical_field not in declared_domain_fields
+    ):
+        raise ValueError("tenant scope references a missing canonical field")
 
 
 def compile_runtime_bundle(
