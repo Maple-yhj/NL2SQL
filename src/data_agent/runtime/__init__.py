@@ -11,7 +11,12 @@ from .errors import AgentError, ErrorCode
 from .events import AgentEvent, AgentEventType
 from .models import AgentMode, AgentRequest, AgentResponse, PrincipalContext, RunBudget
 from .packs import DeploymentProfile, DomainPack, EnterpriseDataBinding
-from .profile_loader import PackLoadError, export_pack_schemas, load_pack_yaml
+from .profile_loader import (
+    PackLoadError,
+    export_pack_schemas,
+    load_domain_pack,
+    load_pack_yaml,
+)
 
 __all__ = [
     "AgentError",
@@ -32,6 +37,7 @@ __all__ = [
     "canonical_json",
     "compile_runtime_bundle",
     "export_pack_schemas",
+    "load_domain_pack",
     "load_pack_yaml",
     "stable_digest",
 ]

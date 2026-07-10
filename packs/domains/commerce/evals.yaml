@@ -1,201 +1,570 @@
 evals:
   - id: commerce.metric_001
     question: 统计 2018 年每个月的 GMV 趋势
+    analysisType: trend
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem]
+    expectedDimensions: [commerce.OrderItem.shipping_limit_at]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: asc}]
+    expectedGrain: [commerce.OrderItem.shipping_limit_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_002
     question: 2017 年 GMV 最高的 10 个卖家是谁？
+    analysisType: ranking
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.seller_id]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2017-01-01", end: "2018-01-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    limit: 10
+    expectedGrain: [commerce.Seller.seller_id]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_003
     question: 按商品品类统计 2018 年上半年的 GMV，返回前 15 个品类
+    analysisType: ranking
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Product]
+    expectedDimensions: [commerce.Product.category_code]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2018-07-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    limit: 15
+    expectedGrain: [commerce.Product.category_code]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_004
     question: 各客户州的订单数排名，统计 2018 年的去重订单
+    analysisType: ranking
     expectedMetrics: [commerce.order_count]
     expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.Customer.state]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.order_count, direction: desc}]
+    expectedGrain: [commerce.Customer.state]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_005
     question: 每个卖家州的平均客单商品价格是多少？
+    analysisType: ranking
     expectedMetrics: [commerce.average_item_price]
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.state]
+    expectedFields: []
+    ordering: [{ref: commerce.average_item_price, direction: desc}]
+    expectedGrain: [commerce.Seller.state]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_006
     question: 2018 年不同支付方式贡献的 GMV 分别是多少？
+    analysisType: cross_tab
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Payment]
+    expectedDimensions: [commerce.Payment.method]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    expectedGrain: [commerce.Payment.method]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_007
     question: 按月份统计 2018 年订单量和 GMV，一起展示
+    analysisType: trend
     expectedMetrics: [commerce.order_count, commerce.gmv]
     expectedEntities: [commerce.OrderItem]
+    expectedDimensions: [commerce.OrderItem.shipping_limit_at]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: asc}]
+    expectedGrain: [commerce.OrderItem.shipping_limit_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_008
     question: Which product categories generated the most sales revenue in 2018?
+    analysisType: ranking
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Product, commerce.CategoryTranslation]
+    expectedDimensions: [commerce.CategoryTranslation.translated_name]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    expectedGrain: [commerce.CategoryTranslation.translated_name]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_009
     question: 2018 年每个客户州的平均评价分是多少？
+    analysisType: metric
     expectedMetrics: [commerce.average_review_score]
     expectedEntities: [commerce.Review, commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.Customer.state]
+    expectedFields: []
+    time: {field: commerce.Review.created_at, start: "2018-01-01", end: "2019-01-01"}
+    expectedGrain: [commerce.Customer.state]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_010
     question: 找出 2018 年 GMV 增长最快的月份
+    analysisType: trend
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem]
+    expectedDimensions: [commerce.OrderItem.shipping_limit_at]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    calculations: [{id: commerce.monthly_gmv_growth, operation: growth, inputs: [commerce.gmv]}]
+    ordering: [{ref: commerce.monthly_gmv_growth, direction: desc}]
+    limit: 1
+    expectedGrain: [commerce.OrderItem.shipping_limit_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_011
     question: 2017 年到 2018 年，各卖家州的 GMV 同比变化是多少？
+    analysisType: comparison
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.state, commerce.OrderItem.shipping_limit_at]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: year, start: "2017-01-01", end: "2019-01-01"}
+    calculations: [{id: commerce.yearly_gmv_change, operation: growth, inputs: [commerce.gmv], partitionBy: [commerce.Seller.state]}]
+    ordering: [{ref: commerce.Seller.state, direction: asc}, {ref: commerce.OrderItem.shipping_limit_at, direction: asc}]
+    expectedGrain: [commerce.Seller.state, commerce.OrderItem.shipping_limit_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.metric_012
     question: 按商品品类和支付方式交叉统计 GMV，查看 2018 年前 20 个组合
+    analysisType: cross_tab
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Product, commerce.Order, commerce.Payment]
+    expectedDimensions: [commerce.Product.category_code, commerce.Payment.method]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.Product.category_code, commerce.Payment.method]
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.detail_001
     question: 列出最近 20 条订单明细，包括订单号、卖家、商品、价格、运费和发货截止时间
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.OrderItem]
+    expectedDimensions: []
+    expectedFields: [commerce.OrderItem.order_id, commerce.OrderItem.seller_id, commerce.OrderItem.product_id, commerce.OrderItem.item_price, commerce.OrderItem.freight_amount, commerce.OrderItem.shipping_limit_at]
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.OrderItem.order_id, commerce.OrderItem.item_sequence]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.detail_002
     question: 查看 2018 年 8 月价格最高的 30 个订单商品明细
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.OrderItem]
+    expectedDimensions: []
+    expectedFields: [commerce.OrderItem.order_id, commerce.OrderItem.item_sequence, commerce.OrderItem.product_id, commerce.OrderItem.seller_id, commerce.OrderItem.item_price, commerce.OrderItem.freight_amount]
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-08-01", end: "2018-09-01"}
+    ordering: [{ref: commerce.OrderItem.item_price, direction: desc}]
+    limit: 30
+    expectedGrain: [commerce.OrderItem.order_id, commerce.OrderItem.item_sequence]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.detail_003
     question: 找出运费超过商品价格的订单明细，返回 50 条
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.OrderItem]
+    expectedDimensions: []
+    expectedFields: [commerce.OrderItem.order_id, commerce.OrderItem.product_id, commerce.OrderItem.seller_id, commerce.OrderItem.item_price, commerce.OrderItem.freight_amount]
+    calculations: [{id: commerce.freight_price_difference, operation: subtract, inputs: [commerce.OrderItem.freight_amount, commerce.OrderItem.item_price]}]
+    filters: [{ref: commerce.freight_price_difference, operator: gt, value: 0}]
+    limit: 50
+    expectedGrain: [commerce.OrderItem.order_id, commerce.OrderItem.item_sequence]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.detail_004
     question: 查询已取消订单的订单号、购买时间和客户州，按购买时间倒序返回 20 条
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.Order, commerce.Customer]
+    expectedDimensions: []
+    expectedFields: [commerce.Order.order_id, commerce.Order.purchased_at, commerce.Customer.state]
+    filters: [{ref: commerce.Order.status, operator: eq, value: canceled}]
+    ordering: [{ref: commerce.Order.purchased_at, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.Order.order_id]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.detail_005
     question: 列出 2018 年评分为 1 星且有评论内容的差评订单，返回评论标题和评论文本
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.Review]
+    expectedDimensions: []
+    expectedFields: [commerce.Review.review_id, commerce.Review.order_id, commerce.Review.title, commerce.Review.body]
+    filters: [{ref: commerce.Review.score, operator: eq, value: 1}, {ref: commerce.Review.body, operator: is_not_null}]
+    time: {field: commerce.Review.created_at, start: "2018-01-01", end: "2019-01-01"}
+    expectedGrain: [commerce.Review.review_id]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.detail_006
     question: 查看体积最大的商品，返回商品标识、品类、长宽高和重量，取前 25 个
+    analysisType: derived
     expectedMetrics: []
     expectedEntities: [commerce.Product]
+    expectedDimensions: []
+    expectedFields: [commerce.Product.product_id, commerce.Product.category_code, commerce.Product.length_centimeters, commerce.Product.height_centimeters, commerce.Product.width_centimeters, commerce.Product.weight_grams]
+    calculations: [{id: commerce.product_volume, operation: multiply, inputs: [commerce.Product.length_centimeters, commerce.Product.height_centimeters, commerce.Product.width_centimeters]}]
+    ordering: [{ref: commerce.product_volume, direction: desc}]
+    limit: 25
+    expectedGrain: [commerce.Product.product_id]
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.join_001
     question: 按客户城市统计 2018 年 GMV 前 20 名城市
+    analysisType: ranking
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.Customer.city]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.Customer.city]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_002
     question: 按卖家城市统计订单数和 GMV，找出 2018 年排名前 20 的城市
+    analysisType: ranking
     expectedMetrics: [commerce.order_count, commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.city]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.Seller.city]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_003
     question: 健康美容品类 2018 年每个月的 GMV 趋势
+    analysisType: trend
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Product, commerce.CategoryTranslation]
+    expectedDimensions: [commerce.OrderItem.shipping_limit_at, commerce.CategoryTranslation.translated_name]
+    expectedFields: []
+    filters: [{ref: commerce.CategoryTranslation.translated_name, operator: eq, value: health_beauty}]
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: asc}]
+    expectedGrain: [commerce.OrderItem.shipping_limit_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_004
     question: 比较 SP 和 RJ 两个客户州在 2018 年的 GMV 和订单数
+    analysisType: comparison
     expectedMetrics: [commerce.gmv, commerce.order_count]
     expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.Customer.state]
+    expectedFields: []
+    filters: [{ref: commerce.Customer.state, operator: in, value: [SP, RJ]}]
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    expectedGrain: [commerce.Customer.state]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_005
     question: 哪些商品品类平均评价分最低？至少有 100 条评价，返回前 10 个
+    analysisType: ranking
     expectedMetrics: [commerce.average_review_score]
     expectedEntities: [commerce.Review, commerce.Order, commerce.OrderItem, commerce.Product]
+    expectedDimensions: [commerce.Product.category_code]
+    expectedFields: []
+    calculations: [{id: commerce.review_count, operation: count, inputs: [commerce.Review.review_id]}]
+    having: [{ref: commerce.review_count, operator: gte, value: 100}]
+    ordering: [{ref: commerce.average_review_score, direction: asc}]
+    limit: 10
+    expectedGrain: [commerce.Product.category_code]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_006
     question: 每个订单状态下的支付金额合计和订单数量是多少？
+    analysisType: metric
     expectedMetrics: []
     expectedEntities: [commerce.Order, commerce.Payment]
+    expectedDimensions: [commerce.Order.status]
+    expectedFields: []
+    calculations: [{id: commerce.payment_amount_total, operation: sum, inputs: [commerce.Payment.amount]}, {id: commerce.status_order_count, operation: count_distinct, inputs: [commerce.Order.order_id]}]
+    expectedGrain: [commerce.Order.status]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_007
     question: 不同卖家州发往不同客户州的 GMV 分布，返回 GMV 最高的 30 个州组合
+    analysisType: cross_tab
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Seller, commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.Seller.state, commerce.Customer.state]
+    expectedFields: []
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    limit: 30
+    expectedGrain: [commerce.Seller.state, commerce.Customer.state]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.join_008
     question: 找出平均配送延迟最严重的客户州，按实际送达日期减预计送达日期计算
+    analysisType: ranking
     expectedMetrics: []
     expectedEntities: [commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.Customer.state]
+    expectedFields: []
+    calculations: [{id: commerce.delivery_delay, operation: date_difference, inputs: [commerce.Order.delivered_at, commerce.Order.estimated_delivery_at]}, {id: commerce.average_delivery_delay, operation: average, inputs: [commerce.delivery_delay]}]
+    ordering: [{ref: commerce.average_delivery_delay, direction: desc}]
+    expectedGrain: [commerce.Customer.state]
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.payment_001
     question: 各支付方式的订单数和支付金额合计是多少？
+    analysisType: metric
     expectedMetrics: []
     expectedEntities: [commerce.Payment]
+    expectedDimensions: [commerce.Payment.method]
+    expectedFields: []
+    calculations: [{id: commerce.payment_order_count, operation: count_distinct, inputs: [commerce.Payment.order_id]}, {id: commerce.payment_amount_total, operation: sum, inputs: [commerce.Payment.amount]}]
+    ordering: [{ref: commerce.payment_amount_total, direction: desc}]
+    expectedGrain: [commerce.Payment.method]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.payment_002
     question: 信用卡分期数越多，平均支付金额是否更高？按分期数统计平均支付金额
+    analysisType: trend
     expectedMetrics: []
     expectedEntities: [commerce.Payment]
+    expectedDimensions: [commerce.Payment.installment_count]
+    expectedFields: []
+    filters: [{ref: commerce.Payment.method, operator: eq, value: credit_card}]
+    calculations: [{id: commerce.average_payment_amount, operation: average, inputs: [commerce.Payment.amount]}]
+    ordering: [{ref: commerce.Payment.installment_count, direction: asc}]
+    expectedGrain: [commerce.Payment.installment_count]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.payment_003
     question: 列出支付金额最高的 20 个订单支付记录
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.Payment]
+    expectedDimensions: []
+    expectedFields: [commerce.Payment.order_id, commerce.Payment.sequence, commerce.Payment.method, commerce.Payment.installment_count, commerce.Payment.amount]
+    ordering: [{ref: commerce.Payment.amount, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.Payment.order_id, commerce.Payment.sequence]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.payment_004
     question: 哪些订单使用了多次支付？列出支付序号大于 1 的订单数量
+    analysisType: derived
     expectedMetrics: []
     expectedEntities: [commerce.Payment]
+    expectedDimensions: []
+    expectedFields: []
+    filters: [{ref: commerce.Payment.sequence, operator: gt, value: 1}]
+    calculations: [{id: commerce.multi_payment_order_count, operation: count_distinct, inputs: [commerce.Payment.order_id]}]
+    expectedGrain: []
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.review_001
     question: 按评分统计评价数量分布
+    analysisType: distribution
     expectedMetrics: []
     expectedEntities: [commerce.Review]
+    expectedDimensions: [commerce.Review.score]
+    expectedFields: []
+    calculations: [{id: commerce.review_count, operation: count, inputs: [commerce.Review.review_id]}]
+    ordering: [{ref: commerce.Review.score, direction: asc}]
+    expectedGrain: [commerce.Review.score]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.review_002
     question: 2018 年每个月的平均评价分趋势
+    analysisType: trend
     expectedMetrics: [commerce.average_review_score]
     expectedEntities: [commerce.Review]
+    expectedDimensions: [commerce.Review.created_at]
+    expectedFields: []
+    time: {field: commerce.Review.created_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.Review.created_at, direction: asc}]
+    expectedGrain: [commerce.Review.created_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.review_003
     question: 哪些卖家的平均评分最低？至少有 50 条评价，返回前 20 个
+    analysisType: ranking
     expectedMetrics: [commerce.average_review_score]
     expectedEntities: [commerce.Review, commerce.Order, commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.seller_id]
+    expectedFields: []
+    calculations: [{id: commerce.review_count, operation: count, inputs: [commerce.Review.review_id]}]
+    having: [{ref: commerce.review_count, operator: gte, value: 50}]
+    ordering: [{ref: commerce.average_review_score, direction: asc}]
+    limit: 20
+    expectedGrain: [commerce.Seller.seller_id]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.review_004
     question: 列出评价回复时间最长的 30 条评价
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.Review]
+    expectedDimensions: []
+    expectedFields: [commerce.Review.review_id, commerce.Review.order_id, commerce.Review.created_at, commerce.Review.answered_at]
+    calculations: [{id: commerce.review_response_duration, operation: date_difference, inputs: [commerce.Review.answered_at, commerce.Review.created_at]}]
+    ordering: [{ref: commerce.review_response_duration, direction: desc}]
+    limit: 30
+    expectedGrain: [commerce.Review.review_id]
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.logistics_001
     question: 2018 年按月统计平均实际配送天数
+    analysisType: trend
     expectedMetrics: []
     expectedEntities: [commerce.Order]
+    expectedDimensions: [commerce.Order.purchased_at]
+    expectedFields: []
+    time: {field: commerce.Order.purchased_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    calculations: [{id: commerce.delivery_days, operation: date_difference, inputs: [commerce.Order.delivered_at, commerce.Order.purchased_at]}, {id: commerce.average_delivery_days, operation: average, inputs: [commerce.delivery_days]}]
+    ordering: [{ref: commerce.Order.purchased_at, direction: asc}]
+    expectedGrain: [commerce.Order.purchased_at]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.logistics_002
     question: 哪些订单实际送达晚于预计送达日期？返回最近 50 条
+    analysisType: detail
     expectedMetrics: []
     expectedEntities: [commerce.Order]
+    expectedDimensions: []
+    expectedFields: [commerce.Order.order_id, commerce.Order.delivered_at, commerce.Order.estimated_delivery_at]
+    calculations: [{id: commerce.delivery_delay, operation: date_difference, inputs: [commerce.Order.delivered_at, commerce.Order.estimated_delivery_at]}]
+    filters: [{ref: commerce.delivery_delay, operator: gt, value: 0}]
+    ordering: [{ref: commerce.Order.delivered_at, direction: desc}]
+    limit: 50
+    expectedGrain: [commerce.Order.order_id]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.logistics_003
     question: 各订单状态的平均审批耗时是多少？
+    analysisType: metric
     expectedMetrics: []
     expectedEntities: [commerce.Order]
+    expectedDimensions: [commerce.Order.status]
+    expectedFields: []
+    calculations: [{id: commerce.approval_duration, operation: date_difference, inputs: [commerce.Order.approved_at, commerce.Order.purchased_at]}, {id: commerce.average_approval_duration, operation: average, inputs: [commerce.approval_duration]}]
+    expectedGrain: [commerce.Order.status]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.logistics_004
     question: 从购买到交给承运商平均需要多久？按卖家州统计
+    analysisType: metric
     expectedMetrics: []
     expectedEntities: [commerce.Order, commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.state]
+    expectedFields: []
+    calculations: [{id: commerce.carrier_handoff_duration, operation: date_difference, inputs: [commerce.Order.carrier_handoff_at, commerce.Order.purchased_at]}, {id: commerce.average_carrier_handoff_duration, operation: average, inputs: [commerce.carrier_handoff_duration]}]
+    expectedGrain: [commerce.Seller.state]
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.geo_001
     question: 客户最多的州和城市分别有哪些？返回前 20 个城市
+    analysisType: ranking
     expectedMetrics: []
     expectedEntities: [commerce.Customer]
+    expectedDimensions: [commerce.Customer.state, commerce.Customer.city]
+    expectedFields: []
+    calculations: [{id: commerce.customer_count, operation: count, inputs: [commerce.Customer.customer_id]}]
+    ordering: [{ref: commerce.customer_count, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.Customer.state, commerce.Customer.city]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.geo_002
     question: 卖家数量最多的州和城市是哪里？
+    analysisType: ranking
     expectedMetrics: []
     expectedEntities: [commerce.Seller]
+    expectedDimensions: [commerce.Seller.state, commerce.Seller.city]
+    expectedFields: []
+    calculations: [{id: commerce.seller_count, operation: count, inputs: [commerce.Seller.seller_id]}]
+    ordering: [{ref: commerce.seller_count, direction: desc}]
+    expectedGrain: [commerce.Seller.state, commerce.Seller.city]
+    context: {mode: standalone, tenantScope: all}
   - id: commerce.geo_003
     question: 按客户邮编前缀关联经纬度，找出 SP 州客户覆盖的经纬度点数量
+    analysisType: derived
     expectedMetrics: []
     expectedEntities: [commerce.Customer, commerce.GeoLocation]
+    expectedDimensions: [commerce.Customer.state]
+    expectedFields: []
+    filters: [{ref: commerce.Customer.state, operator: eq, value: SP}]
+    calculations: [{id: commerce.geolocation_point_count, operation: count_distinct, inputs: [commerce.GeoLocation.latitude, commerce.GeoLocation.longitude]}]
+    expectedGrain: [commerce.Customer.state]
+    context: {mode: standalone, tenantScope: all}
 
   - id: commerce.tenant_001
     question: 我的 2018 年 GMV 是多少？
+    analysisType: tenant_scoped
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Seller.seller_id]
+    expectedFields: []
+    filters: [{ref: commerce.OrderItem.seller_id, operator: eq, value: context.seller_id}]
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    expectedGrain: []
+    context: {mode: standalone, tenantScope: seller}
   - id: commerce.tenant_002
     question: 我的最近 20 条订单明细
+    analysisType: tenant_scoped
     expectedMetrics: []
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: []
+    expectedFields: [commerce.OrderItem.order_id, commerce.OrderItem.item_sequence, commerce.OrderItem.product_id, commerce.OrderItem.item_price, commerce.OrderItem.freight_amount, commerce.OrderItem.shipping_limit_at]
+    filters: [{ref: commerce.OrderItem.seller_id, operator: eq, value: context.seller_id}]
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: desc}]
+    limit: 20
+    expectedGrain: [commerce.OrderItem.order_id, commerce.OrderItem.item_sequence]
+    context: {mode: standalone, tenantScope: seller}
   - id: commerce.tenant_003
     question: 我的商品品类 GMV 排名
+    analysisType: tenant_scoped
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Product, commerce.Seller]
+    expectedDimensions: [commerce.Product.category_code]
+    expectedFields: []
+    filters: [{ref: commerce.OrderItem.seller_id, operator: eq, value: context.seller_id}]
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    expectedGrain: [commerce.Product.category_code]
+    context: {mode: standalone, tenantScope: seller}
   - id: commerce.tenant_004
     question: 我的订单平均评价分按月趋势
+    analysisType: tenant_scoped
     expectedMetrics: [commerce.average_review_score]
     expectedEntities: [commerce.Review, commerce.Order, commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.Review.created_at]
+    expectedFields: []
+    filters: [{ref: commerce.OrderItem.seller_id, operator: eq, value: context.seller_id}]
+    time: {field: commerce.Review.created_at, grain: month}
+    ordering: [{ref: commerce.Review.created_at, direction: asc}]
+    expectedGrain: [commerce.Review.created_at]
+    context: {mode: standalone, tenantScope: seller}
 
   - id: commerce.followup_001
     question: 上一轮问题：2018 年 GMV 按月份趋势。追问：那按客户州拆一下
+    analysisType: follow_up
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Order, commerce.Customer]
+    expectedDimensions: [commerce.OrderItem.shipping_limit_at, commerce.Customer.state]
+    expectedFields: []
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: asc}]
+    expectedGrain: [commerce.OrderItem.shipping_limit_at, commerce.Customer.state]
+    context:
+      mode: follow_up
+      tenantScope: all
+      priorQuestion: 2018 年 GMV 按月份趋势
+      preserve: [metrics, time_range]
   - id: commerce.followup_002
     question: 上一轮问题：列出 2018 年 GMV 最高的商品品类。追问：只看信用卡支付呢？
+    analysisType: follow_up
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Product, commerce.Order, commerce.Payment]
+    expectedDimensions: [commerce.Product.category_code, commerce.Payment.method]
+    expectedFields: []
+    filters: [{ref: commerce.Payment.method, operator: eq, value: credit_card}]
+    time: {field: commerce.OrderItem.shipping_limit_at, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.gmv, direction: desc}]
+    expectedGrain: [commerce.Product.category_code]
+    context:
+      mode: follow_up
+      tenantScope: all
+      priorQuestion: 列出 2018 年 GMV 最高的商品品类
+      preserve: [metrics, grain, time_range]
   - id: commerce.followup_003
     question: 上一轮问题：我的 2018 年 GMV 是多少。追问：按月份列出来
+    analysisType: follow_up
     expectedMetrics: [commerce.gmv]
     expectedEntities: [commerce.OrderItem, commerce.Seller]
+    expectedDimensions: [commerce.OrderItem.shipping_limit_at]
+    expectedFields: []
+    filters: [{ref: commerce.OrderItem.seller_id, operator: eq, value: context.seller_id}]
+    time: {field: commerce.OrderItem.shipping_limit_at, grain: month, start: "2018-01-01", end: "2019-01-01"}
+    ordering: [{ref: commerce.OrderItem.shipping_limit_at, direction: asc}]
+    expectedGrain: [commerce.OrderItem.shipping_limit_at]
+    context:
+      mode: follow_up
+      tenantScope: seller
+      priorQuestion: 我的 2018 年 GMV 是多少
+      preserve: [metrics, time_range, tenant_scope]

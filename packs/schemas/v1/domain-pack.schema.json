@@ -237,9 +237,97 @@
       "title": "CanonicalRelationship",
       "type": "object"
     },
+    "DomainEvalCalculation": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "inputs": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Inputs",
+          "type": "array"
+        },
+        "operation": {
+          "enum": [
+            "sum",
+            "average",
+            "count",
+            "count_distinct",
+            "add",
+            "subtract",
+            "multiply",
+            "growth",
+            "lag",
+            "date_difference"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "partitionBy": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Partitionby",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "operation",
+        "inputs"
+      ],
+      "title": "DomainEvalCalculation",
+      "type": "object"
+    },
     "DomainEvalCase": {
       "additionalProperties": false,
       "properties": {
+        "analysisType": {
+          "default": "metric",
+          "enum": [
+            "metric",
+            "trend",
+            "ranking",
+            "detail",
+            "comparison",
+            "cross_tab",
+            "distribution",
+            "derived",
+            "follow_up",
+            "tenant_scoped"
+          ],
+          "title": "Analysistype",
+          "type": "string"
+        },
+        "calculations": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainEvalCalculation"
+          },
+          "title": "Calculations",
+          "type": "array"
+        },
+        "context": {
+          "$ref": "#/$defs/DomainEvalContext"
+        },
+        "expectedDimensions": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Expecteddimensions",
+          "type": "array"
+        },
         "expectedEntities": {
           "default": [],
           "items": {
@@ -247,6 +335,24 @@
             "type": "string"
           },
           "title": "Expectedentities",
+          "type": "array"
+        },
+        "expectedFields": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Expectedfields",
+          "type": "array"
+        },
+        "expectedGrain": {
+          "default": [],
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Expectedgrain",
           "type": "array"
         },
         "expectedMetrics": {
@@ -258,15 +364,63 @@
           "title": "Expectedmetrics",
           "type": "array"
         },
+        "filters": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainEvalPredicate"
+          },
+          "title": "Filters",
+          "type": "array"
+        },
+        "having": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainEvalPredicate"
+          },
+          "title": "Having",
+          "type": "array"
+        },
         "id": {
           "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
           "title": "Id",
           "type": "string"
         },
+        "limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Limit"
+        },
+        "ordering": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainEvalOrdering"
+          },
+          "title": "Ordering",
+          "type": "array"
+        },
         "question": {
           "minLength": 1,
           "title": "Question",
           "type": "string"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DomainEvalTime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -274,6 +428,218 @@
         "question"
       ],
       "title": "DomainEvalCase",
+      "type": "object"
+    },
+    "DomainEvalContext": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "standalone",
+          "enum": [
+            "standalone",
+            "follow_up"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "preserve": {
+          "default": [],
+          "items": {
+            "enum": [
+              "metrics",
+              "filters",
+              "time_range",
+              "tenant_scope",
+              "grain"
+            ],
+            "type": "string"
+          },
+          "title": "Preserve",
+          "type": "array"
+        },
+        "priorQuestion": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Priorquestion"
+        },
+        "tenantScope": {
+          "default": "all",
+          "enum": [
+            "all",
+            "seller"
+          ],
+          "title": "Tenantscope",
+          "type": "string"
+        }
+      },
+      "title": "DomainEvalContext",
+      "type": "object"
+    },
+    "DomainEvalOrdering": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "ref": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "direction"
+      ],
+      "title": "DomainEvalOrdering",
+      "type": "object"
+    },
+    "DomainEvalPredicate": {
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "enum": [
+            "eq",
+            "neq",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "in",
+            "not_in",
+            "is_null",
+            "is_not_null",
+            "contains"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "ref": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+          "title": "Ref",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "ref",
+        "operator"
+      ],
+      "title": "DomainEvalPredicate",
+      "type": "object"
+    },
+    "DomainEvalTime": {
+      "additionalProperties": false,
+      "properties": {
+        "end": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End"
+        },
+        "field": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "title": "Field",
+          "type": "string"
+        },
+        "grain": {
+          "anyOf": [
+            {
+              "enum": [
+                "day",
+                "week",
+                "month",
+                "quarter",
+                "year"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grain"
+        },
+        "start": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start"
+        }
+      },
+      "required": [
+        "field"
+      ],
+      "title": "DomainEvalTime",
       "type": "object"
     },
     "DomainPackSpec": {

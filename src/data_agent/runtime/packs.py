@@ -216,11 +216,111 @@ class DomainPolicy(PackModel):
     description: NonBlankText
 
 
+EvalScalar = NonBlankText | int | float | bool
+
+
+class DomainEvalPredicate(PackModel):
+    ref: CanonicalSemanticRef
+    operator: Literal[
+        "eq",
+        "neq",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "in",
+        "not_in",
+        "is_null",
+        "is_not_null",
+        "contains",
+    ]
+    value: EvalScalar | tuple[EvalScalar, ...] | None = None
+
+    @model_validator(mode="after")
+    def validate_operator_value(self) -> "DomainEvalPredicate":
+        if self.operator in {"is_null", "is_not_null"}:
+            if self.value is not None:
+                raise ValueError("null predicates must not define a value")
+        elif self.value is None:
+            raise ValueError("predicate requires a value")
+        if self.operator in {"in", "not_in"} and not isinstance(self.value, tuple):
+            raise ValueError("set predicates require a list value")
+        return self
+
+
+class DomainEvalTime(PackModel):
+    field: CanonicalFieldRef
+    grain: Literal["day", "week", "month", "quarter", "year"] | None = None
+    start: NonBlankText | None = None
+    end: NonBlankText | None = None
+
+    @model_validator(mode="after")
+    def validate_time_expectation(self) -> "DomainEvalTime":
+        if self.grain is None and self.start is None and self.end is None:
+            raise ValueError("time expectation must define grain or range")
+        return self
+
+
+class DomainEvalCalculation(PackModel):
+    id: CanonicalLogicalId
+    operation: Literal[
+        "sum",
+        "average",
+        "count",
+        "count_distinct",
+        "add",
+        "subtract",
+        "multiply",
+        "growth",
+        "lag",
+        "date_difference",
+    ]
+    inputs: tuple[CanonicalSemanticRef, ...] = Field(min_length=1)
+    partition_by: tuple[CanonicalFieldRef, ...] = ()
+
+
+class DomainEvalOrdering(PackModel):
+    ref: CanonicalSemanticRef
+    direction: Literal["asc", "desc"]
+
+
+class DomainEvalContext(PackModel):
+    mode: Literal["standalone", "follow_up"] = "standalone"
+    tenant_scope: Literal["all", "seller"] = "all"
+    prior_question: NonBlankText | None = None
+    preserve: tuple[
+        Literal["metrics", "filters", "time_range", "tenant_scope", "grain"],
+        ...,
+    ] = ()
+
+
 class DomainEvalCase(PackModel):
     id: CanonicalLogicalId
     question: NonBlankText
+    analysis_type: Literal[
+        "metric",
+        "trend",
+        "ranking",
+        "detail",
+        "comparison",
+        "cross_tab",
+        "distribution",
+        "derived",
+        "follow_up",
+        "tenant_scoped",
+    ] = "metric"
     expected_metrics: tuple[CanonicalLogicalId, ...] = ()
     expected_entities: tuple[CanonicalEntityId, ...] = ()
+    expected_dimensions: tuple[CanonicalFieldRef, ...] = ()
+    expected_fields: tuple[CanonicalFieldRef, ...] = ()
+    filters: tuple[DomainEvalPredicate, ...] = ()
+    time: DomainEvalTime | None = None
+    calculations: tuple[DomainEvalCalculation, ...] = ()
+    having: tuple[DomainEvalPredicate, ...] = ()
+    ordering: tuple[DomainEvalOrdering, ...] = ()
+    limit: int | None = Field(default=None, ge=1)
+    expected_grain: tuple[CanonicalFieldRef, ...] = ()
+    context: DomainEvalContext = Field(default_factory=DomainEvalContext)
 
 
 class DomainPackSpec(PackModel):
@@ -316,13 +416,56 @@ class DomainPack(PackModel):
             if not policy.name.startswith(domain_prefix):
                 raise ValueError("policy is outside the domain pack")
 
+        eval_ids: set[str] = set()
         for case in self.spec.evals:
             if not case.id.startswith(domain_prefix):
                 raise ValueError("eval case is outside the domain pack")
+            if case.id in eval_ids:
+                raise ValueError(f"duplicate eval case {case.id!r}")
+            eval_ids.add(case.id)
             if set(case.expected_metrics) - set(metrics):
                 raise ValueError(f"eval case {case.id!r} has missing metrics")
             if set(case.expected_entities) - set(entities):
                 raise ValueError(f"eval case {case.id!r} has missing entities")
+            logical_fields = (
+                set(case.expected_dimensions)
+                | set(case.expected_fields)
+                | set(case.expected_grain)
+            )
+            if logical_fields - declared_fields:
+                raise ValueError(f"eval case {case.id!r} has missing fields")
+            if case.time is not None and case.time.field not in declared_fields:
+                raise ValueError(f"eval case {case.id!r} has missing time field")
+
+            calculation_ids: set[str] = set()
+            available_calculation_inputs = declared_fields | set(metrics)
+            for calculation in case.calculations:
+                if not calculation.id.startswith(domain_prefix):
+                    raise ValueError("eval calculation is outside the domain pack")
+                if calculation.id in calculation_ids:
+                    raise ValueError("eval calculation IDs must be unique")
+                if set(calculation.inputs) - available_calculation_inputs:
+                    raise ValueError(
+                        f"eval calculation {calculation.id!r} has missing inputs"
+                    )
+                if set(calculation.partition_by) - declared_fields:
+                    raise ValueError(
+                        f"eval calculation {calculation.id!r} has missing partitions"
+                    )
+                calculation_ids.add(calculation.id)
+                available_calculation_inputs.add(calculation.id)
+
+            allowed_eval_refs = declared_fields | set(metrics) | calculation_ids
+            for predicate in (*case.filters, *case.having):
+                if predicate.ref not in allowed_eval_refs:
+                    raise ValueError(
+                        f"eval case {case.id!r} predicate has missing ref"
+                    )
+            for ordering in case.ordering:
+                if ordering.ref not in allowed_eval_refs:
+                    raise ValueError(
+                        f"eval case {case.id!r} ordering has missing ref"
+                    )
 
         return self
 

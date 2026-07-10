@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import re
+import shutil
 import sys
 import unittest
 from pathlib import Path
@@ -45,6 +46,60 @@ class CommerceDomainPackContractTests(unittest.TestCase):
             first.model_dump(mode="json", by_alias=True),
             second.model_dump(mode="json", by_alias=True),
         )
+
+    def test_split_domain_pack_rejects_duplicate_yaml_keys(self) -> None:
+        temporary_root = PROJECT_ROOT / "tests" / "contract" / ".commerce-pack-tmp"
+        self.assertFalse(temporary_root.exists(), "previous pack temp remains")
+        temporary_root.mkdir()
+        self.addCleanup(shutil.rmtree, temporary_root)
+
+        def duplicate_document(filename: str) -> None:
+            path = pack_root / filename
+            document = path.read_text(encoding="utf-8")
+            path.write_text(f"{document}\n{document}", encoding="utf-8")
+
+        def duplicate_nested_metric() -> None:
+            path = pack_root / "metrics.yaml"
+            document = path.read_text(encoding="utf-8")
+            path.write_text(
+                document.replace(
+                    "    aggregation: sum\n",
+                    "    aggregation: sum\n    aggregation: average\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+        def duplicate_nested_eval() -> None:
+            path = pack_root / "evals.yaml"
+            document = path.read_text(encoding="utf-8")
+            path.write_text(
+                document.replace(
+                    "    question: 统计 2018 年每个月的 GMV 趋势\n",
+                    "    question: 统计 2018 年每个月的 GMV 趋势\n"
+                    "    question: 重复问题\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+
+        mutations = {
+            "metadata": lambda: duplicate_document("pack.yaml"),
+            "fragment_section": lambda: duplicate_document("metrics.yaml"),
+            "nested_metric": duplicate_nested_metric,
+            "nested_eval": duplicate_nested_eval,
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(location=name):
+                pack_root = temporary_root / name / "commerce"
+                shutil.copytree(PACK_ROOT, pack_root)
+                mutate()
+                with self.assertRaises(self.loader.PackLoadError):
+                    self.loader.load_domain_pack(pack_root)
+
+    def test_runtime_package_reexports_domain_pack_loader(self) -> None:
+        runtime = importlib.import_module("data_agent.runtime")
+        self.assertIs(runtime.load_domain_pack, self.loader.load_domain_pack)
 
     def test_pack_defines_nine_entities_and_eight_relationships(self) -> None:
         pack = self.load_pack()
@@ -141,18 +196,102 @@ class CommerceDomainPackContractTests(unittest.TestCase):
         allowed_keys = {
             "id",
             "question",
+            "analysisType",
             "expectedMetrics",
             "expectedEntities",
+            "expectedDimensions",
+            "expectedFields",
+            "filters",
+            "time",
+            "calculations",
+            "having",
+            "ordering",
+            "limit",
+            "expectedGrain",
+            "context",
+        }
+        required_keys = {
+            "id",
+            "question",
+            "analysisType",
+            "expectedMetrics",
+            "expectedEntities",
+            "expectedDimensions",
+            "expectedFields",
+            "expectedGrain",
+            "context",
         }
         for raw_case, case in zip(raw_evals, cases, strict=True):
             with self.subTest(case=case.id):
                 self.assertLessEqual(set(raw_case), allowed_keys)
+                self.assertLessEqual(required_keys, set(raw_case))
                 self.assertTrue(
                     all(value.startswith("commerce.") for value in case.expected_metrics)
                 )
                 self.assertTrue(
                     all(value.startswith("commerce.") for value in case.expected_entities)
                 )
+                self.assertTrue(case.expected_entities)
+                self.assertTrue(
+                    case.expected_metrics
+                    or case.expected_fields
+                    or case.calculations
+                )
+
+    def test_logical_evaluations_preserve_key_query_oracles(self) -> None:
+        cases = {case.id: case for case in self.load_pack().spec.evals}
+
+        monthly_gmv = cases["commerce.metric_001"]
+        self.assertEqual(monthly_gmv.analysis_type, "trend")
+        self.assertEqual(
+            monthly_gmv.expected_dimensions,
+            ("commerce.OrderItem.shipping_limit_at",),
+        )
+        self.assertEqual(monthly_gmv.time.grain, "month")
+        self.assertEqual(monthly_gmv.time.start, "2018-01-01")
+        self.assertEqual(monthly_gmv.time.end, "2019-01-01")
+        self.assertEqual(monthly_gmv.ordering[0].direction, "asc")
+
+        low_reviews = cases["commerce.join_005"]
+        self.assertEqual(
+            low_reviews.expected_dimensions,
+            ("commerce.Product.category_code",),
+        )
+        self.assertEqual(low_reviews.calculations[0].id, "commerce.review_count")
+        self.assertEqual(low_reviews.having[0].ref, "commerce.review_count")
+        self.assertEqual(low_reviews.having[0].operator, "gte")
+        self.assertEqual(low_reviews.having[0].value, 100)
+        self.assertEqual(low_reviews.ordering[0].direction, "asc")
+        self.assertEqual(low_reviews.limit, 10)
+
+        recent_items = cases["commerce.detail_001"]
+        self.assertEqual(recent_items.analysis_type, "detail")
+        self.assertEqual(len(recent_items.expected_fields), 6)
+        self.assertEqual(
+            recent_items.ordering[0].ref,
+            "commerce.OrderItem.shipping_limit_at",
+        )
+        self.assertEqual(recent_items.ordering[0].direction, "desc")
+        self.assertEqual(recent_items.limit, 20)
+
+        tenant_gmv = cases["commerce.tenant_001"]
+        self.assertEqual(tenant_gmv.context.tenant_scope, "seller")
+        self.assertEqual(
+            tenant_gmv.filters[0].ref,
+            "commerce.OrderItem.seller_id",
+        )
+
+        follow_up = cases["commerce.followup_001"]
+        self.assertEqual(follow_up.context.mode, "follow_up")
+        self.assertIn("metrics", follow_up.context.preserve)
+        self.assertIn("time_range", follow_up.context.preserve)
+        self.assertEqual(
+            follow_up.expected_grain,
+            (
+                "commerce.OrderItem.shipping_limit_at",
+                "commerce.Customer.state",
+            ),
+        )
 
     def test_domain_pack_files_recursively_exclude_olist_physical_details(self) -> None:
         forbidden_keys = {
