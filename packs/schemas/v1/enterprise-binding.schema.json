@@ -1,0 +1,314 @@
+{
+  "$defs": {
+    "EnterpriseBindingSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "bindings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PhysicalEntityBinding"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Bindings",
+          "type": "object"
+        },
+        "domains": {
+          "items": {
+            "$ref": "#/$defs/PackReference"
+          },
+          "minItems": 1,
+          "title": "Domains",
+          "type": "array"
+        },
+        "policies": {
+          "$ref": "#/$defs/EnterprisePolicies"
+        },
+        "sources": {
+          "additionalProperties": {
+            "$ref": "#/$defs/EnterpriseSource"
+          },
+          "minProperties": 1,
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Sources",
+          "type": "object"
+        }
+      },
+      "required": [
+        "domains",
+        "sources"
+      ],
+      "title": "EnterpriseBindingSpec",
+      "type": "object"
+    },
+    "EnterprisePolicies": {
+      "additionalProperties": false,
+      "properties": {
+        "maxRows": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Maxrows",
+          "type": "integer"
+        },
+        "queryTimeoutSeconds": {
+          "default": 10,
+          "minimum": 1,
+          "title": "Querytimeoutseconds",
+          "type": "integer"
+        },
+        "relationAllowlist": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Relationallowlist",
+          "type": "array"
+        },
+        "tenantScope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TenantScopePolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "EnterprisePolicies",
+      "type": "object"
+    },
+    "EnterpriseSource": {
+      "additionalProperties": false,
+      "properties": {
+        "connectionRef": {
+          "pattern": "^secret://[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)+$",
+          "title": "Connectionref",
+          "type": "string"
+        },
+        "connector": {
+          "const": "postgres",
+          "title": "Connector",
+          "type": "string"
+        },
+        "readOnly": {
+          "const": true,
+          "title": "Readonly",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "connector",
+        "connectionRef",
+        "readOnly"
+      ],
+      "title": "EnterpriseSource",
+      "type": "object"
+    },
+    "PackMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.0.0",
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PackMetadata",
+      "type": "object"
+    },
+    "PackReference": {
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "pattern": "^[a-z][a-z0-9_-]*@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$",
+          "title": "Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "PackReference",
+      "type": "object"
+    },
+    "PhysicalEntityBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/$defs/PhysicalFieldBinding"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Fields",
+          "type": "object"
+        },
+        "grain": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Grain",
+          "type": "array"
+        },
+        "relation": {
+          "minLength": 1,
+          "title": "Relation",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "relation",
+        "grain"
+      ],
+      "title": "PhysicalEntityBinding",
+      "type": "object"
+    },
+    "PhysicalFieldBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "cast": {
+          "anyOf": [
+            {
+              "enum": [
+                "string",
+                "integer",
+                "decimal",
+                "boolean",
+                "date",
+                "datetime"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cast"
+        },
+        "column": {
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "enumMapping": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Enummapping",
+          "type": "object"
+        },
+        "nullPolicy": {
+          "default": "preserve",
+          "enum": [
+            "preserve",
+            "reject",
+            "coalesce"
+          ],
+          "title": "Nullpolicy",
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        }
+      },
+      "required": [
+        "column"
+      ],
+      "title": "PhysicalFieldBinding",
+      "type": "object"
+    },
+    "TenantScopePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicalField": {
+          "minLength": 1,
+          "title": "Canonicalfield",
+          "type": "string"
+        },
+        "mode": {
+          "minLength": 1,
+          "title": "Mode",
+          "type": "string"
+        },
+        "principalClaim": {
+          "minLength": 1,
+          "title": "Principalclaim",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "canonicalField",
+        "principalClaim"
+      ],
+      "title": "TenantScopePolicy",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "dataagent.io/enterprise/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "const": "EnterpriseDataBinding",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/PackMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/EnterpriseBindingSpec"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "EnterpriseDataBinding",
+  "type": "object"
+}

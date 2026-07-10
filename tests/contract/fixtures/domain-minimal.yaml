@@ -1,0 +1,6 @@
+apiVersion: dataagent.io/domain/v1
+kind: DomainPack
+metadata:
+  name: commerce
+  version: 1.0.0
+spec: {}

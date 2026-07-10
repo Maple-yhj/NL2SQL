@@ -1,0 +1,437 @@
+{
+  "$defs": {
+    "CanonicalEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "fields": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CanonicalField"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Fields",
+          "type": "object"
+        },
+        "grain": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Grain",
+          "type": "array"
+        }
+      },
+      "required": [
+        "grain"
+      ],
+      "title": "CanonicalEntity",
+      "type": "object"
+    },
+    "CanonicalField": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "nullable": {
+          "default": true,
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "timeSemantics": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timesemantics"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "decimal",
+            "boolean",
+            "date",
+            "datetime",
+            "json"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "CanonicalField",
+      "type": "object"
+    },
+    "CanonicalMetric": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregation": {
+          "enum": [
+            "sum",
+            "count",
+            "count_distinct",
+            "average",
+            "min",
+            "max"
+          ],
+          "title": "Aggregation",
+          "type": "string"
+        },
+        "combine": {
+          "default": "identity",
+          "enum": [
+            "identity",
+            "add"
+          ],
+          "title": "Combine",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "eventTime": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Eventtime"
+        },
+        "inputs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Inputs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "aggregation",
+        "inputs"
+      ],
+      "title": "CanonicalMetric",
+      "type": "object"
+    },
+    "CanonicalRelationship": {
+      "additionalProperties": false,
+      "properties": {
+        "cardinality": {
+          "enum": [
+            "one_to_one",
+            "one_to_many",
+            "many_to_one",
+            "many_to_many"
+          ],
+          "title": "Cardinality",
+          "type": "string"
+        },
+        "fromEntity": {
+          "minLength": 1,
+          "title": "Fromentity",
+          "type": "string"
+        },
+        "fromFields": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Fromfields",
+          "type": "array"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "toEntity": {
+          "minLength": 1,
+          "title": "Toentity",
+          "type": "string"
+        },
+        "toFields": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Tofields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "fromEntity",
+        "toEntity",
+        "cardinality",
+        "fromFields",
+        "toFields"
+      ],
+      "title": "CanonicalRelationship",
+      "type": "object"
+    },
+    "DomainEvalCase": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedEntities": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Expectedentities",
+          "type": "array"
+        },
+        "expectedMetrics": {
+          "default": [],
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Expectedmetrics",
+          "type": "array"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "question": {
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "question"
+      ],
+      "title": "DomainEvalCase",
+      "type": "object"
+    },
+    "DomainPackSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CanonicalEntity"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Entities",
+          "type": "object"
+        },
+        "evals": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainEvalCase"
+          },
+          "title": "Evals",
+          "type": "array"
+        },
+        "metrics": {
+          "additionalProperties": {
+            "$ref": "#/$defs/CanonicalMetric"
+          },
+          "propertyNames": {
+            "minLength": 1
+          },
+          "title": "Metrics",
+          "type": "object"
+        },
+        "policies": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DomainPolicy"
+          },
+          "title": "Policies",
+          "type": "array"
+        },
+        "relationships": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CanonicalRelationship"
+          },
+          "title": "Relationships",
+          "type": "array"
+        },
+        "vocabulary": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/VocabularyEntry"
+          },
+          "title": "Vocabulary",
+          "type": "array"
+        }
+      },
+      "title": "DomainPackSpec",
+      "type": "object"
+    },
+    "DomainPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "title": "DomainPolicy",
+      "type": "object"
+    },
+    "PackMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.0.0",
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PackMetadata",
+      "type": "object"
+    },
+    "VocabularyEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "locale": {
+          "default": "zh-CN",
+          "minLength": 1,
+          "title": "Locale",
+          "type": "string"
+        },
+        "refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Refs",
+          "type": "array"
+        },
+        "term": {
+          "minLength": 1,
+          "title": "Term",
+          "type": "string"
+        }
+      },
+      "required": [
+        "term",
+        "refs"
+      ],
+      "title": "VocabularyEntry",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "dataagent.io/domain/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "const": "DomainPack",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/PackMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/DomainPackSpec"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "DomainPack",
+  "type": "object"
+}

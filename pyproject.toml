@@ -16,7 +16,9 @@ dependencies = [
   "langchain-openai>=1.1",
   "langgraph>=1.2",
   "pgvector>=0.4",
+  "pydantic>=2.11,<3",
   "psycopg2-binary>=2.9",
+  "PyYAML>=6.0",
   "PyJWT>=2.10",
   "pwdlib[argon2]>=0.2",
   "python-dotenv>=1.1",
@@ -28,8 +30,9 @@ dependencies = [
 dev = ["langgraph-cli[inmem]>=0.4"]
 memory = ["graphiti-core>=0.19"]
 
-[tool.setuptools.packages.find]
-include = ["api*", "catalog*", "core*", "db*", "engine*", "graph*", "rag*"]
+[tool.setuptools]
+package-dir = {"" = "src"}
 
-[tool.setuptools.package-data]
-catalog = ["domains/*.json"]
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["data_agent*"]

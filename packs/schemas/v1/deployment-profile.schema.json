@@ -1,0 +1,143 @@
+{
+  "$defs": {
+    "DeploymentProfileSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "datasourceSecrets": {
+          "additionalProperties": {
+            "pattern": "^[A-Z][A-Z0-9_]*$",
+            "type": "string"
+          },
+          "minProperties": 1,
+          "title": "Datasourcesecrets",
+          "type": "object"
+        },
+        "enterprisePack": {
+          "pattern": "^[a-z][a-z0-9_-]*@[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][A-Za-z0-9.-]+)?$",
+          "title": "Enterprisepack",
+          "type": "string"
+        },
+        "environment": {
+          "minLength": 1,
+          "title": "Environment",
+          "type": "string"
+        },
+        "memoryDatabaseRef": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memorydatabaseref"
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeLimits"
+        },
+        "secretsProvider": {
+          "const": "environment",
+          "title": "Secretsprovider",
+          "type": "string"
+        }
+      },
+      "required": [
+        "enterprisePack",
+        "environment",
+        "secretsProvider",
+        "datasourceSecrets"
+      ],
+      "title": "DeploymentProfileSpec",
+      "type": "object"
+    },
+    "PackMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "default": "1.0.0",
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PackMetadata",
+      "type": "object"
+    },
+    "RuntimeLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "maxCorrectionRounds": {
+          "default": 2,
+          "minimum": 0,
+          "title": "Maxcorrectionrounds",
+          "type": "integer"
+        },
+        "maxDurationSeconds": {
+          "default": 120,
+          "minimum": 1,
+          "title": "Maxdurationseconds",
+          "type": "integer"
+        },
+        "maxResultRows": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Maxresultrows",
+          "type": "integer"
+        },
+        "maxSqlCompileAttempts": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Maxsqlcompileattempts",
+          "type": "integer"
+        },
+        "maxToolCalls": {
+          "default": 24,
+          "minimum": 1,
+          "title": "Maxtoolcalls",
+          "type": "integer"
+        }
+      },
+      "title": "RuntimeLimits",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "dataagent.io/deployment/v1",
+      "title": "Apiversion",
+      "type": "string"
+    },
+    "kind": {
+      "const": "DeploymentProfile",
+      "title": "Kind",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/PackMetadata"
+    },
+    "spec": {
+      "$ref": "#/$defs/DeploymentProfileSpec"
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
+  "title": "DeploymentProfile",
+  "type": "object"
+}
