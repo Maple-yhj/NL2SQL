@@ -1,0 +1,15 @@
+apiVersion: dataagent.io/lock/v1
+enterprisePack: olist@1.0.0
+domains:
+  - commerce@1.0.0
+schemaFingerprint: ebbbd15bc0bbfb3f8f51631424d85c4c5f11997ff976570f29c18b02e8d4e17a
+relations:
+  - public.olist_orders_dataset
+  - public.olist_order_items_dataset
+  - public.olist_customers_dataset
+  - public.olist_sellers_dataset
+  - public.olist_products_dataset
+  - public.olist_order_payments_dataset
+  - public.olist_order_reviews_dataset
+  - public.olist_geolocation_dataset
+  - public.product_category_name_translation

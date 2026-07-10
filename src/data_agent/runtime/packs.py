@@ -495,6 +495,21 @@ class PhysicalEntityBinding(PackModel):
     fields: dict[LocalFieldName, PhysicalFieldBinding] = Field(default_factory=dict)
 
 
+class PhysicalRelationshipBinding(PackModel):
+    """Explicit physical key columns for one canonical relationship."""
+
+    from_entity: CanonicalEntityId
+    to_entity: CanonicalEntityId
+    from_columns: tuple[PostgresIdentifier, ...] = Field(min_length=1)
+    to_columns: tuple[PostgresIdentifier, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_key_arity(self) -> "PhysicalRelationshipBinding":
+        if len(self.from_columns) != len(self.to_columns):
+            raise ValueError("physical relationship key arity does not match")
+        return self
+
+
 class TenantScopePolicy(PackModel):
     mode: NonBlankText
     canonical_field: CanonicalFieldRef
@@ -512,6 +527,9 @@ class EnterpriseBindingSpec(PackModel):
     domains: tuple[PackReference, ...] = Field(min_length=1)
     sources: dict[PostgresIdentifier, EnterpriseSource] = Field(min_length=1)
     bindings: dict[CanonicalEntityId, PhysicalEntityBinding] = Field(default_factory=dict)
+    relationships: dict[CanonicalLogicalId, PhysicalRelationshipBinding] = Field(
+        default_factory=dict
+    )
     policies: EnterprisePolicies = Field(default_factory=EnterprisePolicies)
 
 

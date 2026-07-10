@@ -5,11 +5,16 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from pathlib import Path
 from typing import Any, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .packs import DeploymentProfile, DomainPack, EnterpriseDataBinding
+from .schema_catalog import (
+    load_schema_catalog,
+    validate_enterprise_binding_schema,
+)
 
 
 def _json_compatible(value: Any) -> Any:
@@ -209,6 +214,48 @@ def _validate_pack_references(
         if tenant_binding is None or tenant_field not in tenant_binding.fields:
             raise ValueError("tenant scope has no physical field mapping")
 
+    if set(enterprise_binding.spec.bindings) != set(declared_entities):
+        raise ValueError("enterprise binding must map every domain entity")
+
+    for entity_id, binding in enterprise_binding.spec.bindings.items():
+        canonical_fields = set(declared_entities[entity_id].fields)
+        if set(binding.fields) != canonical_fields:
+            raise ValueError(f"binding {entity_id!r} does not map every canonical field")
+
+    # Every canonical relationship key must be physically resolvable. Explicit
+    # relationship declarations are optional for backwards-compatible custom
+    # packs, but when present they are checked against the domain graph.
+    domain_relationships = {item.name: item for item in domain_pack.spec.relationships}
+    for name, relation in enterprise_binding.spec.relationships.items():
+        canonical = domain_relationships.get(name)
+        if canonical is None:
+            raise ValueError(f"binding relationship {name!r} is not declared by domain")
+        if (
+            relation.from_entity != canonical.from_entity
+            or relation.to_entity != canonical.to_entity
+            or len(relation.from_columns) != len(canonical.from_fields)
+            or len(relation.to_columns) != len(canonical.to_fields)
+        ):
+            raise ValueError(f"binding relationship {name!r} does not match domain")
+        from_binding = enterprise_binding.spec.bindings.get(canonical.from_entity)
+        to_binding = enterprise_binding.spec.bindings.get(canonical.to_entity)
+        if from_binding is None or to_binding is None:
+            raise ValueError(f"binding relationship {name!r} has no entity mapping")
+        mapped_from_columns = {
+            from_binding.fields[field].column for field in canonical.from_fields
+        }
+        mapped_to_columns = {
+            to_binding.fields[field].column for field in canonical.to_fields
+        }
+        if set(relation.from_columns) != mapped_from_columns or set(
+            relation.to_columns
+        ) != mapped_to_columns:
+            raise ValueError(f"binding relationship {name!r} keys do not match fields")
+    if domain_relationships and set(enterprise_binding.spec.relationships) != set(
+        domain_relationships
+    ):
+        raise ValueError("enterprise binding must declare every domain relationship")
+
 
 def compile_runtime_bundle(
     domain_pack: DomainPack,
@@ -218,11 +265,42 @@ def compile_runtime_bundle(
     runtime_version: str,
     skill_versions: Mapping[str, str],
     tool_registry_version: str,
-    schema_fingerprint: str,
+    schema_fingerprint: str = "",
+    schema_catalog: str | Path | list[Mapping[str, Any]] | None = None,
 ) -> ResolvedRuntimeBundle:
     """Validate references and produce a deterministic, secret-free bundle."""
 
     _validate_pack_references(domain_pack, enterprise_binding, deployment_profile)
+
+    # OList deployments use the checked-in catalog by default. Callers may
+    # provide an explicit catalog (or path) to validate a fresh introspection
+    # result and detect drift before publication.
+    explicit_catalog = schema_catalog is not None
+    if schema_catalog is None:
+        default_catalog = Path(__file__).resolve().parents[3] / "schema_catalog.json"
+        if default_catalog.exists():
+            schema_catalog = default_catalog
+    if schema_catalog is not None:
+        catalog = (
+            load_schema_catalog(schema_catalog)
+            if isinstance(schema_catalog, (str, Path))
+            else list(schema_catalog)
+        )
+        computed_fingerprint = validate_enterprise_binding_schema(
+            domain_pack, enterprise_binding, catalog
+        )
+        fingerprint_is_digest = (
+            len(schema_fingerprint) == 64
+            and all(character in "0123456789abcdef" for character in schema_fingerprint)
+        )
+        if schema_fingerprint and (
+            explicit_catalog or fingerprint_is_digest
+        ) and schema_fingerprint != computed_fingerprint:
+            raise ValueError("schema fingerprint does not match catalog")
+        if not schema_fingerprint:
+            schema_fingerprint = computed_fingerprint
+    if not schema_fingerprint:
+        schema_fingerprint = "unknown"
 
     payload = {
         "runtime_version": runtime_version,

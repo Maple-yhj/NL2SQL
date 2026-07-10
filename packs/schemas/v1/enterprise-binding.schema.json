@@ -27,6 +27,19 @@
         "policies": {
           "$ref": "#/$defs/EnterprisePolicies"
         },
+        "relationships": {
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$": {
+              "$ref": "#/$defs/PhysicalRelationshipBinding"
+            }
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$"
+          },
+          "title": "Relationships",
+          "type": "object"
+        },
         "sources": {
           "additionalProperties": false,
           "minProperties": 1,
@@ -262,6 +275,48 @@
         "column"
       ],
       "title": "PhysicalFieldBinding",
+      "type": "object"
+    },
+    "PhysicalRelationshipBinding": {
+      "additionalProperties": false,
+      "description": "Explicit physical key columns for one canonical relationship.",
+      "properties": {
+        "fromColumns": {
+          "items": {
+            "pattern": "^[a-z_][a-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Fromcolumns",
+          "type": "array"
+        },
+        "fromEntity": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+          "title": "Fromentity",
+          "type": "string"
+        },
+        "toColumns": {
+          "items": {
+            "pattern": "^[a-z_][a-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Tocolumns",
+          "type": "array"
+        },
+        "toEntity": {
+          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+          "title": "Toentity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fromEntity",
+        "toEntity",
+        "fromColumns",
+        "toColumns"
+      ],
+      "title": "PhysicalRelationshipBinding",
       "type": "object"
     },
     "TenantScopePolicy": {

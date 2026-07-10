@@ -1,0 +1,170 @@
+apiVersion: dataagent.io/enterprise/v1
+kind: EnterpriseDataBinding
+metadata:
+  name: olist
+  version: 1.0.0
+spec:
+  domains:
+    - ref: commerce@1.0.0
+  sources:
+    sales:
+      connector: postgres
+      connectionRef: secret://olist/local/database
+      readOnly: true
+  bindings:
+    commerce.Order:
+      source: sales
+      relation: public.olist_orders_dataset
+      grain: [order_id]
+      fields:
+        order_id: {column: order_id, nullPolicy: preserve}
+        customer_id: {column: customer_id, nullPolicy: preserve}
+        status: {column: order_status, nullPolicy: preserve}
+        purchased_at: {column: order_purchase_timestamp, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        approved_at: {column: order_approved_at, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        carrier_handoff_at: {column: order_delivered_carrier_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        delivered_at: {column: order_delivered_customer_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        estimated_delivery_at: {column: order_estimated_delivery_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+    commerce.OrderItem:
+      source: sales
+      relation: public.olist_order_items_dataset
+      grain: [order_id, item_sequence]
+      fields:
+        order_id: {column: order_id, nullPolicy: preserve}
+        item_sequence: {column: order_item_id, cast: integer, nullPolicy: preserve}
+        product_id: {column: product_id, nullPolicy: preserve}
+        seller_id: {column: seller_id, nullPolicy: preserve}
+        shipping_limit_at: {column: shipping_limit_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        item_price: {column: price, cast: decimal, nullPolicy: preserve}
+        freight_amount: {column: freight_value, cast: decimal, nullPolicy: preserve}
+    commerce.Customer:
+      source: sales
+      relation: public.olist_customers_dataset
+      grain: [customer_id]
+      fields:
+        customer_id: {column: customer_id, nullPolicy: preserve}
+        person_id: {column: customer_unique_id, nullPolicy: preserve}
+        city: {column: customer_city, nullPolicy: preserve}
+        state: {column: customer_state, nullPolicy: preserve}
+        postal_code_prefix: {column: customer_zip_code_prefix, cast: string, nullPolicy: preserve}
+    commerce.Seller:
+      source: sales
+      relation: public.olist_sellers_dataset
+      grain: [seller_id]
+      fields:
+        seller_id: {column: seller_id, nullPolicy: preserve}
+        city: {column: seller_city, nullPolicy: preserve}
+        state: {column: seller_state, nullPolicy: preserve}
+        postal_code_prefix: {column: seller_zip_code_prefix, cast: string, nullPolicy: preserve}
+    commerce.Product:
+      source: sales
+      relation: public.olist_products_dataset
+      grain: [product_id]
+      fields:
+        product_id: {column: product_id, nullPolicy: preserve}
+        category_code: {column: product_category_name, nullPolicy: preserve}
+        name_length: {column: product_name_lenght, cast: integer, nullPolicy: preserve}
+        description_length: {column: product_description_lenght, cast: integer, nullPolicy: preserve}
+        photo_count: {column: product_photos_qty, cast: integer, nullPolicy: preserve}
+        weight_grams: {column: product_weight_g, cast: decimal, nullPolicy: preserve}
+        length_centimeters: {column: product_length_cm, cast: decimal, nullPolicy: preserve}
+        height_centimeters: {column: product_height_cm, cast: decimal, nullPolicy: preserve}
+        width_centimeters: {column: product_width_cm, cast: decimal, nullPolicy: preserve}
+    commerce.Payment:
+      source: sales
+      relation: public.olist_order_payments_dataset
+      grain: [order_id, sequence]
+      fields:
+        order_id: {column: order_id, nullPolicy: preserve}
+        sequence: {column: payment_sequential, cast: integer, nullPolicy: preserve}
+        method: {column: payment_type, nullPolicy: preserve}
+        installment_count: {column: payment_installments, cast: integer, nullPolicy: preserve}
+        amount: {column: payment_value, cast: decimal, nullPolicy: preserve}
+    commerce.Review:
+      source: sales
+      relation: public.olist_order_reviews_dataset
+      grain: [review_id]
+      fields:
+        review_id: {column: review_id, nullPolicy: preserve}
+        order_id: {column: order_id, nullPolicy: preserve}
+        score: {column: review_score, cast: integer, nullPolicy: preserve}
+        title: {column: review_comment_title, nullPolicy: preserve}
+        body: {column: review_comment_message, nullPolicy: preserve}
+        created_at: {column: review_creation_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        answered_at: {column: review_answer_timestamp, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+    commerce.GeoLocation:
+      source: sales
+      relation: public.olist_geolocation_dataset
+      grain: [postal_code_prefix, latitude, longitude]
+      fields:
+        postal_code_prefix: {column: geolocation_zip_code_prefix, cast: string, nullPolicy: preserve}
+        latitude: {column: geolocation_lat, cast: decimal, nullPolicy: preserve}
+        longitude: {column: geolocation_lng, cast: decimal, nullPolicy: preserve}
+        city: {column: geolocation_city, nullPolicy: preserve}
+        state: {column: geolocation_state, nullPolicy: preserve}
+    commerce.CategoryTranslation:
+      source: sales
+      relation: public.product_category_name_translation
+      grain: [category_code]
+      fields:
+        category_code: {column: product_category_name, nullPolicy: preserve}
+        translated_name: {column: product_category_name_english, nullPolicy: preserve}
+        target_locale: {column: product_category_name_english, nullPolicy: coalesce}
+  relationships:
+    commerce.order_item_order:
+      fromEntity: commerce.OrderItem
+      toEntity: commerce.Order
+      fromColumns: [order_id]
+      toColumns: [order_id]
+    commerce.order_customer:
+      fromEntity: commerce.Order
+      toEntity: commerce.Customer
+      fromColumns: [customer_id]
+      toColumns: [customer_id]
+    commerce.order_item_product:
+      fromEntity: commerce.OrderItem
+      toEntity: commerce.Product
+      fromColumns: [product_id]
+      toColumns: [product_id]
+    commerce.order_item_seller:
+      fromEntity: commerce.OrderItem
+      toEntity: commerce.Seller
+      fromColumns: [seller_id]
+      toColumns: [seller_id]
+    commerce.payment_order:
+      fromEntity: commerce.Payment
+      toEntity: commerce.Order
+      fromColumns: [order_id]
+      toColumns: [order_id]
+    commerce.review_order:
+      fromEntity: commerce.Review
+      toEntity: commerce.Order
+      fromColumns: [order_id]
+      toColumns: [order_id]
+    commerce.product_category_translation:
+      fromEntity: commerce.Product
+      toEntity: commerce.CategoryTranslation
+      fromColumns: [product_category_name]
+      toColumns: [product_category_name]
+    commerce.customer_geolocation:
+      fromEntity: commerce.Customer
+      toEntity: commerce.GeoLocation
+      fromColumns: [customer_zip_code_prefix]
+      toColumns: [geolocation_zip_code_prefix]
+  policies:
+    tenantScope:
+      mode: seller_id
+      canonicalField: commerce.Seller.seller_id
+      principalClaim: tenant_id
+    maxRows: 1000
+    queryTimeoutSeconds: 10
+    relationAllowlist:
+      - public.olist_orders_dataset
+      - public.olist_order_items_dataset
+      - public.olist_customers_dataset
+      - public.olist_sellers_dataset
+      - public.olist_products_dataset
+      - public.olist_order_payments_dataset
+      - public.olist_order_reviews_dataset
+      - public.olist_geolocation_dataset
+      - public.product_category_name_translation

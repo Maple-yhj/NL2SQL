@@ -15,7 +15,14 @@ from .profile_loader import (
     PackLoadError,
     export_pack_schemas,
     load_domain_pack,
+    load_enterprise_binding,
+    compile_profile_bundle,
     load_pack_yaml,
+)
+from .schema_catalog import (
+    load_schema_catalog,
+    schema_fingerprint,
+    validate_enterprise_binding_schema,
 )
 
 __all__ = [
@@ -38,6 +45,11 @@ __all__ = [
     "compile_runtime_bundle",
     "export_pack_schemas",
     "load_domain_pack",
+    "load_enterprise_binding",
+    "compile_profile_bundle",
     "load_pack_yaml",
+    "load_schema_catalog",
+    "schema_fingerprint",
     "stable_digest",
+    "validate_enterprise_binding_schema",
 ]

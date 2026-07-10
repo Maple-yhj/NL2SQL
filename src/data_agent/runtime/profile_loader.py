@@ -120,6 +120,64 @@ def load_domain_pack(root: str | Path) -> DomainPack:
         raise PackLoadError("could not load a valid DomainPack") from exc
 
 
+def load_enterprise_binding(root: str | Path) -> EnterpriseDataBinding:
+    """Load an EnterpriseDataBinding from a monolithic or split pack.
+
+    A monolithic ``pack.yaml`` is the canonical local representation.  For
+    deployments that use the architecture's split layout, ``sources.yaml``,
+    ``bindings/commerce.yaml`` and ``policies.yaml`` are merged using the same
+    duplicate-key-safe loader before Pydantic validation.
+    """
+
+    pack_root = Path(root)
+    path = pack_root if pack_root.is_file() else pack_root / "pack.yaml"
+    try:
+        document = _load_yaml_mapping(path)
+        if "spec" in document:
+            return EnterpriseDataBinding.model_validate(document)
+
+        spec: dict = {}
+        fragments: tuple[tuple[Path, frozenset[str]], ...] = (
+            (pack_root / "sources.yaml", frozenset({"sources"})),
+            (pack_root / "bindings" / "commerce.yaml", frozenset({"bindings", "relationships"})),
+            (pack_root / "policies.yaml", frozenset({"policies"})),
+        )
+        for fragment_path, allowed_keys in fragments:
+            fragment = _load_yaml_mapping(fragment_path)
+            unexpected = set(fragment) - allowed_keys
+            if unexpected:
+                raise TypeError(f"invalid keys in enterprise binding fragment {fragment_path.name}")
+            overlap = set(spec) & set(fragment)
+            if overlap:
+                raise TypeError("enterprise binding fragments define duplicate sections")
+            spec.update(fragment)
+        document["spec"] = spec
+        return EnterpriseDataBinding.model_validate(document)
+    except (OSError, TypeError, ValidationError, yaml.YAMLError) as exc:
+        raise PackLoadError("could not load a valid EnterpriseDataBinding") from exc
+
+
+def compile_profile_bundle(
+    domain_root: str | Path,
+    enterprise_binding: EnterpriseDataBinding,
+    deployment_profile: DeploymentProfile,
+    schema_catalog: str | Path | list[dict] | None = None,
+):
+    """Load a domain and compile a binding/profile pair for contract checks."""
+
+    from .composition import compile_runtime_bundle
+
+    return compile_runtime_bundle(
+        load_domain_pack(domain_root),
+        enterprise_binding,
+        deployment_profile,
+        runtime_version="1.0.0",
+        skill_versions={"commerce.analytics": "1.0.0"},
+        tool_registry_version="1.0.0",
+        schema_catalog=schema_catalog,
+    )
+
+
 def _schema_bytes(model: type[BaseModel]) -> bytes:
     schema = model.model_json_schema(by_alias=True, mode="validation")
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
