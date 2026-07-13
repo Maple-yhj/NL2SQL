@@ -1,12 +1,24 @@
-import type { ChatMessage, DataRow, JsonValue, MessageType, TraceEntry } from "./types";
+import type {
+  AgentError,
+  ChatMessage,
+  DataRow,
+  JsonValue,
+  LogicalQueryPlan,
+  MessageType,
+  PendingMemoryUpdate,
+  TraceEntry,
+} from "./types";
 
 export interface AssistantViewModel {
   answer: string;
   rows: DataRow[];
   trace: TraceEntry[];
-  intentLabel: string;
+  logicalPlan: LogicalQueryPlan | null;
+  sql: string;
+  error: AgentError | null;
+  pendingMemoryUpdates: PendingMemoryUpdate[];
   status: "validated" | "error" | "pending";
-  showSqlCard: false;
+  showSqlCard: boolean;
   showTable: boolean;
   isThinking: boolean;
   messageType: MessageType;
@@ -19,16 +31,19 @@ export function createAssistantViewModel(message: ChatMessage): AssistantViewMod
   const messageType = resolveMessageType(metadata.message_type, metadata.error, rows);
   const isThinking = messageType === "thinking";
   const showTable = messageType === "table" && rows.length > 0;
-  const rawAnswer = metadata.answer || message.content || metadata.error || "";
+  const rawAnswer = metadata.answer || message.content || metadata.error?.message || "";
   const answer = isThinking ? "" : formatAnswer(rawAnswer, showTable, rows);
 
   return {
     answer,
     rows,
     trace,
-    intentLabel: formatIntent(metadata.intent),
+    logicalPlan: metadata.logical_plan ?? null,
+    sql: metadata.sql ?? "",
+    error: metadata.error ?? null,
+    pendingMemoryUpdates: metadata.pending_memory_updates ?? [],
     status: resolveStatus(metadata.ok, metadata.error),
-    showSqlCard: false,
+    showSqlCard: Boolean(metadata.sql),
     showTable,
     isThinking,
     messageType,
@@ -72,7 +87,7 @@ export function getColumnClassName(column: string): string {
   return isNumericColumn(column) ? "numeric-cell" : "";
 }
 
-function resolveStatus(ok?: boolean, error?: string): AssistantViewModel["status"] {
+function resolveStatus(ok?: boolean, error?: AgentError | null): AssistantViewModel["status"] {
   if (error) {
     return "error";
   }
@@ -84,17 +99,17 @@ function resolveStatus(ok?: boolean, error?: string): AssistantViewModel["status
 
 function resolveMessageType(
   messageType?: MessageType,
-  error?: string,
+  error?: AgentError | null,
   rows: DataRow[] = [],
 ): MessageType {
+  if (messageType) {
+    return messageType;
+  }
   if (error) {
     return "error";
   }
   if (rows.some(isLikelyDetailRow) || rows.length > 1) {
     return "table";
-  }
-  if (messageType) {
-    return messageType;
   }
   return "text";
 }
@@ -291,24 +306,6 @@ function isLikelyDetailRow(row: DataRow): boolean {
     return true;
   }
   return columns.length >= 4;
-}
-
-function formatIntent(intent?: Record<string, JsonValue>): string {
-  if (!intent) {
-    return "intent: unknown";
-  }
-
-  const metrics = formatList(intent.metrics);
-  const dimensions = formatList(intent.dimensions);
-  const parts = [metrics, dimensions].filter(Boolean);
-  return parts.length ? `intent: ${parts.join(", ")}` : "intent: parsed";
-}
-
-function formatList(value: JsonValue | undefined): string {
-  if (!Array.isArray(value)) {
-    return "";
-  }
-  return value.map((item) => String(item)).join(", ");
 }
 
 const COLUMN_LABELS: Record<string, string> = {

@@ -1,5 +1,30 @@
 {
   "$defs": {
+    "AdminBypassPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedRoles": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Allowedroles",
+          "type": "array"
+        },
+        "principalClaim": {
+          "const": "roles",
+          "title": "Principalclaim",
+          "type": "string"
+        }
+      },
+      "required": [
+        "principalClaim",
+        "allowedRoles"
+      ],
+      "title": "AdminBypassPolicy",
+      "type": "object"
+    },
     "EnterpriseBindingSpec": {
       "additionalProperties": false,
       "properties": {
@@ -25,7 +50,22 @@
           "type": "array"
         },
         "policies": {
-          "$ref": "#/$defs/EnterprisePolicies"
+          "discriminator": {
+            "mapping": {
+              "single_tenant": "#/$defs/SingleTenantPolicies",
+              "tenant_scoped": "#/$defs/TenantScopedPolicies"
+            },
+            "propertyName": "accessMode"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/SingleTenantPolicies"
+            },
+            {
+              "$ref": "#/$defs/TenantScopedPolicies"
+            }
+          ],
+          "title": "Policies"
         },
         "relationships": {
           "additionalProperties": false,
@@ -57,48 +97,10 @@
       },
       "required": [
         "domains",
-        "sources"
+        "sources",
+        "policies"
       ],
       "title": "EnterpriseBindingSpec",
-      "type": "object"
-    },
-    "EnterprisePolicies": {
-      "additionalProperties": false,
-      "properties": {
-        "maxRows": {
-          "default": 1000,
-          "minimum": 1,
-          "title": "Maxrows",
-          "type": "integer"
-        },
-        "queryTimeoutSeconds": {
-          "default": 10,
-          "minimum": 1,
-          "title": "Querytimeoutseconds",
-          "type": "integer"
-        },
-        "relationAllowlist": {
-          "default": [],
-          "items": {
-            "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$",
-            "type": "string"
-          },
-          "title": "Relationallowlist",
-          "type": "array"
-        },
-        "tenantScope": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/TenantScopePolicy"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "title": "EnterprisePolicies",
       "type": "object"
     },
     "EnterpriseSource": {
@@ -231,10 +233,40 @@
           "default": null,
           "title": "Cast"
         },
+        "coalesceValue": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coalescevalue"
+        },
         "column": {
-          "pattern": "^[a-z_][a-z0-9_]*$",
-          "title": "Column",
-          "type": "string"
+          "anyOf": [
+            {
+              "pattern": "^[a-z_][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column"
         },
         "enumMapping": {
           "additionalProperties": {
@@ -269,11 +301,30 @@
           ],
           "default": null,
           "title": "Timezone"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
         }
       },
-      "required": [
-        "column"
-      ],
       "title": "PhysicalFieldBinding",
       "type": "object"
     },
@@ -319,21 +370,79 @@
       "title": "PhysicalRelationshipBinding",
       "type": "object"
     },
+    "SingleTenantPolicies": {
+      "additionalProperties": false,
+      "properties": {
+        "accessMode": {
+          "const": "single_tenant",
+          "title": "Accessmode",
+          "type": "string"
+        },
+        "maxRows": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Maxrows",
+          "type": "integer"
+        },
+        "queryTimeoutSeconds": {
+          "default": 10,
+          "minimum": 1,
+          "title": "Querytimeoutseconds",
+          "type": "integer"
+        },
+        "relationAllowlist": {
+          "items": {
+            "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Relationallowlist",
+          "type": "array"
+        }
+      },
+      "required": [
+        "relationAllowlist",
+        "accessMode"
+      ],
+      "title": "SingleTenantPolicies",
+      "type": "object"
+    },
     "TenantScopePolicy": {
       "additionalProperties": false,
       "properties": {
+        "adminBypass": {
+          "$ref": "#/$defs/AdminBypassPolicy"
+        },
         "canonicalField": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "const": "commerce.Seller.seller_id",
           "title": "Canonicalfield",
           "type": "string"
         },
         "mode": {
-          "minLength": 1,
+          "const": "seller_id",
           "title": "Mode",
           "type": "string"
         },
+        "ownershipPaths": {
+          "additionalProperties": false,
+          "minProperties": 1,
+          "patternProperties": {
+            "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$": {
+              "items": {
+                "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$"
+          },
+          "title": "Ownershippaths",
+          "type": "object"
+        },
         "principalClaim": {
-          "pattern": "^[a-z][a-z0-9_]*$",
+          "const": "tenant_id",
           "title": "Principalclaim",
           "type": "string"
         }
@@ -341,9 +450,52 @@
       "required": [
         "mode",
         "canonicalField",
-        "principalClaim"
+        "principalClaim",
+        "adminBypass",
+        "ownershipPaths"
       ],
       "title": "TenantScopePolicy",
+      "type": "object"
+    },
+    "TenantScopedPolicies": {
+      "additionalProperties": false,
+      "properties": {
+        "accessMode": {
+          "const": "tenant_scoped",
+          "title": "Accessmode",
+          "type": "string"
+        },
+        "maxRows": {
+          "default": 1000,
+          "minimum": 1,
+          "title": "Maxrows",
+          "type": "integer"
+        },
+        "queryTimeoutSeconds": {
+          "default": 10,
+          "minimum": 1,
+          "title": "Querytimeoutseconds",
+          "type": "integer"
+        },
+        "relationAllowlist": {
+          "items": {
+            "pattern": "^[a-z_][a-z0-9_]*\\.[a-z_][a-z0-9_]*$",
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Relationallowlist",
+          "type": "array"
+        },
+        "tenantScope": {
+          "$ref": "#/$defs/TenantScopePolicy"
+        }
+      },
+      "required": [
+        "relationAllowlist",
+        "accessMode",
+        "tenantScope"
+      ],
+      "title": "TenantScopedPolicies",
       "type": "object"
     }
   },

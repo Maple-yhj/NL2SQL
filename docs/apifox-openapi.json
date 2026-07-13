@@ -1,18 +1,2173 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "NL2SQL LangGraph API",
-    "version": "1.0.0",
-    "description": "NL2SQL LangGraph API 文档。支持 JWT 登录态、Refresh Token 轮换、自然语言转 SQL，以及会话上下文管理。"
+  "components": {
+    "schemas": {
+      "AgentError": {
+        "additionalProperties": false,
+        "description": "Error safe to expose at an API, CLI, or event boundary.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "AgentError",
+        "type": "object"
+      },
+      "AgentMode": {
+        "enum": [
+          "plan",
+          "preview",
+          "execute"
+        ],
+        "title": "AgentMode",
+        "type": "string"
+      },
+      "AgentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "contextualized_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextualized Question"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "logical_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalQueryPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_type": {
+            "default": "text",
+            "minLength": 1,
+            "title": "Message Type",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "pending_memory_updates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProposalSummary"
+            },
+            "title": "Pending Memory Updates",
+            "type": "array"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "trace": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentTraceEntry"
+            },
+            "title": "Trace",
+            "type": "array"
+          },
+          "version_pins": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeVersionPins"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "question"
+        ],
+        "title": "AgentResponse",
+        "type": "object"
+      },
+      "AgentRow": {
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "propertyNames": {
+          "minLength": 1
+        },
+        "title": "AgentRow",
+        "type": "object"
+      },
+      "AgentTraceEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "node": {
+            "minLength": 1,
+            "title": "Node",
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "status"
+        ],
+        "title": "AgentTraceEntry",
+        "type": "object"
+      },
+      "AnalysisType": {
+        "enum": [
+          "metric",
+          "trend",
+          "ranking",
+          "detail",
+          "comparison",
+          "cross_tab",
+          "distribution",
+          "derived",
+          "follow_up",
+          "tenant_scoped"
+        ],
+        "title": "AnalysisType",
+        "type": "string"
+      },
+      "AuthUserResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "username",
+          "roles"
+        ],
+        "title": "AuthUserResponse",
+        "type": "object"
+      },
+      "CalculationOperation": {
+        "enum": [
+          "sum",
+          "average",
+          "count",
+          "count_distinct",
+          "add",
+          "subtract",
+          "multiply",
+          "growth",
+          "lag",
+          "date_difference",
+          "composite_key"
+        ],
+        "title": "CalculationOperation",
+        "type": "string"
+      },
+      "ComponentVersionPin": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "minLength": 1,
+            "title": "Component",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "version"
+        ],
+        "title": "ComponentVersionPin",
+        "type": "object"
+      },
+      "ConversationCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "default": "commerce",
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "ConversationCreateRequest",
+        "type": "object"
+      },
+      "ConversationListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ConversationListResponse",
+        "type": "object"
+      },
+      "ConversationMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ConversationMessageMetadata"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ConversationMessage",
+        "type": "object"
+      },
+      "ConversationMessageMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "contextualized_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextualized Question"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "message_type": {
+            "default": "text",
+            "minLength": 1,
+            "title": "Message Type",
+            "type": "string"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "trace": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentTraceEntry"
+            },
+            "title": "Trace",
+            "type": "array"
+          }
+        },
+        "title": "ConversationMessageMetadata",
+        "type": "object"
+      },
+      "ConversationMessageRequest": {
+        "additionalProperties": false,
+        "description": "Conversation turns use the same strict Runtime contract.",
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "domain_id": {
+            "default": "commerce",
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "enterprise_id": {
+            "default": "olist",
+            "minLength": 1,
+            "title": "Enterprise Id",
+            "type": "string"
+          },
+          "include_trace": {
+            "default": false,
+            "title": "Include Trace",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentMode",
+            "default": "execute"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "requested_output": {
+            "default": "answer",
+            "minLength": 1,
+            "title": "Requested Output",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "ConversationMessageRequest",
+        "type": "object"
+      },
+      "ConversationMessagesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ConversationMessagesResponse",
+        "type": "object"
+      },
+      "ConversationSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationSummary",
+        "type": "object"
+      },
+      "ConversationUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ConversationUpdateRequest",
+        "type": "object"
+      },
+      "CrossTabSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "columnAxis": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "title": "Columnaxis",
+            "type": "string"
+          },
+          "rowAxis": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "title": "Rowaxis",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rowAxis",
+          "columnAxis",
+          "values"
+        ],
+        "title": "CrossTabSpec",
+        "type": "object"
+      },
+      "DerivedCalculation": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Inputs",
+            "type": "array"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/CalculationOperation"
+          },
+          "partitionBy": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Partitionby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "operation",
+          "inputs"
+        ],
+        "title": "DerivedCalculation",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_REQUEST",
+          "CONFIG_INVALID",
+          "BUNDLE_NOT_FOUND",
+          "LOGICAL_PLAN_INVALID",
+          "BINDING_STALE",
+          "SQL_COMPILE_ERROR",
+          "SQL_POLICY_VIOLATION",
+          "COST_EXCEEDED",
+          "EMPTY_RESULT",
+          "JOIN_EXPLOSION",
+          "ACCESS_DENIED",
+          "RESULT_SEMANTIC_MISMATCH",
+          "TOOL_BUDGET_EXCEEDED",
+          "CONTEXT_BUDGET_EXCEEDED",
+          "DEADLINE_EXCEEDED",
+          "CANCELLED",
+          "INTERNAL_ERROR"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "FilterOperator": {
+        "enum": [
+          "eq",
+          "neq",
+          "gt",
+          "gte",
+          "lt",
+          "lte",
+          "in",
+          "not_in",
+          "is_null",
+          "is_not_null",
+          "contains"
+        ],
+        "title": "FilterOperator",
+        "type": "string"
+      },
+      "GrainAlignment": {
+        "additionalProperties": false,
+        "description": "Explicit proof that an expanding semantic path is handled safely.",
+        "properties": {
+          "joinGrain": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Joingrain",
+            "type": "array"
+          },
+          "relationshipPath": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Relationshippath",
+            "type": "array"
+          },
+          "sourceEntity": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+            "title": "Sourceentity",
+            "type": "string"
+          },
+          "strategy": {
+            "enum": [
+              "pre_aggregate",
+              "distinct"
+            ],
+            "title": "Strategy",
+            "type": "string"
+          },
+          "targetEntity": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+            "title": "Targetentity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceEntity",
+          "targetEntity",
+          "strategy",
+          "relationshipPath",
+          "joinGrain"
+        ],
+        "title": "GrainAlignment",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "LogicalFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "operator": {
+            "$ref": "#/components/schemas/FilterOperator"
+          },
+          "ref": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "title": "Ref",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "ref",
+          "operator"
+        ],
+        "title": "LogicalFilter",
+        "type": "object"
+      },
+      "LogicalOrdering": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/SortDirection"
+          },
+          "ref": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "direction"
+        ],
+        "title": "LogicalOrdering",
+        "type": "object"
+      },
+      "LogicalQueryPlan": {
+        "additionalProperties": false,
+        "description": "A complete, physical-system-independent analytical query plan.",
+        "properties": {
+          "analysisType": {
+            "$ref": "#/components/schemas/AnalysisType"
+          },
+          "assumptions": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/components/schemas/PlanContext"
+          },
+          "crossTab": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossTabSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "derivedCalculations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DerivedCalculation"
+            },
+            "title": "Derivedcalculations",
+            "type": "array"
+          },
+          "dimensions": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "entities": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+              "type": "string"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "expectedGrain": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Expectedgrain",
+            "type": "array"
+          },
+          "fields": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LogicalFilter"
+            },
+            "title": "Filters",
+            "type": "array"
+          },
+          "grainAlignment": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GrainAlignment"
+            },
+            "title": "Grainalignment",
+            "type": "array"
+          },
+          "having": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LogicalFilter"
+            },
+            "title": "Having",
+            "type": "array"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "ordering": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LogicalOrdering"
+            },
+            "title": "Ordering",
+            "type": "array"
+          },
+          "ranking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankingSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relationships": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Relationships",
+            "type": "array"
+          },
+          "requestedEvidence": {
+            "default": [],
+            "items": {
+              "enum": [
+                "semantic_resolution",
+                "logical_plan",
+                "query_result",
+                "result_profile",
+                "calculation_trace"
+              ],
+              "type": "string"
+            },
+            "title": "Requestedevidence",
+            "type": "array"
+          },
+          "resultShape": {
+            "$ref": "#/components/schemas/ResultShape"
+          },
+          "seriesAxis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeriesAxis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeGrain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeGrain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "windowSpecs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WindowSpec"
+            },
+            "title": "Windowspecs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "analysisType",
+          "resultShape"
+        ],
+        "title": "LogicalQueryPlan",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "tenant_id": {
+            "default": "demo",
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LogoutRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "default": "",
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "title": "LogoutRequest",
+        "type": "object"
+      },
+      "LogoutResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LogoutResponse",
+        "type": "object"
+      },
+      "Nl2SqlRequest": {
+        "additionalProperties": false,
+        "description": "The HTTP agent request is exactly the public Runtime request.",
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "domain_id": {
+            "default": "commerce",
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "enterprise_id": {
+            "default": "olist",
+            "minLength": 1,
+            "title": "Enterprise Id",
+            "type": "string"
+          },
+          "include_trace": {
+            "default": false,
+            "title": "Include Trace",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentMode",
+            "default": "execute"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "requested_output": {
+            "default": "answer",
+            "minLength": 1,
+            "title": "Requested Output",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "Nl2SqlRequest",
+        "type": "object"
+      },
+      "PlanContext": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "standalone",
+            "enum": [
+              "standalone",
+              "follow_up"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "preserve": {
+            "default": [],
+            "items": {
+              "enum": [
+                "metrics",
+                "filters",
+                "time_range",
+                "tenant_scope",
+                "grain"
+              ],
+              "type": "string"
+            },
+            "title": "Preserve",
+            "type": "array"
+          },
+          "priorQuestion": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priorquestion"
+          },
+          "tenantScope": {
+            "default": "all",
+            "enum": [
+              "all",
+              "seller"
+            ],
+            "title": "Tenantscope",
+            "type": "string"
+          }
+        },
+        "title": "PlanContext",
+        "type": "object"
+      },
+      "ProposalSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "enum": [
+              "working",
+              "conversation",
+              "user",
+              "episodic",
+              "enterprise"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "const": "pending_approval",
+            "default": "pending_approval",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "source"
+        ],
+        "title": "ProposalSummary",
+        "type": "object"
+      },
+      "RankingSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "measure": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "title": "Measure",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "top_n",
+              "full"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "measure"
+        ],
+        "title": "RankingSpec",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "ResultShape": {
+        "enum": [
+          "scalar",
+          "table",
+          "time_series",
+          "ranking",
+          "detail",
+          "cross_tab",
+          "distribution"
+        ],
+        "title": "ResultShape",
+        "type": "string"
+      },
+      "RuntimeVersionPins": {
+        "additionalProperties": false,
+        "properties": {
+          "bundle_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Bundle Digest",
+            "type": "string"
+          },
+          "deployment_profile_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Deployment Profile Digest",
+            "type": "string"
+          },
+          "domain_pack_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Domain Pack Digest",
+            "type": "string"
+          },
+          "enterprise_binding_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Enterprise Binding Digest",
+            "type": "string"
+          },
+          "graph_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Graph Digest",
+            "type": "string"
+          },
+          "graph_id": {
+            "minLength": 1,
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "graph_version": {
+            "minLength": 1,
+            "title": "Graph Version",
+            "type": "string"
+          },
+          "model_versions": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentVersionPin"
+            },
+            "minItems": 1,
+            "title": "Model Versions",
+            "type": "array"
+          },
+          "runtime_version": {
+            "minLength": 1,
+            "title": "Runtime Version",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "skill_id": {
+            "minLength": 1,
+            "title": "Skill Id",
+            "type": "string"
+          },
+          "skill_version": {
+            "minLength": 1,
+            "title": "Skill Version",
+            "type": "string"
+          },
+          "tool_registry_version": {
+            "minLength": 1,
+            "title": "Tool Registry Version",
+            "type": "string"
+          },
+          "tool_versions": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentVersionPin"
+            },
+            "minItems": 1,
+            "title": "Tool Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "bundle_digest",
+          "runtime_version",
+          "domain_pack_digest",
+          "enterprise_binding_digest",
+          "deployment_profile_digest",
+          "schema_fingerprint",
+          "skill_id",
+          "skill_version",
+          "graph_id",
+          "graph_version",
+          "graph_digest",
+          "tool_registry_version",
+          "tool_versions",
+          "model_versions"
+        ],
+        "title": "RuntimeVersionPins",
+        "type": "object"
+      },
+      "SeriesAxis": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "time",
+              "numeric"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "timeGrain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeGrain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "field"
+        ],
+        "title": "SeriesAxis",
+        "type": "object"
+      },
+      "SortDirection": {
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "title": "SortDirection",
+        "type": "string"
+      },
+      "TimeGrain": {
+        "enum": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ],
+        "title": "TimeGrain",
+        "type": "string"
+      },
+      "TimeRange": {
+        "additionalProperties": false,
+        "description": "Canonical event-time selection with optional half-open bounds.",
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "field": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "TimeRange",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUserResponse"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in",
+          "user"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WindowSpec": {
+        "additionalProperties": false,
+        "description": "Logical window metadata; it never contains executable expressions.",
+        "properties": {
+          "axisRef": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "title": "Axisref",
+            "type": "string"
+          },
+          "calculation": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "title": "Calculation",
+            "type": "string"
+          },
+          "id": {
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "title": "Id",
+            "type": "string"
+          },
+          "ordering": {
+            "items": {
+              "$ref": "#/components/schemas/LogicalOrdering"
+            },
+            "minItems": 1,
+            "title": "Ordering",
+            "type": "array"
+          },
+          "outputGrain": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Outputgrain",
+            "type": "array"
+          },
+          "partitionBy": {
+            "default": [],
+            "items": {
+              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            "title": "Partitionby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "calculation",
+          "axisRef",
+          "ordering",
+          "outputGrain"
+        ],
+        "title": "WindowSpec",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Access token returned by the login or refresh endpoint.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
   },
+  "info": {
+    "description": "Governed Data Agent Runtime API with JWT authentication, strict plan/preview/execute requests, and conversation management.",
+    "title": "Data Agent API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
   "paths": {
-    "/health": {
-      "get": {
-        "summary": "健康检查",
-        "operationId": "health",
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
-            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout_api_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Me"
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "operationId": "refresh_api_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh"
+      }
+    },
+    "/api/conversations": {
+      "get": {
+        "operationId": "list_conversations_api_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "commerce",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Conversations"
+      },
+      "post": {
+        "operationId": "create_conversation_api_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Conversation"
+      }
+    },
+    "/api/conversations/{conversation_id}": {
+      "get": {
+        "operationId": "get_conversation_api_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "commerce",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Conversation"
+      },
+      "patch": {
+        "operationId": "update_conversation_api_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "commerce",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Conversation"
+      }
+    },
+    "/api/conversations/{conversation_id}/messages": {
+      "get": {
+        "operationId": "list_conversation_messages_api_conversations__conversation_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "commerce",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationMessagesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Conversation Messages"
+      },
+      "post": {
+        "operationId": "send_conversation_message_api_conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Send Conversation Message"
+      }
+    },
+    "/api/nl2sql": {
+      "post": {
+        "operationId": "nl2sql_api_nl2sql_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Nl2SqlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Nl2Sql"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -26,1951 +2181,22 @@
                       }
                     ]
                   },
-                  "type": "object",
-                  "title": "Response Health Health Get"
-                },
-                "example": {
-                  "ok": true,
-                  "service": "nl2sql-api"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "System"
-        ],
-        "description": "检查 API 服务是否可用。"
-      }
-    },
-    "/api/auth/login": {
-      "post": {
-        "summary": "用户名密码登录",
-        "operationId": "authLogin",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LoginRequest"
-              },
-              "example": {
-                "tenant_id": "demo",
-                "username": "alice",
-                "password": "secret"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                },
-                "example": {
-                  "access_token": "eyJhbGciOi...access",
-                  "refresh_token": "eyJhbGciOi...refresh",
-                  "token_type": "bearer",
-                  "expires_in": 1800,
-                  "user": {
-                    "tenant_id": "demo",
-                    "user_id": "user-001",
-                    "username": "alice",
-                    "roles": [
-                      "admin"
-                    ]
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "认证失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Invalid authentication credentials"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Auth"
-        ],
-        "description": "按租户、用户名和密码登录，返回 access_token 与 refresh_token。"
-      }
-    },
-    "/api/auth/refresh": {
-      "post": {
-        "summary": "刷新访问令牌",
-        "operationId": "authRefresh",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RefreshRequest"
-              },
-              "example": {
-                "refresh_token": "eyJhbGciOi...refresh"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
-                },
-                "example": {
-                  "access_token": "eyJhbGciOi...access",
-                  "refresh_token": "eyJhbGciOi...refresh",
-                  "token_type": "bearer",
-                  "expires_in": 1800,
-                  "user": {
-                    "tenant_id": "demo",
-                    "user_id": "user-001",
-                    "username": "alice",
-                    "roles": [
-                      "admin"
-                    ]
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Refresh Token 无效或已失效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Invalid authentication credentials"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Auth"
-        ],
-        "description": "使用 refresh_token 轮换令牌，旧 refresh_token 会失效。"
-      }
-    },
-    "/api/auth/me": {
-      "get": {
-        "summary": "获取当前登录用户",
-        "operationId": "authMe",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AuthUserResponse"
-                },
-                "example": {
-                  "tenant_id": "demo",
-                  "user_id": "user-001",
-                  "username": "alice",
-                  "roles": [
-                    "admin"
-                  ]
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "tags": [
-          "Auth"
-        ],
-        "description": "根据 Authorization Bearer access_token 返回当前用户身份。"
-      }
-    },
-    "/api/auth/logout": {
-      "post": {
-        "summary": "退出登录",
-        "operationId": "authLogout",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/LogoutRequest"
-              },
-              "example": {
-                "refresh_token": "eyJhbGciOi...refresh"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LogoutResponse"
-                },
-                "example": {
-                  "ok": true
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Refresh Token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Invalid authentication credentials"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Auth"
-        ],
-        "description": "传入 refresh_token 时撤销该 token；不传时返回成功。"
-      }
-    },
-    "/api/nl2sql": {
-      "post": {
-        "summary": "自然语言转 SQL",
-        "operationId": "runNl2Sql",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Nl2SqlRequest"
-              },
-              "example": {
-                "question": "按地区统计上月 GMV",
-                "tenant_id": "demo",
-                "execute": false,
-                "timeout_ms": 10000,
-                "max_limit": 1000,
-                "max_validation_attempts": 2
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Nl2SqlResponse"
-                },
-                "example": {
-                  "ok": true,
-                  "question": "按地区统计上月 GMV",
-                  "tenant_id": "demo",
-                  "intent": {
-                    "metrics": [
-                      "gmv"
-                    ],
-                    "dimensions": [
-                      "region"
-                    ]
-                  },
-                  "sql": "SELECT region, SUM(gmv) AS gmv FROM orders GROUP BY region",
-                  "rows": [],
-                  "answer": "",
-                  "error": "",
-                  "trace": []
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "tags": [
-          "NL2SQL"
-        ],
-        "description": "将自然语言问题转换为 SQL。tenant_id 可省略，省略时使用 token 中的租户；如传入则必须与 token 租户一致。"
-      }
-    },
-    "/api/conversations": {
-      "post": {
-        "summary": "创建会话",
-        "operationId": "createConversation",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationCreateRequest"
-              },
-              "example": {
-                "tenant_id": "demo",
-                "user_id": "user-001",
-                "title": "上月 GMV 分析"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationResponse"
-                },
-                "example": {
-                  "tenant_id": "demo",
-                  "conversation_id": "conv_01HY...",
-                  "user_id": "user-001",
-                  "title": "上月 GMV 分析",
-                  "archived": false,
-                  "created_at": "2026-06-26T10:00:00Z",
-                  "updated_at": "2026-06-26T10:00:00Z"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Conversations"
-        ],
-        "description": "创建一个会话。tenant_id 与 user_id 可省略，省略时使用 token 中的身份；如传入则必须与 token 一致。"
-      },
-      "get": {
-        "summary": "查询会话列表",
-        "operationId": "listConversations",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "tenant_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant Id"
-            },
-            "description": "租户 ID。可省略，省略时使用 access_token 中的租户。",
-            "example": "demo"
-          },
-          {
-            "name": "user_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Id"
-            },
-            "description": "用户 ID。可省略，省略时使用 access_token 中的用户。",
-            "example": "user-001"
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 100,
-              "minimum": 1,
-              "default": 20,
-              "title": "Limit"
-            },
-            "description": "返回数量上限。",
-            "example": 20
-          },
-          {
-            "name": "include_archived",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": false,
-              "title": "Include Archived"
-            },
-            "description": "是否包含已归档会话。",
-            "example": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationListResponse"
-                },
-                "example": {
-                  "items": [
-                    {
-                      "tenant_id": "demo",
-                      "conversation_id": "conv_01HY...",
-                      "user_id": "user-001",
-                      "title": "上月 GMV 分析",
-                      "archived": false,
-                      "created_at": "2026-06-26T10:00:00Z",
-                      "updated_at": "2026-06-26T10:00:00Z"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Conversations"
-        ],
-        "description": "查询当前用户的会话列表。tenant_id 与 user_id 可省略，省略时使用 token 身份。"
-      }
-    },
-    "/api/conversations/{conversation_id}": {
-      "get": {
-        "summary": "查询会话详情",
-        "operationId": "getConversation",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Conversation Id"
-            },
-            "description": "会话 ID。",
-            "example": "conv_01HY..."
-          },
-          {
-            "name": "tenant_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant Id"
-            },
-            "description": "租户 ID。可省略，省略时使用 access_token 中的租户。",
-            "example": "demo"
-          },
-          {
-            "name": "user_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Id"
-            },
-            "description": "用户 ID。可省略，省略时使用 access_token 中的用户。",
-            "example": "user-001"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationResponse"
-                },
-                "example": {
-                  "tenant_id": "demo",
-                  "conversation_id": "conv_01HY...",
-                  "user_id": "user-001",
-                  "title": "上月 GMV 分析",
-                  "archived": false,
-                  "created_at": "2026-06-26T10:00:00Z",
-                  "updated_at": "2026-06-26T10:00:00Z"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Conversation not found"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Conversations"
-        ],
-        "description": "按 conversation_id 查询当前用户可访问的会话。"
-      },
-      "patch": {
-        "summary": "更新会话",
-        "operationId": "updateConversation",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Conversation Id"
-            },
-            "description": "会话 ID。",
-            "example": "conv_01HY..."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationUpdateRequest"
-              },
-              "example": {
-                "tenant_id": "demo",
-                "user_id": "user-001",
-                "title": "上月 GMV 分析复盘",
-                "archived": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationResponse"
-                },
-                "example": {
-                  "tenant_id": "demo",
-                  "conversation_id": "conv_01HY...",
-                  "user_id": "user-001",
-                  "title": "上月 GMV 分析复盘",
-                  "archived": false,
-                  "created_at": "2026-06-26T10:00:00Z",
-                  "updated_at": "2026-06-26T10:00:00Z"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Conversation not found"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Conversations"
-        ],
-        "description": "更新会话标题或归档状态。"
-      }
-    },
-    "/api/conversations/{conversation_id}/messages": {
-      "get": {
-        "summary": "查询会话消息",
-        "operationId": "listConversationMessages",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Conversation Id"
-            },
-            "description": "会话 ID。",
-            "example": "conv_01HY..."
-          },
-          {
-            "name": "tenant_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Tenant Id"
-            },
-            "description": "租户 ID。可省略，省略时使用 access_token 中的租户。",
-            "example": "demo"
-          },
-          {
-            "name": "user_id",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "minLength": 1
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "User Id"
-            },
-            "description": "用户 ID。可省略，省略时使用 access_token 中的用户。",
-            "example": "user-001"
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 200,
-              "minimum": 1,
-              "default": 50,
-              "title": "Limit"
-            },
-            "description": "返回数量上限。",
-            "example": 20
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationMessagesResponse"
-                },
-                "example": {
-                  "items": [
-                    {
-                      "role": "user",
-                      "content": "按地区统计上月 GMV",
-                      "metadata": {
-                        "tenant_id": "demo"
-                      }
-                    },
-                    {
-                      "role": "assistant",
-                      "content": "SELECT region, SUM(gmv) AS gmv FROM orders GROUP BY region",
-                      "metadata": {
-                        "ok": true
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Conversation not found"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Conversations"
-        ],
-        "description": "查询指定会话的历史消息。"
-      },
-      "post": {
-        "summary": "发送会话消息并生成 SQL",
-        "operationId": "sendConversationMessage",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "conversation_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Conversation Id"
-            },
-            "description": "会话 ID。",
-            "example": "conv_01HY..."
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConversationMessageRequest"
-              },
-              "example": {
-                "question": "那按地区呢",
-                "tenant_id": "demo",
-                "user_id": "user-001",
-                "execute": false,
-                "timeout_ms": 10000,
-                "max_limit": 1000,
-                "max_validation_attempts": 2,
-                "memory_history_limit": 8
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationNl2SqlResponse"
-                },
-                "example": {
-                  "ok": true,
-                  "question": "那按地区呢",
-                  "tenant_id": "demo",
-                  "intent": {
-                    "metrics": [
-                      "gmv"
-                    ],
-                    "dimensions": [
-                      "region"
-                    ]
-                  },
-                  "sql": "SELECT region, SUM(gmv) AS gmv FROM orders GROUP BY region",
-                  "rows": [],
-                  "answer": "",
-                  "error": "",
-                  "trace": [],
-                  "contextualized_question": "在上月 GMV 的基础上，按地区统计",
-                  "conversation_id": "conv_01HY...",
-                  "user_id": "user-001"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "未登录或 access_token 无效",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Missing bearer token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "身份不匹配",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Tenant does not match token"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HttpError"
-                },
-                "example": {
-                  "detail": "Conversation not found"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InternalError"
-                },
-                "example": {
-                  "ok": false,
-                  "error": "Internal server error",
-                  "detail": "exception message"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "Conversations"
-        ],
-        "description": "向指定会话追加用户问题，并基于会话上下文执行 NL2SQL。"
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "AuthUserResponse": {
-        "properties": {
-          "tenant_id": {
-            "type": "string",
-            "title": "Tenant Id"
-          },
-          "user_id": {
-            "type": "string",
-            "title": "User Id"
-          },
-          "username": {
-            "type": "string",
-            "title": "Username"
-          },
-          "roles": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Roles"
-          }
-        },
-        "type": "object",
-        "required": [
-          "tenant_id",
-          "user_id",
-          "username",
-          "roles"
-        ],
-        "title": "AuthUserResponse"
-      },
-      "ConversationCreateRequest": {
-        "properties": {
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "ConversationCreateRequest"
-      },
-      "ConversationListResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ConversationResponse"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "ConversationListResponse"
-      },
-      "ConversationMessage": {
-        "properties": {
-          "role": {
-            "type": "string",
-            "title": "Role"
-          },
-          "content": {
-            "type": "string",
-            "title": "Content"
-          },
-          "metadata": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Metadata"
-          }
-        },
-        "type": "object",
-        "required": [
-          "role",
-          "content",
-          "metadata"
-        ],
-        "title": "ConversationMessage"
-      },
-      "ConversationMessageRequest": {
-        "properties": {
-          "question": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Question"
-          },
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          },
-          "execute": {
-            "type": "boolean",
-            "title": "Execute",
-            "default": false
-          },
-          "timeout_ms": {
-            "type": "integer",
-            "maximum": 60000.0,
-            "minimum": 1000.0,
-            "title": "Timeout Ms",
-            "default": 10000
-          },
-          "max_limit": {
-            "type": "integer",
-            "maximum": 10000.0,
-            "minimum": 1.0,
-            "title": "Max Limit",
-            "default": 1000
-          },
-          "max_validation_attempts": {
-            "type": "integer",
-            "maximum": 5.0,
-            "minimum": 1.0,
-            "title": "Max Validation Attempts",
-            "default": 2
-          },
-          "memory_history_limit": {
-            "type": "integer",
-            "maximum": 50.0,
-            "minimum": 0.0,
-            "title": "Memory History Limit",
-            "default": 8
-          }
-        },
-        "type": "object",
-        "required": [
-          "question"
-        ],
-        "title": "ConversationMessageRequest"
-      },
-      "ConversationMessagesResponse": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/ConversationMessage"
-            },
-            "type": "array",
-            "title": "Items"
-          }
-        },
-        "type": "object",
-        "required": [
-          "items"
-        ],
-        "title": "ConversationMessagesResponse"
-      },
-      "ConversationNl2SqlResponse": {
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "title": "Ok"
-          },
-          "question": {
-            "type": "string",
-            "title": "Question"
-          },
-          "contextualized_question": {
-            "type": "string",
-            "title": "Contextualized Question"
-          },
-          "conversation_id": {
-            "type": "string",
-            "title": "Conversation Id"
-          },
-          "user_id": {
-            "type": "string",
-            "title": "User Id"
-          },
-          "tenant_id": {
-            "type": "string",
-            "title": "Tenant Id"
-          },
-          "intent": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Intent"
-          },
-          "sql": {
-            "type": "string",
-            "title": "Sql"
-          },
-          "rows": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Rows"
-          },
-          "answer": {
-            "type": "string",
-            "title": "Answer"
-          },
-          "error": {
-            "type": "string",
-            "title": "Error"
-          },
-          "trace": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Trace"
-          }
-        },
-        "type": "object",
-        "required": [
-          "ok",
-          "question",
-          "contextualized_question",
-          "conversation_id",
-          "user_id",
-          "tenant_id",
-          "intent",
-          "sql",
-          "rows",
-          "answer",
-          "error",
-          "trace"
-        ],
-        "title": "ConversationNl2SqlResponse"
-      },
-      "ConversationResponse": {
-        "properties": {
-          "tenant_id": {
-            "type": "string",
-            "title": "Tenant Id"
-          },
-          "conversation_id": {
-            "type": "string",
-            "title": "Conversation Id"
-          },
-          "user_id": {
-            "type": "string",
-            "title": "User Id"
-          },
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
-          "archived": {
-            "type": "boolean",
-            "title": "Archived"
-          },
-          "created_at": {
-            "type": "string",
-            "title": "Created At"
-          },
-          "updated_at": {
-            "type": "string",
-            "title": "Updated At"
-          }
-        },
-        "type": "object",
-        "required": [
-          "tenant_id",
-          "conversation_id",
-          "user_id",
-          "title",
-          "archived",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "ConversationResponse"
-      },
-      "ConversationUpdateRequest": {
-        "properties": {
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          },
-          "user_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "User Id"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Title"
-          },
-          "archived": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Archived"
-          }
-        },
-        "type": "object",
-        "title": "ConversationUpdateRequest"
-      },
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "type": "array",
-            "title": "Detail"
-          }
-        },
-        "type": "object",
-        "title": "HTTPValidationError"
-      },
-      "LoginRequest": {
-        "properties": {
-          "tenant_id": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Tenant Id",
-            "default": "demo"
-          },
-          "username": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Username"
-          },
-          "password": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Password"
-          }
-        },
-        "type": "object",
-        "required": [
-          "username",
-          "password"
-        ],
-        "title": "LoginRequest"
-      },
-      "LogoutRequest": {
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "title": "Refresh Token",
-            "default": ""
-          }
-        },
-        "type": "object",
-        "title": "LogoutRequest"
-      },
-      "LogoutResponse": {
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "title": "Ok",
-            "default": true
-          }
-        },
-        "type": "object",
-        "title": "LogoutResponse"
-      },
-      "Nl2SqlRequest": {
-        "properties": {
-          "question": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Question"
-          },
-          "tenant_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tenant Id"
-          },
-          "execute": {
-            "type": "boolean",
-            "title": "Execute",
-            "default": false
-          },
-          "timeout_ms": {
-            "type": "integer",
-            "maximum": 60000.0,
-            "minimum": 1000.0,
-            "title": "Timeout Ms",
-            "default": 10000
-          },
-          "max_limit": {
-            "type": "integer",
-            "maximum": 10000.0,
-            "minimum": 1.0,
-            "title": "Max Limit",
-            "default": 1000
-          },
-          "max_validation_attempts": {
-            "type": "integer",
-            "maximum": 5.0,
-            "minimum": 1.0,
-            "title": "Max Validation Attempts",
-            "default": 2
-          }
-        },
-        "type": "object",
-        "required": [
-          "question"
-        ],
-        "title": "Nl2SqlRequest"
-      },
-      "Nl2SqlResponse": {
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "title": "Ok"
-          },
-          "question": {
-            "type": "string",
-            "title": "Question"
-          },
-          "tenant_id": {
-            "type": "string",
-            "title": "Tenant Id"
-          },
-          "intent": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Intent"
-          },
-          "sql": {
-            "type": "string",
-            "title": "Sql"
-          },
-          "rows": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Rows"
-          },
-          "answer": {
-            "type": "string",
-            "title": "Answer"
-          },
-          "error": {
-            "type": "string",
-            "title": "Error"
-          },
-          "trace": {
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array",
-            "title": "Trace"
-          }
-        },
-        "type": "object",
-        "required": [
-          "ok",
-          "question",
-          "tenant_id",
-          "intent",
-          "sql",
-          "rows",
-          "answer",
-          "error",
-          "trace"
-        ],
-        "title": "Nl2SqlResponse"
-      },
-      "RefreshRequest": {
-        "properties": {
-          "refresh_token": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Refresh Token"
-          }
-        },
-        "type": "object",
-        "required": [
-          "refresh_token"
-        ],
-        "title": "RefreshRequest"
-      },
-      "TokenResponse": {
-        "properties": {
-          "access_token": {
-            "type": "string",
-            "title": "Access Token"
-          },
-          "refresh_token": {
-            "type": "string",
-            "title": "Refresh Token"
-          },
-          "token_type": {
-            "type": "string",
-            "title": "Token Type",
-            "default": "bearer"
-          },
-          "expires_in": {
-            "type": "integer",
-            "title": "Expires In"
-          },
-          "user": {
-            "$ref": "#/components/schemas/AuthUserResponse"
-          }
-        },
-        "type": "object",
-        "required": [
-          "access_token",
-          "refresh_token",
-          "expires_in",
-          "user"
-        ],
-        "title": "TokenResponse"
-      },
-      "ValidationError": {
-        "properties": {
-          "loc": {
-            "items": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "integer"
-                }
-              ]
-            },
-            "type": "array",
-            "title": "Location"
-          },
-          "msg": {
-            "type": "string",
-            "title": "Message"
-          },
-          "type": {
-            "type": "string",
-            "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
-          }
-        },
-        "type": "object",
-        "required": [
-          "loc",
-          "msg",
-          "type"
-        ],
-        "title": "ValidationError"
-      },
-      "HttpError": {
-        "type": "object",
-        "properties": {
-          "detail": {
-            "description": "错误详情。认证、鉴权、404 与校验错误由 FastAPI 返回。",
-            "oneOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "array",
-                "items": {
+                  "title": "Response Health Health Get",
                   "type": "object"
                 }
               }
-            ]
+            },
+            "description": "Successful Response"
           }
         },
-        "required": [
-          "detail"
-        ],
-        "title": "HttpError"
-      },
-      "InternalError": {
-        "type": "object",
-        "properties": {
-          "ok": {
-            "type": "boolean",
-            "example": false
-          },
-          "error": {
-            "type": "string",
-            "example": "Internal server error"
-          },
-          "detail": {
-            "type": "string",
-            "example": "exception message"
-          }
-        },
-        "required": [
-          "ok",
-          "error",
-          "detail"
-        ],
-        "title": "InternalError"
-      }
-    },
-    "securitySchemes": {
-      "BearerAuth": {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "JWT",
-        "description": "登录或刷新接口返回的 access_token。"
+        "summary": "Health"
       }
     }
   },
   "servers": [
     {
-      "url": "http://localhost:8000",
-      "description": "本地开发环境"
-    }
-  ],
-  "tags": [
-    {
-      "name": "System",
-      "description": "服务健康检查"
-    },
-    {
-      "name": "Auth",
-      "description": "登录态、JWT 与 Refresh Token 管理"
-    },
-    {
-      "name": "NL2SQL",
-      "description": "自然语言转 SQL"
-    },
-    {
-      "name": "Conversations",
-      "description": "会话与会话消息管理"
+      "description": "Local development",
+      "url": "http://localhost:8000"
     }
   ]
 }

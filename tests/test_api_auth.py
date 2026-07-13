@@ -255,110 +255,94 @@ class ApiAuthSchemaTests(unittest.TestCase):
 
         self.assertTrue(response.ok)
 
-    def test_nl2sql_request_omitted_tenant_is_none_and_strips_question(self):
+    def test_nl2sql_request_uses_runtime_defaults_and_strips_question(self):
         request = Nl2SqlRequest(question=" show gmv ")
 
-        self.assertIsNone(request.tenant_id)
         self.assertEqual(request.question, "show gmv")
-        self.assertTrue(request.execute)
+        self.assertEqual(request.enterprise_id, "olist")
+        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.mode.value, "execute")
+        self.assertFalse(request.include_trace)
 
-    def test_nl2sql_request_strips_question_and_tenant(self):
-        request = Nl2SqlRequest(question=" show gmv ", tenant_id=" demo ")
+    def test_nl2sql_request_strips_governed_scope(self):
+        request = Nl2SqlRequest(
+            question=" show gmv ",
+            enterprise_id=" olist ",
+            domain_id=" commerce ",
+        )
 
         self.assertEqual(request.question, "show gmv")
-        self.assertEqual(request.tenant_id, "demo")
+        self.assertEqual(request.enterprise_id, "olist")
+        self.assertEqual(request.domain_id, "commerce")
 
     def test_nl2sql_request_rejects_blank_question(self):
         with self.assertRaises(ValidationError):
             Nl2SqlRequest(question="   ")
 
-    def test_nl2sql_request_rejects_blank_tenant_when_provided(self):
+    def test_nl2sql_request_rejects_blank_domain_when_provided(self):
         with self.assertRaises(ValidationError):
-            Nl2SqlRequest(question="show gmv", tenant_id="   ")
+            Nl2SqlRequest(question="show gmv", domain_id="   ")
 
-    def test_conversation_create_allows_omitted_identity_and_strips_title(self):
+    def test_conversation_create_uses_domain_default_and_strips_title(self):
         request = ConversationCreateRequest(title=" Demo ")
 
-        self.assertIsNone(request.tenant_id)
-        self.assertIsNone(request.user_id)
         self.assertEqual(request.title, "Demo")
+        self.assertEqual(request.domain_id, "commerce")
 
-    def test_conversation_create_strips_identity_and_title(self):
+    def test_conversation_create_strips_domain_and_title(self):
         request = ConversationCreateRequest(
-            tenant_id=" demo ",
-            user_id=" user-1 ",
+            domain_id=" commerce ",
             title=" Demo ",
         )
 
-        self.assertEqual(request.tenant_id, "demo")
-        self.assertEqual(request.user_id, "user-1")
+        self.assertEqual(request.domain_id, "commerce")
         self.assertEqual(request.title, "Demo")
 
-    def test_conversation_create_rejects_blank_tenant_when_provided(self):
+    def test_conversation_create_rejects_identity_fields(self):
         with self.assertRaises(ValidationError):
-            ConversationCreateRequest(tenant_id="   ", user_id="user-1")
+            ConversationCreateRequest(tenant_id="demo")
 
-    def test_conversation_create_rejects_blank_user_when_provided(self):
-        with self.assertRaises(ValidationError):
-            ConversationCreateRequest(tenant_id="demo", user_id="   ")
-
-    def test_conversation_update_allows_omitted_identity_as_none(self):
+    def test_conversation_update_only_contains_mutable_fields(self):
         request = ConversationUpdateRequest(title="Demo")
 
-        self.assertIsNone(request.tenant_id)
-        self.assertIsNone(request.user_id)
+        self.assertEqual(request.title, "Demo")
+        self.assertIsNone(request.archived)
 
-    def test_conversation_update_strips_provided_identity(self):
-        request = ConversationUpdateRequest(
-            tenant_id=" demo ",
-            user_id=" user-1 ",
-        )
-
-        self.assertEqual(request.tenant_id, "demo")
-        self.assertEqual(request.user_id, "user-1")
-
-    def test_conversation_update_rejects_blank_tenant_when_provided(self):
+    def test_conversation_update_rejects_identity_fields(self):
         with self.assertRaises(ValidationError):
-            ConversationUpdateRequest(tenant_id="   ", user_id="user-1")
+            ConversationUpdateRequest(user_id="user-1")
 
-    def test_conversation_update_rejects_blank_user_when_provided(self):
-        with self.assertRaises(ValidationError):
-            ConversationUpdateRequest(tenant_id="demo", user_id="   ")
-
-    def test_conversation_message_allows_omitted_identity_and_strips_question(self):
+    def test_conversation_message_uses_runtime_contract_and_strips_question(self):
         request = ConversationMessageRequest(question=" show gmv ")
 
-        self.assertIsNone(request.tenant_id)
-        self.assertIsNone(request.user_id)
         self.assertEqual(request.question, "show gmv")
-        self.assertTrue(request.execute)
+        self.assertEqual(request.mode.value, "execute")
 
-    def test_conversation_message_strips_question_and_identity(self):
+    def test_conversation_message_strips_scope_fields(self):
         request = ConversationMessageRequest(
             question=" show gmv ",
-            tenant_id=" demo ",
-            user_id=" user-1 ",
+            enterprise_id=" olist ",
+            domain_id=" commerce ",
         )
 
         self.assertEqual(request.question, "show gmv")
-        self.assertEqual(request.tenant_id, "demo")
-        self.assertEqual(request.user_id, "user-1")
+        self.assertEqual(request.enterprise_id, "olist")
+        self.assertEqual(request.domain_id, "commerce")
 
     def test_conversation_message_rejects_blank_question(self):
         with self.assertRaises(ValidationError):
             ConversationMessageRequest(question="   ")
 
-    def test_conversation_message_rejects_blank_tenant_when_provided(self):
+    def test_conversation_message_rejects_legacy_execute(self):
         with self.assertRaises(ValidationError):
             ConversationMessageRequest(
                 question="show gmv",
-                tenant_id="   ",
-                user_id="user-1",
+                execute=True,
             )
 
-    def test_conversation_message_rejects_blank_user_when_provided(self):
+    def test_conversation_message_rejects_identity_fields(self):
         with self.assertRaises(ValidationError):
-            ConversationMessageRequest(question="show gmv", user_id="   ")
+            ConversationMessageRequest(question="show gmv", user_id="user-1")
 
 
 class CreateAuthUserScriptTests(unittest.TestCase):
@@ -380,16 +364,35 @@ class CreateAuthUserScriptTests(unittest.TestCase):
         self.assertNotEqual(payload["password_hash"], "secret")
         self.assertTrue(verify_password("secret", payload["password_hash"]))
 
-    def test_olist_eval_seller_seed_payload_uses_documented_login(self):
-        from scripts.seed_olist_eval_auth import build_olist_eval_seller_payload
+    def test_olist_eval_seed_requires_external_password_and_builds_admin_and_seller(self):
+        from scripts.seed_olist_eval_auth import build_olist_eval_user_payloads
 
-        payload = build_olist_eval_seller_payload()
+        with mock.patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "EVAL_PASSWORD"):
+                build_olist_eval_user_payloads()
 
-        self.assertEqual(payload["tenant_id"], "3442f8959a84dea7ee197c632cb2df15")
-        self.assertEqual(payload["user_id"], "olist-seller-3442f8959a84dea7ee197c632cb2df15")
-        self.assertEqual(payload["username"], "yehj")
-        self.assertEqual(payload["roles"], ["user"])
-        self.assertTrue(verify_password("0708", payload["password_hash"]))
+        admin, seller = build_olist_eval_user_payloads(
+            username="eval-runner",
+            password="test-only-secret",
+        )
+
+        self.assertEqual(admin["tenant_id"], "admin")
+        self.assertEqual(admin["user_id"], "olist-admin")
+        self.assertEqual(admin["username"], "eval-runner")
+        self.assertEqual(admin["roles"], ["admin", "user"])
+        self.assertTrue(
+            verify_password("test-only-secret", admin["password_hash"])
+        )
+        self.assertEqual(seller["tenant_id"], "3442f8959a84dea7ee197c632cb2df15")
+        self.assertEqual(
+            seller["user_id"],
+            "olist-seller-3442f8959a84dea7ee197c632cb2df15",
+        )
+        self.assertEqual(seller["username"], "eval-runner")
+        self.assertEqual(seller["roles"], ["user"])
+        self.assertTrue(
+            verify_password("test-only-secret", seller["password_hash"])
+        )
 
 
 if __name__ == "__main__":

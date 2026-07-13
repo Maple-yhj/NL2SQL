@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
     BaseModel,
@@ -104,6 +105,10 @@ SecretReference = Annotated[
 EnvironmentVariable = Annotated[
     str,
     StringConstraints(strip_whitespace=True, pattern=r"^[A-Z][A-Z0-9_]*$"),
+]
+Sha256Digest = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, pattern=r"^[0-9a-f]{64}$"),
 ]
 
 
@@ -481,11 +486,40 @@ class EnterpriseSource(PackModel):
 
 
 class PhysicalFieldBinding(PackModel):
-    column: PostgresIdentifier
+    column: PostgresIdentifier | None = None
+    value: EvalScalar | None = None
     cast: Literal["string", "integer", "decimal", "boolean", "date", "datetime"] | None = None
     timezone: NonBlankText | None = None
     null_policy: Literal["preserve", "reject", "coalesce"] = "preserve"
+    coalesce_value: EvalScalar | None = None
     enum_mapping: dict[NonBlankText, NonBlankText] = Field(default_factory=dict)
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_iana_timezone(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("timezone must be a valid IANA zone") from exc
+        return value
+
+    @model_validator(mode="after")
+    def validate_column_or_value(self) -> "PhysicalFieldBinding":
+        if (self.column is None) == (self.value is None):
+            raise ValueError("physical field binding must define exactly one column or value")
+        if self.value is not None and (
+            self.cast is not None
+            or self.timezone is not None
+            or self.enum_mapping
+        ):
+            raise ValueError("constant field binding cannot define cast, timezone or enum mapping")
+        if self.null_policy == "coalesce" and self.coalesce_value is None and self.value is None:
+            raise ValueError("coalesce null policy requires a coalesce value")
+        if self.null_policy != "coalesce" and self.coalesce_value is not None:
+            raise ValueError("coalesce value requires coalesce null policy")
+        return self
 
 
 class PhysicalEntityBinding(PackModel):
@@ -510,17 +544,40 @@ class PhysicalRelationshipBinding(PackModel):
         return self
 
 
+class AdminBypassPolicy(PackModel):
+    principal_claim: Literal["roles"]
+    allowed_roles: tuple[NonBlankText, ...] = Field(min_length=1)
+
+
 class TenantScopePolicy(PackModel):
-    mode: NonBlankText
-    canonical_field: CanonicalFieldRef
-    principal_claim: LocalFieldName
+    mode: Literal["seller_id"]
+    canonical_field: Literal["commerce.Seller.seller_id"]
+    principal_claim: Literal["tenant_id"]
+    admin_bypass: AdminBypassPolicy
+    ownership_paths: dict[CanonicalEntityId, tuple[CanonicalLogicalId, ...]] = Field(
+        min_length=1
+    )
 
 
-class EnterprisePolicies(PackModel):
-    tenant_scope: TenantScopePolicy | None = None
+class EnterprisePolicyBase(PackModel):
     max_rows: int = Field(default=1000, ge=1)
     query_timeout_seconds: int = Field(default=10, ge=1)
-    relation_allowlist: tuple[QualifiedPostgresRelation, ...] = ()
+    relation_allowlist: tuple[QualifiedPostgresRelation, ...] = Field(min_length=1)
+
+
+class SingleTenantPolicies(EnterprisePolicyBase):
+    access_mode: Literal["single_tenant"]
+
+
+class TenantScopedPolicies(EnterprisePolicyBase):
+    access_mode: Literal["tenant_scoped"]
+    tenant_scope: TenantScopePolicy
+
+
+EnterprisePolicies = Annotated[
+    SingleTenantPolicies | TenantScopedPolicies,
+    Field(discriminator="access_mode"),
+]
 
 
 class EnterpriseBindingSpec(PackModel):
@@ -530,7 +587,7 @@ class EnterpriseBindingSpec(PackModel):
     relationships: dict[CanonicalLogicalId, PhysicalRelationshipBinding] = Field(
         default_factory=dict
     )
-    policies: EnterprisePolicies = Field(default_factory=EnterprisePolicies)
+    policies: EnterprisePolicies
 
 
 class EnterpriseDataBinding(PackModel):
@@ -538,6 +595,26 @@ class EnterpriseDataBinding(PackModel):
     kind: Literal["EnterpriseDataBinding"]
     metadata: PackMetadata
     spec: EnterpriseBindingSpec
+
+
+class EnterprisePackLock(PackModel):
+    """Strict publication lock for an enterprise binding and compiled policy."""
+
+    api_version: Literal["dataagent.io/lock/v1"]
+    enterprise_pack: PackReferenceText
+    access_mode: Literal["single_tenant", "tenant_scoped"]
+    domains: tuple[PackReferenceText, ...] = Field(min_length=1)
+    schema_fingerprint: Sha256Digest
+    policy_digest: Sha256Digest
+    relations: tuple[QualifiedPostgresRelation, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_references(self) -> "EnterprisePackLock":
+        if len(set(self.domains)) != len(self.domains):
+            raise ValueError("enterprise pack lock domains must be unique")
+        if len(set(self.relations)) != len(self.relations):
+            raise ValueError("enterprise pack lock relations must be unique")
+        return self
 
 
 class RuntimeLimits(PackModel):

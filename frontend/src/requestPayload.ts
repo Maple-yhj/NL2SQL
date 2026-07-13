@@ -1,16 +1,15 @@
-import type { SendMessagePayload } from "./types";
+import type { AgentMode, SendMessagePayload } from "./types";
 
-const REQUEST_DEFAULTS = {
-  execute: true,
-  timeout_ms: 10_000,
-  max_limit: 1_000,
-  max_validation_attempts: 2,
-  memory_history_limit: 8,
-} satisfies Omit<SendMessagePayload, "question">;
-
-export function createSendMessagePayload(question: string): SendMessagePayload {
+export function createSendMessagePayload(
+  question: string,
+  mode: AgentMode = "execute",
+): SendMessagePayload {
   return {
     question: question.trim(),
-    ...REQUEST_DEFAULTS,
+    enterprise_id: "olist",
+    domain_id: "commerce",
+    mode,
+    requested_output: "answer",
+    include_trace: false,
   };
 }

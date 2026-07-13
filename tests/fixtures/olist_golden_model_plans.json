@@ -1,0 +1,3073 @@
+{
+  "commerce.detail_001": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [],
+    "entities": [
+      "commerce.OrderItem"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.item_sequence"
+    ],
+    "fields": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.seller_id",
+      "commerce.OrderItem.product_id",
+      "commerce.OrderItem.item_price",
+      "commerce.OrderItem.freight_amount",
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.detail_002": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [],
+    "entities": [
+      "commerce.OrderItem"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.item_sequence"
+    ],
+    "fields": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.item_sequence",
+      "commerce.OrderItem.product_id",
+      "commerce.OrderItem.seller_id",
+      "commerce.OrderItem.item_price",
+      "commerce.OrderItem.freight_amount"
+    ],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 30,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.OrderItem.item_price"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2018-09-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-08-01"
+    },
+    "window_specs": []
+  },
+  "commerce.detail_003": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.freight_price_difference",
+        "inputs": [
+          "commerce.OrderItem.freight_amount",
+          "commerce.OrderItem.item_price"
+        ],
+        "operation": "subtract",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [],
+    "entities": [
+      "commerce.OrderItem"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.item_sequence"
+    ],
+    "fields": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.product_id",
+      "commerce.OrderItem.seller_id",
+      "commerce.OrderItem.item_price",
+      "commerce.OrderItem.freight_amount"
+    ],
+    "filters": [
+      {
+        "operator": "gt",
+        "ref": "commerce.freight_price_difference",
+        "value": 0
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 50,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.order_id"
+      },
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.item_sequence"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.detail_004": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [],
+    "entities": [
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Order.order_id"
+    ],
+    "fields": [
+      "commerce.Order.order_id",
+      "commerce.Order.purchased_at",
+      "commerce.Customer.state"
+    ],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.Order.status",
+        "value": "canceled"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.Order.purchased_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.detail_005": {
+    "analysis_type": "detail",
+    "assumptions": [
+      "bounded_detail_default"
+    ],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [],
+    "entities": [
+      "commerce.Review"
+    ],
+    "expected_grain": [
+      "commerce.Review.review_id"
+    ],
+    "fields": [
+      "commerce.Review.review_id",
+      "commerce.Review.order_id",
+      "commerce.Review.title",
+      "commerce.Review.body"
+    ],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.Review.score",
+        "value": 1
+      },
+      {
+        "operator": "is_not_null",
+        "ref": "commerce.Review.body",
+        "value": null
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 1000,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Review.review_id"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.Review.created_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.detail_006": {
+    "analysis_type": "derived",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.product_volume",
+        "inputs": [
+          "commerce.Product.length_centimeters",
+          "commerce.Product.height_centimeters",
+          "commerce.Product.width_centimeters"
+        ],
+        "operation": "multiply",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [],
+    "entities": [
+      "commerce.Product"
+    ],
+    "expected_grain": [
+      "commerce.Product.product_id"
+    ],
+    "fields": [
+      "commerce.Product.product_id",
+      "commerce.Product.category_code",
+      "commerce.Product.length_centimeters",
+      "commerce.Product.height_centimeters",
+      "commerce.Product.width_centimeters",
+      "commerce.Product.weight_grams"
+    ],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 25,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.product_volume"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.followup_001": {
+    "analysis_type": "follow_up",
+    "assumptions": [],
+    "context": {
+      "mode": "follow_up",
+      "preserve": [
+        "metrics",
+        "time_range"
+      ],
+      "prior_question": "2018 年 GMV 按月份趋势",
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.OrderItem.shipping_limit_at",
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.shipping_limit_at",
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_order",
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.followup_002": {
+    "analysis_type": "follow_up",
+    "assumptions": [],
+    "context": {
+      "mode": "follow_up",
+      "preserve": [
+        "metrics",
+        "grain",
+        "time_range"
+      ],
+      "prior_question": "列出 2018 年 GMV 最高的商品品类",
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Product.category_code",
+      "commerce.Payment.method"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Product",
+      "commerce.Order",
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Product.category_code"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.Payment.method",
+        "value": "credit_card"
+      }
+    ],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.order_item_order",
+          "commerce.payment_order"
+        ],
+        "source_entity": "commerce.OrderItem",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Payment"
+      }
+    ],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "full"
+    },
+    "relationships": [
+      "commerce.order_item_product",
+      "commerce.order_item_order",
+      "commerce.payment_order"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.followup_003": {
+    "analysis_type": "follow_up",
+    "assumptions": [],
+    "context": {
+      "mode": "follow_up",
+      "preserve": [
+        "metrics",
+        "time_range",
+        "tenant_scope"
+      ],
+      "prior_question": "我的 2018 年 GMV 是多少",
+      "tenant_scope": "seller"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.OrderItem.seller_id",
+        "value": "context.seller_id"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.geo_001": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.customer_count",
+        "inputs": [
+          "commerce.Customer.customer_id"
+        ],
+        "operation": "count",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Customer.state",
+      "commerce.Customer.city"
+    ],
+    "entities": [
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Customer.state",
+      "commerce.Customer.city"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.customer_count"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.customer_count",
+      "mode": "top_n"
+    },
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.geo_002": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.seller_count",
+        "inputs": [
+          "commerce.Seller.seller_id"
+        ],
+        "operation": "count",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Seller.state",
+      "commerce.Seller.city"
+    ],
+    "entities": [
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.state",
+      "commerce.Seller.city"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.seller_count"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.seller_count",
+      "mode": "full"
+    },
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.geo_003": {
+    "analysis_type": "derived",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.geolocation_point_count_key",
+        "inputs": [
+          "commerce.GeoLocation.latitude",
+          "commerce.GeoLocation.longitude"
+        ],
+        "operation": "composite_key",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.geolocation_point_count",
+        "inputs": [
+          "commerce.geolocation_point_count_key"
+        ],
+        "operation": "count_distinct",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.Customer",
+      "commerce.GeoLocation"
+    ],
+    "expected_grain": [
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.Customer.state",
+        "value": "SP"
+      }
+    ],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.GeoLocation.postal_code_prefix"
+        ],
+        "relationship_path": [
+          "commerce.customer_geolocation"
+        ],
+        "source_entity": "commerce.GeoLocation",
+        "strategy": "distinct",
+        "target_entity": "commerce.Customer"
+      }
+    ],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.customer_geolocation"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.join_001": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Customer.city"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Customer.city"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.order_item_order",
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.join_002": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Seller.city"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.city"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [
+      "commerce.order_count",
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.join_003": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.OrderItem.shipping_limit_at",
+      "commerce.CategoryTranslation.translated_name"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Product",
+      "commerce.CategoryTranslation"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.CategoryTranslation.translated_name",
+        "value": "health_beauty"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_product",
+      "commerce.product_category_translation"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.join_004": {
+    "analysis_type": "comparison",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "in",
+        "ref": "commerce.Customer.state",
+        "value": [
+          "SP",
+          "RJ"
+        ]
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv",
+      "commerce.order_count"
+    ],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_order",
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.join_005": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.review_count",
+        "inputs": [
+          "commerce.Review.review_id"
+        ],
+        "operation": "count",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Product.category_code"
+    ],
+    "entities": [
+      "commerce.Review",
+      "commerce.Order",
+      "commerce.OrderItem",
+      "commerce.Product"
+    ],
+    "expected_grain": [
+      "commerce.Product.category_code"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.review_order",
+          "commerce.order_item_order"
+        ],
+        "source_entity": "commerce.Review",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.OrderItem"
+      },
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.review_order",
+          "commerce.order_item_order",
+          "commerce.order_item_product"
+        ],
+        "source_entity": "commerce.Review",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Product"
+      }
+    ],
+    "having": [
+      {
+        "operator": "gte",
+        "ref": "commerce.review_count",
+        "value": 100
+      }
+    ],
+    "limit": 10,
+    "metrics": [
+      "commerce.average_review_score"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.average_review_score"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.average_review_score",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.review_order",
+      "commerce.order_item_order",
+      "commerce.order_item_product"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.join_006": {
+    "analysis_type": "metric",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.payment_amount_total",
+        "inputs": [
+          "commerce.Payment.amount"
+        ],
+        "operation": "sum",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.status_order_count",
+        "inputs": [
+          "commerce.Order.order_id"
+        ],
+        "operation": "count_distinct",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Order.status"
+    ],
+    "entities": [
+      "commerce.Order",
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Order.status"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.payment_order"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.join_007": {
+    "analysis_type": "cross_tab",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": {
+      "column_axis": "commerce.Customer.state",
+      "row_axis": "commerce.Seller.state",
+      "values": [
+        "commerce.gmv"
+      ]
+    },
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Seller.state",
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller",
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Seller.state",
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 30,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.order_item_seller",
+      "commerce.order_item_order",
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "cross_tab",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.join_008": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.delivery_delay",
+        "inputs": [
+          "commerce.Order.delivered_at",
+          "commerce.Order.estimated_delivery_at"
+        ],
+        "operation": "date_difference",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.average_delivery_delay",
+        "inputs": [
+          "commerce.delivery_delay"
+        ],
+        "operation": "average",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.average_delivery_delay"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.average_delivery_delay",
+      "mode": "full"
+    },
+    "relationships": [
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.logistics_001": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.delivery_days",
+        "inputs": [
+          "commerce.Order.delivered_at",
+          "commerce.Order.purchased_at"
+        ],
+        "operation": "date_difference",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.average_delivery_days",
+        "inputs": [
+          "commerce.delivery_days"
+        ],
+        "operation": "average",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Order.purchased_at"
+    ],
+    "entities": [
+      "commerce.Order"
+    ],
+    "expected_grain": [
+      "commerce.Order.purchased_at"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Order.purchased_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.Order.purchased_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.Order.purchased_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.logistics_002": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.delivery_delay",
+        "inputs": [
+          "commerce.Order.delivered_at",
+          "commerce.Order.estimated_delivery_at"
+        ],
+        "operation": "date_difference",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [],
+    "entities": [
+      "commerce.Order"
+    ],
+    "expected_grain": [
+      "commerce.Order.order_id"
+    ],
+    "fields": [
+      "commerce.Order.order_id",
+      "commerce.Order.delivered_at",
+      "commerce.Order.estimated_delivery_at"
+    ],
+    "filters": [
+      {
+        "operator": "gt",
+        "ref": "commerce.delivery_delay",
+        "value": 0
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 50,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.Order.delivered_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.logistics_003": {
+    "analysis_type": "metric",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.approval_duration",
+        "inputs": [
+          "commerce.Order.approved_at",
+          "commerce.Order.purchased_at"
+        ],
+        "operation": "date_difference",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.average_approval_duration",
+        "inputs": [
+          "commerce.approval_duration"
+        ],
+        "operation": "average",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Order.status"
+    ],
+    "entities": [
+      "commerce.Order"
+    ],
+    "expected_grain": [
+      "commerce.Order.status"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.logistics_004": {
+    "analysis_type": "metric",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.carrier_handoff_duration",
+        "inputs": [
+          "commerce.Order.carrier_handoff_at",
+          "commerce.Order.purchased_at"
+        ],
+        "operation": "date_difference",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.average_carrier_handoff_duration",
+        "inputs": [
+          "commerce.carrier_handoff_duration"
+        ],
+        "operation": "average",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Seller.state"
+    ],
+    "entities": [
+      "commerce.Order",
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.order_item_order"
+        ],
+        "source_entity": "commerce.Order",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.OrderItem"
+      },
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.order_item_order",
+          "commerce.order_item_seller"
+        ],
+        "source_entity": "commerce.Order",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Seller"
+      }
+    ],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_order",
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.metric_001": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "entities": [
+      "commerce.OrderItem"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_002": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Seller.seller_id"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.seller_id"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 10,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2018-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2017-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_003": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Product.category_code"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Product"
+    ],
+    "expected_grain": [
+      "commerce.Product.category_code"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 15,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.order_item_product"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2018-07-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_004": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.order_count"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.order_count"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.order_count",
+      "mode": "full"
+    },
+    "relationships": [
+      "commerce.order_item_order",
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_005": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Seller.state"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.average_item_price"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.average_item_price"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.average_item_price",
+      "mode": "full"
+    },
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.metric_006": {
+    "analysis_type": "comparison",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Payment.method"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Order",
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Payment.method"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.order_item_order",
+          "commerce.payment_order"
+        ],
+        "source_entity": "commerce.OrderItem",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Payment"
+      }
+    ],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_order",
+      "commerce.payment_order"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_007": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "entities": [
+      "commerce.OrderItem"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.order_count",
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_008": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.CategoryTranslation.translated_name"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Product",
+      "commerce.CategoryTranslation"
+    ],
+    "expected_grain": [
+      "commerce.CategoryTranslation.translated_name"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "full"
+    },
+    "relationships": [
+      "commerce.order_item_product",
+      "commerce.product_category_translation"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_009": {
+    "analysis_type": "metric",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Customer.state"
+    ],
+    "entities": [
+      "commerce.Review",
+      "commerce.Order",
+      "commerce.Customer"
+    ],
+    "expected_grain": [
+      "commerce.Customer.state"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.average_review_score"
+    ],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.review_order",
+      "commerce.order_customer"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.Review.created_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.metric_010": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.monthly_gmv_growth",
+        "inputs": [
+          "commerce.gmv"
+        ],
+        "operation": "growth",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "entities": [
+      "commerce.OrderItem"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 1,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.monthly_gmv_growth"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.monthly_gmv_growth",
+      "mode": "top_n"
+    },
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": [
+      {
+        "axis_ref": "commerce.OrderItem.shipping_limit_at",
+        "calculation": "commerce.monthly_gmv_growth",
+        "id": "commerce.monthly_gmv_growth_window",
+        "ordering": [
+          {
+            "direction": "asc",
+            "ref": "commerce.OrderItem.shipping_limit_at"
+          }
+        ],
+        "output_grain": [
+          "commerce.OrderItem.shipping_limit_at"
+        ],
+        "partition_by": []
+      }
+    ]
+  },
+  "commerce.metric_011": {
+    "analysis_type": "comparison",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.yearly_gmv_change",
+        "inputs": [
+          "commerce.gmv"
+        ],
+        "operation": "growth",
+        "partition_by": [
+          "commerce.Seller.state"
+        ]
+      }
+    ],
+    "dimensions": [
+      "commerce.Seller.state",
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.state",
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Seller.state"
+      },
+      {
+        "direction": "asc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": {
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "kind": "time",
+      "time_grain": "year"
+    },
+    "time_grain": "year",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2017-01-01"
+    },
+    "window_specs": [
+      {
+        "axis_ref": "commerce.OrderItem.shipping_limit_at",
+        "calculation": "commerce.yearly_gmv_change",
+        "id": "commerce.yearly_gmv_change_window",
+        "ordering": [
+          {
+            "direction": "asc",
+            "ref": "commerce.OrderItem.shipping_limit_at"
+          }
+        ],
+        "output_grain": [
+          "commerce.Seller.state",
+          "commerce.OrderItem.shipping_limit_at"
+        ],
+        "partition_by": [
+          "commerce.Seller.state"
+        ]
+      }
+    ]
+  },
+  "commerce.metric_012": {
+    "analysis_type": "cross_tab",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": {
+      "column_axis": "commerce.Payment.method",
+      "row_axis": "commerce.Product.category_code",
+      "values": [
+        "commerce.gmv"
+      ]
+    },
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Product.category_code",
+      "commerce.Payment.method"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Product",
+      "commerce.Order",
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Product.category_code",
+      "commerce.Payment.method"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.order_item_order",
+          "commerce.payment_order"
+        ],
+        "source_entity": "commerce.OrderItem",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Payment"
+      }
+    ],
+    "having": [],
+    "limit": 20,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.order_item_product",
+      "commerce.order_item_order",
+      "commerce.payment_order"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "cross_tab",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.payment_001": {
+    "analysis_type": "metric",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.payment_order_count",
+        "inputs": [
+          "commerce.Payment.order_id"
+        ],
+        "operation": "count_distinct",
+        "partition_by": []
+      },
+      {
+        "id": "commerce.payment_amount_total",
+        "inputs": [
+          "commerce.Payment.amount"
+        ],
+        "operation": "sum",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Payment.method"
+    ],
+    "entities": [
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Payment.method"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.payment_amount_total"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.payment_002": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.average_payment_amount",
+        "inputs": [
+          "commerce.Payment.amount"
+        ],
+        "operation": "average",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Payment.installment_count"
+    ],
+    "entities": [
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Payment.installment_count"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.Payment.method",
+        "value": "credit_card"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Payment.installment_count"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "table",
+    "series_axis": {
+      "field": "commerce.Payment.installment_count",
+      "kind": "numeric",
+      "time_grain": null
+    },
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.payment_003": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [],
+    "entities": [
+      "commerce.Payment"
+    ],
+    "expected_grain": [
+      "commerce.Payment.order_id",
+      "commerce.Payment.sequence"
+    ],
+    "fields": [
+      "commerce.Payment.order_id",
+      "commerce.Payment.sequence",
+      "commerce.Payment.method",
+      "commerce.Payment.installment_count",
+      "commerce.Payment.amount"
+    ],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.Payment.amount"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.payment_004": {
+    "analysis_type": "derived",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.multi_payment_order_count",
+        "inputs": [
+          "commerce.Payment.order_id"
+        ],
+        "operation": "count_distinct",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [],
+    "entities": [
+      "commerce.Payment"
+    ],
+    "expected_grain": [],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "gt",
+        "ref": "commerce.Payment.sequence",
+        "value": 1
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "scalar",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.review_001": {
+    "analysis_type": "distribution",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.review_count",
+        "inputs": [
+          "commerce.Review.review_id"
+        ],
+        "operation": "count",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Review.score"
+    ],
+    "entities": [
+      "commerce.Review"
+    ],
+    "expected_grain": [
+      "commerce.Review.score"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Review.score"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "distribution",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.review_002": {
+    "analysis_type": "trend",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Review.created_at"
+    ],
+    "entities": [
+      "commerce.Review"
+    ],
+    "expected_grain": [
+      "commerce.Review.created_at"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.average_review_score"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Review.created_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.Review.created_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.Review.created_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.review_003": {
+    "analysis_type": "ranking",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.review_count",
+        "inputs": [
+          "commerce.Review.review_id"
+        ],
+        "operation": "count",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [
+      "commerce.Seller.seller_id"
+    ],
+    "entities": [
+      "commerce.Review",
+      "commerce.Order",
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Seller.seller_id"
+    ],
+    "fields": [],
+    "filters": [],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.review_order",
+          "commerce.order_item_order"
+        ],
+        "source_entity": "commerce.Review",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.OrderItem"
+      },
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.review_order",
+          "commerce.order_item_order",
+          "commerce.order_item_seller"
+        ],
+        "source_entity": "commerce.Review",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Seller"
+      }
+    ],
+    "having": [
+      {
+        "operator": "gte",
+        "ref": "commerce.review_count",
+        "value": 50
+      }
+    ],
+    "limit": 20,
+    "metrics": [
+      "commerce.average_review_score"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.average_review_score"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.average_review_score",
+      "mode": "top_n"
+    },
+    "relationships": [
+      "commerce.review_order",
+      "commerce.order_item_order",
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.review_004": {
+    "analysis_type": "detail",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "all"
+    },
+    "cross_tab": null,
+    "derived_calculations": [
+      {
+        "id": "commerce.review_response_duration",
+        "inputs": [
+          "commerce.Review.answered_at",
+          "commerce.Review.created_at"
+        ],
+        "operation": "date_difference",
+        "partition_by": []
+      }
+    ],
+    "dimensions": [],
+    "entities": [
+      "commerce.Review"
+    ],
+    "expected_grain": [
+      "commerce.Review.review_id"
+    ],
+    "fields": [
+      "commerce.Review.review_id",
+      "commerce.Review.order_id",
+      "commerce.Review.created_at",
+      "commerce.Review.answered_at"
+    ],
+    "filters": [],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 30,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.review_response_duration"
+      }
+    ],
+    "ranking": null,
+    "relationships": [],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.tenant_001": {
+    "analysis_type": "tenant_scoped",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "seller"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Seller.seller_id"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.OrderItem.seller_id",
+        "value": "context.seller_id"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "scalar",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": {
+      "end": "2019-01-01",
+      "field": "commerce.OrderItem.shipping_limit_at",
+      "start": "2018-01-01"
+    },
+    "window_specs": []
+  },
+  "commerce.tenant_002": {
+    "analysis_type": "tenant_scoped",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "seller"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.item_sequence"
+    ],
+    "fields": [
+      "commerce.OrderItem.order_id",
+      "commerce.OrderItem.item_sequence",
+      "commerce.OrderItem.product_id",
+      "commerce.OrderItem.item_price",
+      "commerce.OrderItem.freight_amount",
+      "commerce.OrderItem.shipping_limit_at"
+    ],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.OrderItem.seller_id",
+        "value": "context.seller_id"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": 20,
+    "metrics": [],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.OrderItem.shipping_limit_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "detail",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.tenant_003": {
+    "analysis_type": "tenant_scoped",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "seller"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Product.category_code"
+    ],
+    "entities": [
+      "commerce.OrderItem",
+      "commerce.Product",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Product.category_code"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.OrderItem.seller_id",
+        "value": "context.seller_id"
+      }
+    ],
+    "grain_alignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [
+      {
+        "direction": "desc",
+        "ref": "commerce.gmv"
+      }
+    ],
+    "ranking": {
+      "measure": "commerce.gmv",
+      "mode": "full"
+    },
+    "relationships": [
+      "commerce.order_item_product",
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "ranking",
+    "series_axis": null,
+    "time_grain": null,
+    "time_range": null,
+    "window_specs": []
+  },
+  "commerce.tenant_004": {
+    "analysis_type": "tenant_scoped",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "prior_question": null,
+      "tenant_scope": "seller"
+    },
+    "cross_tab": null,
+    "derived_calculations": [],
+    "dimensions": [
+      "commerce.Review.created_at"
+    ],
+    "entities": [
+      "commerce.Review",
+      "commerce.Order",
+      "commerce.OrderItem",
+      "commerce.Seller"
+    ],
+    "expected_grain": [
+      "commerce.Review.created_at"
+    ],
+    "fields": [],
+    "filters": [
+      {
+        "operator": "eq",
+        "ref": "commerce.OrderItem.seller_id",
+        "value": "context.seller_id"
+      }
+    ],
+    "grain_alignment": [
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.review_order",
+          "commerce.order_item_order"
+        ],
+        "source_entity": "commerce.Review",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.OrderItem"
+      },
+      {
+        "join_grain": [
+          "commerce.Order.order_id"
+        ],
+        "relationship_path": [
+          "commerce.review_order",
+          "commerce.order_item_order",
+          "commerce.order_item_seller"
+        ],
+        "source_entity": "commerce.Review",
+        "strategy": "pre_aggregate",
+        "target_entity": "commerce.Seller"
+      }
+    ],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.average_review_score"
+    ],
+    "ordering": [
+      {
+        "direction": "asc",
+        "ref": "commerce.Review.created_at"
+      }
+    ],
+    "ranking": null,
+    "relationships": [
+      "commerce.review_order",
+      "commerce.order_item_order",
+      "commerce.order_item_seller"
+    ],
+    "requested_evidence": [
+      "semantic_resolution",
+      "query_result"
+    ],
+    "result_shape": "time_series",
+    "series_axis": {
+      "field": "commerce.Review.created_at",
+      "kind": "time",
+      "time_grain": "month"
+    },
+    "time_grain": "month",
+    "time_range": {
+      "end": null,
+      "field": "commerce.Review.created_at",
+      "start": null
+    },
+    "window_specs": []
+  }
+}

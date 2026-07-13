@@ -50,7 +50,12 @@ def _documents() -> tuple[dict, dict, dict]:
                     "fields": {"order_id": {"column": "order_id"}},
                 }
             },
-            "policies": {"maxRows": 1000, "queryTimeoutSeconds": 10},
+            "policies": {
+                "accessMode": "single_tenant",
+                "maxRows": 1000,
+                "queryTimeoutSeconds": 10,
+                "relationAllowlist": ["public.olist_orders_dataset"],
+            },
         },
     }
     deployment = {
@@ -89,6 +94,15 @@ class RuntimeBundleCompositionTests(unittest.TestCase):
             skill_versions={"commerce.analytics": "1.0.0"},
             tool_registry_version="1.0.0",
             schema_fingerprint="olist-schema-v1",
+            pack_lock={
+                "apiVersion": "dataagent.io/lock/v1",
+                "enterprisePack": "olist@1.0.0",
+                "accessMode": "single_tenant",
+                "domains": ["commerce@1.0.0"],
+                "schemaFingerprint": "0d9c342b75693bf64c46473b0afcc117ebd54bb6dabf9143d404f24d68015bbb",
+                "policyDigest": "ed9662482e7a64e79508d71bcbb3d87a551bb97766fd7cb27a7cacd65c8fbe1a",
+                "relations": ["public.olist_orders_dataset"],
+            },
         )
 
     def test_compile_runtime_bundle_is_canonical_and_digest_stable(self) -> None:
@@ -211,8 +225,17 @@ class RuntimeBundleCompositionTests(unittest.TestCase):
             "mode": "seller_id",
             "canonicalField": "commerce.Seller.seller_id",
             "principalClaim": "tenant_id",
+            "adminBypass": {
+                "principalClaim": "roles",
+                "allowedRoles": ["admin"],
+            },
+            "ownershipPaths": {
+                "commerce.Order": [],
+                "commerce.Seller": [],
+            },
         }
-        with self.assertRaisesRegex(ValueError, "tenant scope"):
+        enterprise["spec"]["policies"]["accessMode"] = "tenant_scoped"
+        with self.assertRaisesRegex(ValueError, "tenant scope|canonicalField"):
             self._compile(domain, enterprise, deployment)
 
         domain, enterprise, deployment = _documents()
@@ -223,8 +246,14 @@ class RuntimeBundleCompositionTests(unittest.TestCase):
             "mode": "seller_id",
             "canonicalField": "commerce.Order.seller_id",
             "principalClaim": "tenant_id",
+            "adminBypass": {
+                "principalClaim": "roles",
+                "allowedRoles": ["admin"],
+            },
+            "ownershipPaths": {"commerce.Order": []},
         }
-        with self.assertRaisesRegex(ValueError, "tenant scope"):
+        enterprise["spec"]["policies"]["accessMode"] = "tenant_scoped"
+        with self.assertRaisesRegex(ValueError, "tenant scope|canonicalField"):
             self._compile(domain, enterprise, deployment)
 
     def test_compile_requires_exactly_one_matching_domain_reference(self) -> None:

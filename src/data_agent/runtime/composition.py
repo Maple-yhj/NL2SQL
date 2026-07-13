@@ -8,11 +8,19 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from .packs import DeploymentProfile, DomainPack, EnterpriseDataBinding
+from .packs import (
+    DeploymentProfile,
+    DomainPack,
+    EnterpriseDataBinding,
+    EnterprisePackLock,
+    _reject_executable_content,
+)
 from .schema_catalog import (
     load_schema_catalog,
+    schema_fingerprint as compute_schema_fingerprint,
     validate_enterprise_binding_schema,
 )
 
@@ -46,6 +54,12 @@ def stable_digest(value: Any) -> str:
 
 def _normalized(value: Any) -> Any:
     return json.loads(canonical_json(value))
+
+
+def _compiled_access_policy_digest(value: Any) -> str:
+    """Hash exactly the canonical policy representation emitted in a bundle."""
+
+    return stable_digest(_normalized(value))
 
 
 class FrozenDict(dict):
@@ -142,6 +156,45 @@ def _pack_ref(name: str, version: str) -> str:
     return f"{name}@{version}"
 
 
+def _load_pack_lock(
+    value: str | Path | Mapping[str, Any],
+) -> EnterprisePackLock:
+    try:
+        from .profile_loader import _load_yaml_mapping
+
+        document = dict(value) if isinstance(value, Mapping) else _load_yaml_mapping(Path(value))
+        return EnterprisePackLock.model_validate(document)
+    except (OSError, TypeError, ValueError, ValidationError, yaml.YAMLError) as exc:
+        raise ValueError(f"could not load a valid enterprise pack lock {value}") from exc
+
+
+def _validate_pack_lock(
+    lock: EnterprisePackLock,
+    domain_pack: DomainPack,
+    enterprise_binding: EnterpriseDataBinding,
+    computed_fingerprint: str,
+    compiled_policy_digest: str,
+) -> None:
+    expected_enterprise = _pack_ref(
+        enterprise_binding.metadata.name, enterprise_binding.metadata.version
+    )
+    expected_domain = _pack_ref(domain_pack.metadata.name, domain_pack.metadata.version)
+    if lock.enterprise_pack != expected_enterprise:
+        raise ValueError("enterprise pack lock does not match binding")
+    if lock.access_mode != enterprise_binding.spec.policies.access_mode:
+        raise ValueError("enterprise pack lock access mode does not match binding")
+    if lock.domains != (expected_domain,):
+        raise ValueError("enterprise pack lock domain reference does not match")
+    if lock.schema_fingerprint != computed_fingerprint:
+        raise ValueError("enterprise pack lock schema fingerprint is stale")
+    expected_relations = set(enterprise_binding.spec.policies.relation_allowlist)
+    locked_relations = set(lock.relations)
+    if locked_relations != expected_relations:
+        raise ValueError("enterprise pack lock relation allowlist is stale")
+    if not hmac.compare_digest(lock.policy_digest, compiled_policy_digest):
+        raise ValueError("enterprise pack lock policy digest is stale")
+
+
 def _validate_pack_references(
     domain_pack: DomainPack,
     enterprise_binding: EnterpriseDataBinding,
@@ -182,6 +235,8 @@ def _validate_pack_references(
     relation_allowlist = set(
         enterprise_binding.spec.policies.relation_allowlist
     )
+    if not relation_allowlist:
+        raise ValueError("enterprise binding requires a relation allowlist")
     for entity_id, binding in enterprise_binding.spec.bindings.items():
         if binding.source not in declared_sources:
             raise ValueError(f"binding {entity_id!r} references a missing source")
@@ -197,7 +252,7 @@ def _validate_pack_references(
         if relation_allowlist and binding.relation not in relation_allowlist:
             raise ValueError(f"binding {entity_id!r} relation is not allowed")
 
-    tenant_scope = enterprise_binding.spec.policies.tenant_scope
+    tenant_scope = getattr(enterprise_binding.spec.policies, "tenant_scope", None)
     declared_domain_fields = {
         f"{entity_id}.{field_name}"
         for entity_id, entity in declared_entities.items()
@@ -213,7 +268,6 @@ def _validate_pack_references(
         tenant_binding = enterprise_binding.spec.bindings.get(tenant_entity)
         if tenant_binding is None or tenant_field not in tenant_binding.fields:
             raise ValueError("tenant scope has no physical field mapping")
-
     if set(enterprise_binding.spec.bindings) != set(declared_entities):
         raise ValueError("enterprise binding must map every domain entity")
 
@@ -226,6 +280,32 @@ def _validate_pack_references(
     # relationship declarations are optional for backwards-compatible custom
     # packs, but when present they are checked against the domain graph.
     domain_relationships = {item.name: item for item in domain_pack.spec.relationships}
+    policies = enterprise_binding.spec.policies
+    if policies.access_mode == "tenant_scoped":
+        tenant_scope = policies.tenant_scope
+        if (
+            tenant_scope.admin_bypass.principal_claim != "roles"
+            or not tenant_scope.admin_bypass.allowed_roles
+        ):
+            raise ValueError("tenant-scoped policy requires role-based admin bypass")
+        scope_entity = tenant_scope.canonical_field.rsplit(".", 1)[0]
+        if set(tenant_scope.ownership_paths) != set(declared_entities):
+            raise ValueError("tenant scope ownership paths must cover every entity")
+        for entity_id in declared_entities:
+            path = tenant_scope.ownership_paths[entity_id]
+            current = entity_id
+            for relationship_name in path:
+                relationship = domain_relationships.get(relationship_name)
+                if relationship is None:
+                    raise ValueError("tenant scope ownership path references an unknown relationship")
+                if relationship.from_entity == current:
+                    current = relationship.to_entity
+                elif relationship.to_entity == current:
+                    current = relationship.from_entity
+                else:
+                    raise ValueError("tenant scope ownership path is disconnected")
+            if current != scope_entity:
+                raise ValueError("tenant scope ownership path does not end at seller scope")
     for name, relation in enterprise_binding.spec.relationships.items():
         canonical = domain_relationships.get(name)
         if canonical is None:
@@ -267,40 +347,61 @@ def compile_runtime_bundle(
     tool_registry_version: str,
     schema_fingerprint: str = "",
     schema_catalog: str | Path | list[Mapping[str, Any]] | None = None,
+    pack_lock: str | Path | Mapping[str, Any] | None = None,
 ) -> ResolvedRuntimeBundle:
     """Validate references and produce a deterministic, secret-free bundle."""
 
     _validate_pack_references(domain_pack, enterprise_binding, deployment_profile)
+    compiled_access_policy = _normalized(enterprise_binding.spec.policies)
+    compiled_policy_digest = _compiled_access_policy_digest(compiled_access_policy)
 
     # OList deployments use the checked-in catalog by default. Callers may
     # provide an explicit catalog (or path) to validate a fresh introspection
     # result and detect drift before publication.
-    explicit_catalog = schema_catalog is not None
+    catalog_was_explicit = schema_catalog is not None
     if schema_catalog is None:
         default_catalog = Path(__file__).resolve().parents[3] / "schema_catalog.json"
         if default_catalog.exists():
             schema_catalog = default_catalog
-    if schema_catalog is not None:
-        catalog = (
-            load_schema_catalog(schema_catalog)
-            if isinstance(schema_catalog, (str, Path))
-            else list(schema_catalog)
+    if schema_catalog is None:
+        raise ValueError("schema catalog is required for bundle compilation")
+    catalog = (
+        load_schema_catalog(schema_catalog)
+        if isinstance(schema_catalog, (str, Path))
+        else list(schema_catalog)
+    )
+    computed_fingerprint = validate_enterprise_binding_schema(
+        domain_pack, enterprise_binding, catalog
+    )
+    fingerprint_is_digest = (
+        len(schema_fingerprint) == 64
+        and all(character in "0123456789abcdef" for character in schema_fingerprint)
+    )
+    if schema_fingerprint and (
+        catalog_was_explicit
+        or fingerprint_is_digest
+        or enterprise_binding.spec.policies.access_mode == "tenant_scoped"
+    ) and schema_fingerprint != computed_fingerprint:
+        raise ValueError("schema fingerprint does not match catalog")
+    schema_fingerprint = computed_fingerprint
+
+    if pack_lock is None:
+        pack_lock = (
+            Path(__file__).resolve().parents[3]
+            / "packs"
+            / "enterprises"
+            / enterprise_binding.metadata.name
+            / "pack.lock"
         )
-        computed_fingerprint = validate_enterprise_binding_schema(
-            domain_pack, enterprise_binding, catalog
-        )
-        fingerprint_is_digest = (
-            len(schema_fingerprint) == 64
-            and all(character in "0123456789abcdef" for character in schema_fingerprint)
-        )
-        if schema_fingerprint and (
-            explicit_catalog or fingerprint_is_digest
-        ) and schema_fingerprint != computed_fingerprint:
-            raise ValueError("schema fingerprint does not match catalog")
-        if not schema_fingerprint:
-            schema_fingerprint = computed_fingerprint
-    if not schema_fingerprint:
-        schema_fingerprint = "unknown"
+    if isinstance(pack_lock, (str, Path)) and not Path(pack_lock).exists():
+        raise ValueError("enterprise pack lock is required for publication")
+    _validate_pack_lock(
+        _load_pack_lock(pack_lock),
+        domain_pack,
+        enterprise_binding,
+        computed_fingerprint,
+        compiled_policy_digest,
+    )
 
     payload = {
         "runtime_version": runtime_version,
@@ -320,7 +421,7 @@ def compile_runtime_bundle(
                 for name, source in enterprise_binding.spec.sources.items()
             }
         ),
-        "compiled_access_policy": _normalized(enterprise_binding.spec.policies),
+        "compiled_access_policy": compiled_access_policy,
         "runtime_limits": _normalized(deployment_profile.spec.runtime),
         "schema_fingerprint": schema_fingerprint,
     }
@@ -328,3 +429,102 @@ def compile_runtime_bundle(
         **payload,
         digest=stable_digest(payload),
     )
+
+
+def write_bundle_manifest(
+    bundle: ResolvedRuntimeBundle,
+    path: str | Path,
+    *,
+    domain_ref: str,
+    enterprise_ref: str,
+    deployment_ref: str,
+) -> Path:
+    """Write a deterministic, secret-free publication manifest for a bundle."""
+
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "apiVersion": "dataagent.io/bundle-manifest/v1",
+        "kind": "ResolvedRuntimeBundleManifest",
+        "domainPack": domain_ref,
+        "enterprisePack": enterprise_ref,
+        "deploymentProfile": deployment_ref,
+        "schemaFingerprint": bundle.schema_fingerprint,
+        "policyDigest": _compiled_access_policy_digest(bundle.compiled_access_policy),
+        "bundleDigest": bundle.digest,
+        "bundle": bundle.model_dump(mode="json"),
+    }
+    destination.write_text(canonical_json(payload) + "\n", encoding="utf-8")
+    return destination
+
+
+def load_bundle_manifest(
+    path: str | Path,
+    *,
+    pack_lock: str | Path | Mapping[str, Any],
+    schema_catalog: str | Path | list[Mapping[str, Any]],
+) -> ResolvedRuntimeBundle:
+    """Read and verify a published bundle against its lock and catalog."""
+
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"bundle manifest has duplicate key {key!r}")
+            result[key] = value
+        return result
+
+    try:
+        document = json.loads(
+            Path(path).read_text(encoding="utf-8"),
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not load bundle manifest {path}") from exc
+    if not isinstance(document, dict):
+        raise ValueError("bundle manifest root must be an object")
+    _reject_executable_content(document, "bundle manifest")
+    if (
+        document.get("apiVersion") != "dataagent.io/bundle-manifest/v1"
+        or document.get("kind") != "ResolvedRuntimeBundleManifest"
+    ):
+        raise ValueError("bundle manifest version or kind is invalid")
+
+    try:
+        bundle = ResolvedRuntimeBundle.model_validate(document["bundle"])
+    except (KeyError, ValueError) as exc:
+        raise ValueError("bundle manifest contains an invalid runtime bundle") from exc
+    if document.get("bundleDigest") != bundle.digest:
+        raise ValueError("bundle manifest digest does not match runtime bundle")
+    if document.get("schemaFingerprint") != bundle.schema_fingerprint:
+        raise ValueError("bundle manifest schema fingerprint does not match runtime bundle")
+    compiled_policy_digest = _compiled_access_policy_digest(
+        bundle.compiled_access_policy
+    )
+    if document.get("policyDigest") != compiled_policy_digest:
+        raise ValueError("bundle manifest policy digest does not match runtime bundle")
+
+    catalog = (
+        load_schema_catalog(schema_catalog)
+        if isinstance(schema_catalog, (str, Path))
+        else list(schema_catalog)
+    )
+    catalog_fingerprint = compute_schema_fingerprint(catalog)
+    if bundle.schema_fingerprint != catalog_fingerprint:
+        raise ValueError("bundle manifest schema fingerprint is stale")
+
+    lock = _load_pack_lock(pack_lock)
+    if lock.schema_fingerprint != catalog_fingerprint:
+        raise ValueError("enterprise pack lock schema fingerprint is stale")
+    if lock.enterprise_pack != document.get("enterprisePack"):
+        raise ValueError("bundle manifest enterprise reference does not match lock")
+    if lock.domains != (document.get("domainPack"),):
+        raise ValueError("bundle manifest domain reference does not match lock")
+    compiled_policy = bundle.compiled_access_policy
+    if lock.access_mode != compiled_policy.get("accessMode"):
+        raise ValueError("bundle manifest access mode does not match lock")
+    if set(lock.relations) != set(compiled_policy.get("relationAllowlist", ())):
+        raise ValueError("bundle manifest relation allowlist does not match lock")
+    if not hmac.compare_digest(lock.policy_digest, compiled_policy_digest):
+        raise ValueError("bundle manifest policy digest does not match lock")
+    return bundle

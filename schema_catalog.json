@@ -1,6 +1,7 @@
 [
   {
     "table": "olist_customers_dataset",
+    "unique_keys": [["customer_id"]],
     "comment": "",
     "columns": [
       {
@@ -42,8 +43,16 @@
   },
   {
     "table": "olist_geolocation_dataset",
+    "unique_keys": [["geolocation_row_id"]],
     "comment": "",
     "columns": [
+      {
+        "name": "geolocation_row_id",
+        "type": "bigint",
+        "nullable": false,
+        "default": "nextval('olist_geolocation_dataset_geolocation_row_id_seq'::regclass)",
+        "comment": "Generated stable row identity"
+      },
       {
         "name": "geolocation_zip_code_prefix",
         "type": "integer",
@@ -83,6 +92,7 @@
   },
   {
     "table": "olist_order_items_dataset",
+    "unique_keys": [["order_id", "order_item_id"]],
     "comment": "",
     "columns": [
       {
@@ -138,6 +148,7 @@
   },
   {
     "table": "olist_order_payments_dataset",
+    "unique_keys": [["order_id", "payment_sequential"]],
     "comment": "",
     "columns": [
       {
@@ -179,6 +190,7 @@
   },
   {
     "table": "olist_order_reviews_dataset",
+    "unique_keys": [["review_id"]],
     "comment": "",
     "columns": [
       {
@@ -234,6 +246,7 @@
   },
   {
     "table": "olist_orders_dataset",
+    "unique_keys": [["order_id"]],
     "comment": "",
     "columns": [
       {
@@ -296,6 +309,7 @@
   },
   {
     "table": "olist_products_dataset",
+    "unique_keys": [["product_id"]],
     "comment": "",
     "columns": [
       {
@@ -365,6 +379,7 @@
   },
   {
     "table": "olist_sellers_dataset",
+    "unique_keys": [["seller_id"]],
     "comment": "",
     "columns": [
       {
@@ -399,6 +414,7 @@
   },
   {
     "table": "product_category_name_translation",
+    "unique_keys": [["product_category_name"]],
     "comment": "",
     "columns": [
       {

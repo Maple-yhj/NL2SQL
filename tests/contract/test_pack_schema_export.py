@@ -127,7 +127,10 @@ class PackSchemaExportTests(unittest.TestCase):
                     }
                 },
                 "bindings": {},
-                "policies": {},
+                "policies": {
+                    "accessMode": "single_tenant",
+                    "relationAllowlist": ["public.olist_orders_dataset"],
+                },
             },
         }
         self.assertFalse(list(enterprise_validator.iter_errors(enterprise)))

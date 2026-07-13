@@ -17,99 +17,100 @@ spec:
       relation: public.olist_orders_dataset
       grain: [order_id]
       fields:
-        order_id: {column: order_id, nullPolicy: preserve}
-        customer_id: {column: customer_id, nullPolicy: preserve}
-        status: {column: order_status, nullPolicy: preserve}
-        purchased_at: {column: order_purchase_timestamp, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
-        approved_at: {column: order_approved_at, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
-        carrier_handoff_at: {column: order_delivered_carrier_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
-        delivered_at: {column: order_delivered_customer_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
-        estimated_delivery_at: {column: order_estimated_delivery_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        order_id: {column: order_id, nullPolicy: reject}
+        customer_id: {column: customer_id, nullPolicy: reject}
+        status: {column: order_status, nullPolicy: reject}
+        purchased_at: {column: order_purchase_timestamp, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
+        approved_at: {column: order_approved_at, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
+        carrier_handoff_at: {column: order_delivered_carrier_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
+        delivered_at: {column: order_delivered_customer_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
+        estimated_delivery_at: {column: order_estimated_delivery_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
     commerce.OrderItem:
       source: sales
       relation: public.olist_order_items_dataset
       grain: [order_id, item_sequence]
       fields:
-        order_id: {column: order_id, nullPolicy: preserve}
-        item_sequence: {column: order_item_id, cast: integer, nullPolicy: preserve}
-        product_id: {column: product_id, nullPolicy: preserve}
-        seller_id: {column: seller_id, nullPolicy: preserve}
-        shipping_limit_at: {column: shipping_limit_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
-        item_price: {column: price, cast: decimal, nullPolicy: preserve}
-        freight_amount: {column: freight_value, cast: decimal, nullPolicy: preserve}
+        order_id: {column: order_id, nullPolicy: reject}
+        item_sequence: {column: order_item_id, cast: integer, nullPolicy: reject}
+        product_id: {column: product_id, nullPolicy: reject}
+        seller_id: {column: seller_id, nullPolicy: reject}
+        shipping_limit_at: {column: shipping_limit_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
+        item_price: {column: price, cast: decimal, nullPolicy: reject}
+        freight_amount: {column: freight_value, cast: decimal, nullPolicy: reject}
     commerce.Customer:
       source: sales
       relation: public.olist_customers_dataset
       grain: [customer_id]
       fields:
-        customer_id: {column: customer_id, nullPolicy: preserve}
-        person_id: {column: customer_unique_id, nullPolicy: preserve}
-        city: {column: customer_city, nullPolicy: preserve}
-        state: {column: customer_state, nullPolicy: preserve}
-        postal_code_prefix: {column: customer_zip_code_prefix, cast: string, nullPolicy: preserve}
+        customer_id: {column: customer_id, nullPolicy: reject}
+        person_id: {column: customer_unique_id, nullPolicy: reject}
+        city: {column: customer_city, nullPolicy: reject}
+        state: {column: customer_state, nullPolicy: reject}
+        postal_code_prefix: {column: customer_zip_code_prefix, cast: string, nullPolicy: reject}
     commerce.Seller:
       source: sales
       relation: public.olist_sellers_dataset
       grain: [seller_id]
       fields:
-        seller_id: {column: seller_id, nullPolicy: preserve}
-        city: {column: seller_city, nullPolicy: preserve}
-        state: {column: seller_state, nullPolicy: preserve}
-        postal_code_prefix: {column: seller_zip_code_prefix, cast: string, nullPolicy: preserve}
+        seller_id: {column: seller_id, nullPolicy: reject}
+        city: {column: seller_city, nullPolicy: reject}
+        state: {column: seller_state, nullPolicy: reject}
+        postal_code_prefix: {column: seller_zip_code_prefix, cast: string, nullPolicy: reject}
     commerce.Product:
       source: sales
       relation: public.olist_products_dataset
       grain: [product_id]
       fields:
-        product_id: {column: product_id, nullPolicy: preserve}
-        category_code: {column: product_category_name, nullPolicy: preserve}
-        name_length: {column: product_name_lenght, cast: integer, nullPolicy: preserve}
-        description_length: {column: product_description_lenght, cast: integer, nullPolicy: preserve}
-        photo_count: {column: product_photos_qty, cast: integer, nullPolicy: preserve}
-        weight_grams: {column: product_weight_g, cast: decimal, nullPolicy: preserve}
-        length_centimeters: {column: product_length_cm, cast: decimal, nullPolicy: preserve}
-        height_centimeters: {column: product_height_cm, cast: decimal, nullPolicy: preserve}
-        width_centimeters: {column: product_width_cm, cast: decimal, nullPolicy: preserve}
+        product_id: {column: product_id, nullPolicy: reject}
+        category_code: {column: product_category_name, nullPolicy: reject}
+        name_length: {column: product_name_lenght, cast: integer, nullPolicy: reject}
+        description_length: {column: product_description_lenght, cast: integer, nullPolicy: reject}
+        photo_count: {column: product_photos_qty, cast: integer, nullPolicy: reject}
+        weight_grams: {column: product_weight_g, cast: decimal, nullPolicy: reject}
+        length_centimeters: {column: product_length_cm, cast: decimal, nullPolicy: reject}
+        height_centimeters: {column: product_height_cm, cast: decimal, nullPolicy: reject}
+        width_centimeters: {column: product_width_cm, cast: decimal, nullPolicy: reject}
     commerce.Payment:
       source: sales
       relation: public.olist_order_payments_dataset
       grain: [order_id, sequence]
       fields:
-        order_id: {column: order_id, nullPolicy: preserve}
-        sequence: {column: payment_sequential, cast: integer, nullPolicy: preserve}
-        method: {column: payment_type, nullPolicy: preserve}
-        installment_count: {column: payment_installments, cast: integer, nullPolicy: preserve}
-        amount: {column: payment_value, cast: decimal, nullPolicy: preserve}
+        order_id: {column: order_id, nullPolicy: reject}
+        sequence: {column: payment_sequential, cast: integer, nullPolicy: reject}
+        method: {column: payment_type, nullPolicy: reject}
+        installment_count: {column: payment_installments, cast: integer, nullPolicy: reject}
+        amount: {column: payment_value, cast: decimal, nullPolicy: reject}
     commerce.Review:
       source: sales
       relation: public.olist_order_reviews_dataset
       grain: [review_id]
       fields:
-        review_id: {column: review_id, nullPolicy: preserve}
-        order_id: {column: order_id, nullPolicy: preserve}
-        score: {column: review_score, cast: integer, nullPolicy: preserve}
-        title: {column: review_comment_title, nullPolicy: preserve}
-        body: {column: review_comment_message, nullPolicy: preserve}
-        created_at: {column: review_creation_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
-        answered_at: {column: review_answer_timestamp, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: preserve}
+        review_id: {column: review_id, nullPolicy: reject}
+        order_id: {column: order_id, nullPolicy: reject}
+        score: {column: review_score, cast: integer, nullPolicy: reject}
+        title: {column: review_comment_title, nullPolicy: reject}
+        body: {column: review_comment_message, nullPolicy: reject}
+        created_at: {column: review_creation_date, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
+        answered_at: {column: review_answer_timestamp, cast: datetime, timezone: America/Sao_Paulo, nullPolicy: reject}
     commerce.GeoLocation:
       source: sales
       relation: public.olist_geolocation_dataset
-      grain: [postal_code_prefix, latitude, longitude]
+      grain: [location_id]
       fields:
-        postal_code_prefix: {column: geolocation_zip_code_prefix, cast: string, nullPolicy: preserve}
-        latitude: {column: geolocation_lat, cast: decimal, nullPolicy: preserve}
-        longitude: {column: geolocation_lng, cast: decimal, nullPolicy: preserve}
-        city: {column: geolocation_city, nullPolicy: preserve}
-        state: {column: geolocation_state, nullPolicy: preserve}
+        location_id: {column: geolocation_row_id, cast: integer, nullPolicy: reject}
+        postal_code_prefix: {column: geolocation_zip_code_prefix, cast: string, nullPolicy: reject}
+        latitude: {column: geolocation_lat, cast: decimal, nullPolicy: reject}
+        longitude: {column: geolocation_lng, cast: decimal, nullPolicy: reject}
+        city: {column: geolocation_city, nullPolicy: reject}
+        state: {column: geolocation_state, nullPolicy: reject}
     commerce.CategoryTranslation:
       source: sales
       relation: public.product_category_name_translation
       grain: [category_code]
       fields:
-        category_code: {column: product_category_name, nullPolicy: preserve}
-        translated_name: {column: product_category_name_english, nullPolicy: preserve}
-        target_locale: {column: product_category_name_english, nullPolicy: coalesce}
+        category_code: {column: product_category_name, nullPolicy: reject}
+        translated_name: {column: product_category_name_english, nullPolicy: reject}
+        target_locale: {value: en, nullPolicy: coalesce}
   relationships:
     commerce.order_item_order:
       fromEntity: commerce.OrderItem
@@ -152,10 +153,24 @@ spec:
       fromColumns: [customer_zip_code_prefix]
       toColumns: [geolocation_zip_code_prefix]
   policies:
+    accessMode: tenant_scoped
     tenantScope:
       mode: seller_id
       canonicalField: commerce.Seller.seller_id
       principalClaim: tenant_id
+      adminBypass:
+        principalClaim: roles
+        allowedRoles: [admin]
+      ownershipPaths:
+        commerce.Order: [commerce.order_item_order, commerce.order_item_seller]
+        commerce.OrderItem: [commerce.order_item_seller]
+        commerce.Customer: [commerce.order_customer, commerce.order_item_order, commerce.order_item_seller]
+        commerce.Seller: []
+        commerce.Product: [commerce.order_item_product, commerce.order_item_seller]
+        commerce.Payment: [commerce.payment_order, commerce.order_item_order, commerce.order_item_seller]
+        commerce.Review: [commerce.review_order, commerce.order_item_order, commerce.order_item_seller]
+        commerce.GeoLocation: [commerce.customer_geolocation, commerce.order_customer, commerce.order_item_order, commerce.order_item_seller]
+        commerce.CategoryTranslation: [commerce.product_category_translation, commerce.order_item_product, commerce.order_item_seller]
     maxRows: 1000
     queryTimeoutSeconds: 10
     relationAllowlist:

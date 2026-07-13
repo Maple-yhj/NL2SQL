@@ -206,9 +206,13 @@ entities:
         timeSemantics: 评价回复事件时间
 
   commerce.GeoLocation:
-    grain: [postal_code_prefix, latitude, longitude]
+    grain: [location_id]
     description: 每个邮编地理坐标点一条记录
     fields:
+      location_id:
+        type: integer
+        nullable: false
+        description: Governed geolocation row identity
       postal_code_prefix:
         type: string
         nullable: false

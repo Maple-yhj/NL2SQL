@@ -29,6 +29,7 @@ import {
 } from "react";
 import { ApiClient, ApiError } from "./api";
 import type {
+  AgentMode,
   ApiConversationMessage,
   ChatMessage,
   Conversation,
@@ -63,6 +64,7 @@ export function App() {
   const [activeConversationId, setActiveConversationId] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [mode, setMode] = useState<AgentMode>("execute");
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(Boolean(session));
   const [error, setError] = useState("");
@@ -352,7 +354,10 @@ export function App() {
         setConversations((items) => [conversation, ...items]);
       }
 
-      const response = await api.sendMessage(conversationId, createSendMessagePayload(question));
+      const response = await api.sendMessage(
+        conversationId,
+        createSendMessagePayload(question, mode),
+      );
       setMessages((items) =>
         items.map((item) =>
           item.id === thinkingMessage.id ? responseToAssistantMessage(response, item.id) : item,
@@ -372,7 +377,11 @@ export function App() {
                 metadata: {
                   message_type: "error",
                   ok: false,
-                  error: err instanceof Error ? err.message : "Request failed",
+                  error: {
+                    code: "REQUEST_FAILED",
+                    message: err instanceof Error ? err.message : "Request failed",
+                    retryable: false,
+                  },
                   rows: [],
                   trace: [],
                 },
@@ -621,6 +630,17 @@ export function App() {
             <button className="composer-icon" type="button" aria-label="Add context" title="Add context">
               <Plus size={20} />
             </button>
+            <select
+              className="mode-select"
+              value={mode}
+              onChange={(event) => setMode(event.target.value as AgentMode)}
+              disabled={loading}
+              aria-label="Run mode"
+            >
+              <option value="plan">Plan</option>
+              <option value="preview">Preview</option>
+              <option value="execute">Execute</option>
+            </select>
             <input
               className="composer-input"
               value={input}
@@ -717,6 +737,24 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
           <>
             {viewModel.showTable && <div className="insight-label">数据洞察</div>}
             {answerText && <MarkdownAnswer text={answerText} />}
+            {viewModel.error && (
+              <div className="mini-card error-detail">
+                <div className="label">{viewModel.error.code}</div>
+                <div>{viewModel.error.message}</div>
+              </div>
+            )}
+            {viewModel.logicalPlan && (
+              <details className="mini-card artifact-card">
+                <summary>Logical plan</summary>
+                <pre>{JSON.stringify(viewModel.logicalPlan, null, 2)}</pre>
+              </details>
+            )}
+            {viewModel.showSqlCard && (
+              <details className="mini-card artifact-card">
+                <summary>SQL</summary>
+                <pre>{viewModel.sql}</pre>
+              </details>
+            )}
             {viewModel.showTable && (
               <div className="assistant-grid">
                 <div className="mini-card">
@@ -729,6 +767,18 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
                   </div>
                   <RowsTable rows={viewModel.rows} />
                 </div>
+              </div>
+            )}
+            {viewModel.pendingMemoryUpdates.length > 0 && (
+              <div className="mini-card artifact-card">
+                <div className="label">Pending memory proposals</div>
+                <ul>
+                  {viewModel.pendingMemoryUpdates.map((proposal, index) => (
+                    <li key={`${proposal.scope}-${proposal.source}-${index}`}>
+                      {proposal.scope}: {proposal.source}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </>
@@ -834,23 +884,26 @@ function MarkdownInline({ segment }: { segment: MarkdownSegment }) {
   return <>{segment.text}</>;
 }
 
-function responseToAssistantMessage(
+export function responseToAssistantMessage(
   response: ConversationMessageResponse,
   id = `assistant-${response.conversation_id}-${Date.now()}`,
 ): ChatMessage {
   return {
     id,
     role: "assistant",
-    content: response.answer || response.error || "No answer returned.",
+    content: response.answer || response.error?.message || "No answer returned.",
     metadata: {
+      contextualized_question: response.contextualized_question,
+      logical_plan: response.logical_plan,
       answer: response.answer,
       message_type: response.message_type,
       rows: response.rows,
       ok: response.ok,
       error: response.error,
       trace: response.trace,
-      intent: response.intent,
       sql: response.sql,
+      pending_memory_updates: response.pending_memory_updates,
+      version_pins: response.version_pins,
     },
   };
 }

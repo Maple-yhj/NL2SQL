@@ -73,6 +73,7 @@ describe("conversation state helpers", () => {
 function conversation(conversationId: string, title: string): Conversation {
   return {
     tenant_id: "demo",
+    domain_id: "commerce",
     conversation_id: conversationId,
     user_id: "user-1",
     title,

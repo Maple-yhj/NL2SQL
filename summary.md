@@ -1,115 +1,30 @@
-# NL2SQL 项目当前业务总结
+# Data Agent v1 Summary
 
-## 项目定位
+The product is now centered on one public `DataAgentRuntime`. CLI, FastAPI,
+frontend, and Studio adapters submit an `AgentRequest` and consume typed
+streaming events whose terminal carries an `AgentResponse`.
 
-本项目是一个面向企业经营分析场景的自然语言数据助手。用户可以像聊天一样提出业务问题，系统自动理解问题、查询业务数据库，并以自然语言、明细表格或两者结合的方式返回结果。
+The six runtime layers are Runtime, Skill System, one bounded Execution Graph,
+Tool Registry/Connector, Memory, and Enterprise Data Binding. The reusable
+Commerce pack owns canonical entities, metrics, vocabulary, policies, and 48
+eval questions. The OList enterprise pack owns PostgreSQL relations, fields,
+join paths, allowlists, and seller ownership policy. New enterprises add a
+binding rather than changing Commerce skills.
 
-项目当前重点服务 BI 查询与运营分析场景，目标是降低业务人员直接写 SQL、理解数据表结构和反复找数的成本。
+All three modes use the same graph:
 
-## 核心业务能力
+- `plan`: validate the logical plan and compile governed SQL;
+- `preview`: add credentials, EXPLAIN, and bounded preview;
+- `execute`: run a bounded read-only query and render verified evidence.
 
-### 1. 自然语言问数
+Configuration is compiled with `data-agent compile-packs`, checked with
+`data-agent validate-config`, and accompanied by a deterministic semantic
+index from `data-agent rebuild-index`. The canonical generated bundle is
+`generated/bundles/olist-local.json`.
 
-用户可以直接输入业务问题，例如：
-
-- “华东地区昨天 GMV 是多少？”
-- “按地区统计本月 GMV”
-- “查询 2024-12-30 华东地区最新的 20 条订单记录”
-
-系统会根据问题识别指标、维度、时间范围、筛选条件和明细/汇总意图，并自动生成查询。
-
-### 2. 汇总问题用自然语言回答
-
-当用户询问 GMV、订单数、地区对比、趋势总结等汇总类问题时，系统默认以自然语言解释结果，避免把简单指标强行展示成表格。
-
-这类回答适合管理层或运营人员快速获取结论，例如“华东地区 GMV 最高”“本月订单金额集中在某几个区域”等。
-
-### 3. 明细问题用表格回答
-
-当用户询问订单记录、用户明细、商品明细等记录型问题时，系统会把结果识别为表格消息。
-
-当前前端支持：
-
-- 中文字段表头
-- 数字列右对齐
-- 金额和时间格式化
-- 每页 20 条分页
-- 展示全部返回记录，而不是只展示前几条
-- 表格上方提供数据洞察说明
-
-### 4. 数据洞察说明
-
-对于明细表格，AI 不再逐条复述数据，而是总结数据范围、金额分布、异常点、时间跨度、状态比例等洞察。
-
-表格负责展示原始明细，AI 负责帮助用户理解这批数据有什么特点。
-
-### 5. 多轮会话
-
-系统支持会话历史。用户可以围绕同一个分析主题连续追问，系统会读取当前会话上下文，并把后续问题改写成更完整的问题后再查询。
-
-例如用户先问“本月 GMV”，再问“按地区拆一下”，系统可以结合上下文理解“按地区拆本月 GMV”。
-
-### 6. 历史会话管理
-
-前端左侧侧边栏展示历史对话，支持：
-
-- 新建聊天
-- 打开历史会话
-- 重命名会话
-- 删除会话，当前实现为软删除/归档
-- 侧边栏收缩与展开
-
-重新打开页面后，新产生的历史问答会恢复用户问题、AI 答复和表格数据。
-
-### 7. 用户登录与租户隔离
-
-项目支持账号登录。每个请求都绑定当前用户和租户身份，用户只能访问属于自己的会话。
-
-当前已有的业务身份字段包括：
-
-- `tenant_id`
-- `user_id`
-- `username`
-- `roles`
-
-这为后续扩展组织、角色权限和数据权限打下基础。
-
-### 8. 前端聊天体验
-
-当前前端采用类 ChatGPT 的使用方式：
-
-- 左侧历史会话栏
-- 中间聊天主区域
-- 底部固定输入框
-- AI 思考中有加载提示
-- 新回答后自动滚动到最新位置
-- AI 回答支持基础 Markdown 渲染，例如加粗和行内代码
-
-## 当前适合的业务场景
-
-- 经营指标查询
-- 区域、商品、用户、订单分析
-- 订单明细查询
-- 多轮追问式数据探索
-- 快速生成 SQL 并返回解释
-- 面向内部运营、数据分析、业务管理人员的自助问数
-
-## 当前边界
-
-- 系统依赖业务数据库中已有的数据表和字段含义。
-- 当前表头中文含义通过前端映射实现，后续可扩展为从数据字典读取。
-- 删除会话目前是归档式软删除，不是物理删除。
-- “搜索聊天”“文件库”等入口已在界面预留，但还不是完整功能。
-- 权限模型目前以用户/租户隔离为主，细粒度 RBAC 和字段级权限仍可继续增强。
-- 会话摘要表已预留，但当前上下文主要依赖最近消息和用户记忆。
-
-## 当前状态
-
-项目已经具备后端 API、登录认证、会话持久化、前端聊天界面和基础可用的 NL2SQL 问答体验。
-
-本地开发时需要同时启动后端 API 和前端 Vite 服务：
-
-- 后端默认地址：`http://127.0.0.1:8000`
-- 前端默认地址：`http://127.0.0.1:5173`
-
-详细配置、建表、创建账号和启动步骤见 `README.md`。
+CI uses an offline deterministic ModelClient, in-memory Memory, and a scoped
+Connector fixture. The same Runtime executes all 48 canonical cases and checks
+logical plan, binding relations, SQL AST, policy identity, seller/admin scope,
+rows, answer evidence, trace, and version pins. Backend, frontend, production
+build, wheel contents, and isolated-install smoke tests form the remaining
+release gate.

@@ -1,159 +1,250 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:5173";
-const DEFAULT_EVAL_FILE = "evals/olist_questions.jsonl";
-const DEFAULT_USERNAME = "yehj";
-const DEFAULT_PASSWORD = "0708";
+const DEFAULT_BUNDLE_FILE = "generated/bundles/olist-local.json";
+const DEFAULT_ADMIN_TENANT_ID = "admin";
+const DEFAULT_SELLER_TENANT_ID = "3442f8959a84dea7ee197c632cb2df15";
 
-const args = parseArgs(process.argv.slice(2));
-const baseUrl = (args.baseUrl || process.env.EVAL_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
-const evalFile = args.file || DEFAULT_EVAL_FILE;
-const start = Number.parseInt(args.start || "0", 10);
-const count = args.count == null ? Number.POSITIVE_INFINITY : Number.parseInt(args.count, 10);
-const username = args.username || process.env.EVAL_USERNAME || DEFAULT_USERNAME;
-const password = args.password || process.env.EVAL_PASSWORD || DEFAULT_PASSWORD;
-
-const sessions = new Map();
-const rows = (await readFile(evalFile, "utf8"))
-  .split(/\r?\n/)
-  .filter(Boolean)
-  .map((line) => JSON.parse(line));
-
-const selected = rows.slice(start, Number.isFinite(count) ? start + count : undefined);
-const results = [];
-
-for (let index = 0; index < selected.length; index += 1) {
-  const row = selected[index];
-  const absoluteIndex = start + index;
-  const startedAt = Date.now();
-  const result = await runRow(row, absoluteIndex).catch((error) => ({
-    id: row.id,
-    index: absoluteIndex,
-    ok: false,
-    rows_count: 0,
-    message_type: "error",
-    error: error instanceof Error ? error.message : String(error),
-    sql: "",
-    contextualized_question: "",
-    duration_ms: Date.now() - startedAt,
-  }));
-  results.push(result);
-  console.log(`EVAL_RESULT ${JSON.stringify(summarize(result))}`);
-}
-
-console.log(`EVAL_SUMMARY ${JSON.stringify({
-  total: results.length,
-  ok: results.filter((result) => result.ok).length,
-  failed: results.filter((result) => !result.ok).map((result) => ({
-    id: result.id,
-    error: result.error,
-  })),
-})}`);
-
-console.log(`EVAL_RESULTS_JSON ${JSON.stringify(results)}`);
-
-async function runRow(row, index) {
-  const tenantId = row.tenant_id || "admin";
-  const startedAt = Date.now();
-  const conversation = await createConversation(tenantId, `eval ${row.id}`);
-  const followUp = parseFollowUp(row.question);
-  if (followUp) {
-    await sendMessage(tenantId, conversation.conversation_id, followUp.previous);
-    const response = await sendMessage(tenantId, conversation.conversation_id, followUp.followUp);
-    return normalizeResponse(row, index, response, Date.now() - startedAt);
+export async function loadCanonicalCases(bundleFile = DEFAULT_BUNDLE_FILE) {
+  const document = JSON.parse(await readFile(bundleFile, "utf8"));
+  const cases = document?.bundle?.semantic_model?.evals;
+  if (!Array.isArray(cases) || cases.length !== 48) {
+    throw new Error("compiled OList Domain Pack must contain exactly 48 eval cases");
   }
-
-  const response = await sendMessage(tenantId, conversation.conversation_id, row.question);
-  return normalizeResponse(row, index, response, Date.now() - startedAt);
-}
-
-async function login(tenantId) {
-  if (sessions.has(tenantId)) {
-    return sessions.get(tenantId);
+  const ids = new Set();
+  for (const item of cases) {
+    if (
+      item === null ||
+      typeof item !== "object" ||
+      typeof item.id !== "string" ||
+      typeof item.question !== "string" ||
+      ids.has(item.id)
+    ) {
+      throw new Error("compiled OList Domain Pack contains an invalid eval case");
+    }
+    ids.add(item.id);
   }
-  const session = await jsonFetch("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({
-      tenant_id: tenantId,
-      username,
-      password,
-    }),
-  });
-  sessions.set(tenantId, session);
-  return session;
+  return cases;
 }
 
-async function createConversation(tenantId, title) {
-  const session = await login(tenantId);
-  return jsonFetch("/api/conversations", {
-    method: "POST",
-    headers: authorizationHeaders(session),
-    body: JSON.stringify({ title }),
-  });
-}
-
-async function sendMessage(tenantId, conversationId, question) {
-  const session = await login(tenantId);
-  return jsonFetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, {
-    method: "POST",
-    headers: authorizationHeaders(session),
-    body: JSON.stringify({
-      question: question.trim(),
-      execute: true,
-      timeout_ms: 10_000,
-      max_limit: 1_000,
-      max_validation_attempts: 2,
-      memory_history_limit: 8,
-      include_tool_trace: true,
-    }),
-  });
-}
-
-async function jsonFetch(path, init = {}) {
-  const headers = new Headers(init.headers);
-  if (init.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
+export function buildAgentRequest(question) {
+  const normalized = question.trim();
+  if (!normalized) {
+    throw new Error("eval question must not be blank");
   }
-  const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
-  const text = await response.text();
-  let body;
-  try {
-    body = text ? JSON.parse(text) : {};
-  } catch {
-    body = { raw: text };
-  }
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}: ${JSON.stringify(body)}`);
-  }
-  return body;
-}
-
-function authorizationHeaders(session) {
   return {
-    Authorization: `Bearer ${session.access_token}`,
+    question: normalized,
+    enterprise_id: "olist",
+    domain_id: "commerce",
+    mode: "execute",
+    requested_output: "answer",
+    include_trace: true,
   };
 }
 
-function normalizeResponse(row, index, response, durationMs) {
-  const toolTrace = Array.isArray(response.tool_trace) ? response.tool_trace : [];
-  const toolMetrics = summarizeToolTrace(toolTrace);
+export function tenantForCase(row, adminTenantId, sellerTenantId) {
+  const scope = row?.context?.tenantScope;
+  if (scope === "all") {
+    return adminTenantId;
+  }
+  if (scope === "seller") {
+    return sellerTenantId;
+  }
+  throw new Error(`unsupported eval tenant scope: ${String(scope)}`);
+}
+
+export function normalizeResponse(row, index, response, durationMs, tenantId) {
+  const trace = Array.isArray(response.trace) ? response.trace : [];
+  const error = isRecord(response.error) ? response.error : null;
   return {
     id: row.id,
     index,
     question: row.question,
-    tenant_id: row.tenant_id,
-    type: row.type,
-    ok: Boolean(response.ok),
+    tenant_id: tenantId,
+    tenant_scope: row.context?.tenantScope ?? "",
+    analysis_type: row.analysisType ?? "",
+    ok: response.ok === true,
     rows_count: Array.isArray(response.rows) ? response.rows.length : 0,
-    message_type: response.message_type || "",
-    error: response.error || "",
-    sql: response.sql || "",
-    contextualized_question: response.contextualized_question || "",
-    trace: Array.isArray(response.trace) ? response.trace : [],
-    tool_trace: toolTrace,
-    ...toolMetrics,
+    message_type: typeof response.message_type === "string" ? response.message_type : "",
+    error_code: typeof error?.code === "string" ? error.code : "",
+    error: typeof error?.message === "string" ? error.message : "",
+    sql: typeof response.sql === "string" ? response.sql : "",
+    contextualized_question:
+      typeof response.contextualized_question === "string"
+        ? response.contextualized_question
+        : "",
+    trace,
+    version_pins: isRecord(response.version_pins) ? response.version_pins : null,
     duration_ms: durationMs,
   };
+}
+
+export async function main(argv = process.argv.slice(2), environment = process.env) {
+  const args = parseArgs(argv);
+  const baseUrl = (args.baseUrl || environment.EVAL_BASE_URL || DEFAULT_BASE_URL).replace(
+    /\/$/,
+    "",
+  );
+  const bundleFile = args.bundle || environment.EVAL_BUNDLE_FILE || DEFAULT_BUNDLE_FILE;
+  const start = parseNonNegativeInteger(args.start, 0, "start");
+  const count =
+    args.count == null
+      ? Number.POSITIVE_INFINITY
+      : parseNonNegativeInteger(args.count, undefined, "count");
+  const username = args.username || environment.EVAL_USERNAME;
+  const password = args.password || environment.EVAL_PASSWORD;
+  if (!username || !password) {
+    throw new Error("EVAL_USERNAME and EVAL_PASSWORD (or CLI equivalents) are required");
+  }
+  const adminTenantId =
+    args.adminTenantId || environment.EVAL_ADMIN_TENANT_ID || DEFAULT_ADMIN_TENANT_ID;
+  const sellerTenantId =
+    args.sellerTenantId ||
+    environment.EVAL_SELLER_TENANT_ID ||
+    DEFAULT_SELLER_TENANT_ID;
+
+  const rows = await loadCanonicalCases(bundleFile);
+  const selected = rows.slice(
+    start,
+    Number.isFinite(count) ? start + count : undefined,
+  );
+  const sessions = new Map();
+  const results = [];
+
+  async function jsonFetch(path, init = {}) {
+    const headers = new Headers(init.headers);
+    if (init.body && !headers.has("Content-Type")) {
+      headers.set("Content-Type", "application/json");
+    }
+    const response = await fetch(`${baseUrl}${path}`, { ...init, headers });
+    const text = await response.text();
+    let body;
+    try {
+      body = text ? JSON.parse(text) : {};
+    } catch {
+      body = { raw: text };
+    }
+    if (!response.ok) {
+      throw new Error(`${response.status} ${response.statusText}: ${JSON.stringify(body)}`);
+    }
+    return body;
+  }
+
+  async function login(tenantId) {
+    if (sessions.has(tenantId)) {
+      return sessions.get(tenantId);
+    }
+    const session = await jsonFetch("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ tenant_id: tenantId, username, password }),
+    });
+    sessions.set(tenantId, session);
+    return session;
+  }
+
+  function authorizationHeaders(session) {
+    return { Authorization: `Bearer ${session.access_token}` };
+  }
+
+  async function createConversation(tenantId, title) {
+    const session = await login(tenantId);
+    return jsonFetch("/api/conversations", {
+      method: "POST",
+      headers: authorizationHeaders(session),
+      body: JSON.stringify({ title, domain_id: "commerce" }),
+    });
+  }
+
+  async function sendMessage(tenantId, conversationId, question) {
+    const session = await login(tenantId);
+    return jsonFetch(
+      `/api/conversations/${encodeURIComponent(conversationId)}/messages`,
+      {
+        method: "POST",
+        headers: authorizationHeaders(session),
+        body: JSON.stringify(buildAgentRequest(question)),
+      },
+    );
+  }
+
+  async function runRow(row, index) {
+    const tenantId = tenantForCase(row, adminTenantId, sellerTenantId);
+    const startedAt = Date.now();
+    const conversation = await createConversation(tenantId, `eval ${row.id}`);
+    const followUp = parseFollowUp(row.question);
+    if (followUp) {
+      await sendMessage(tenantId, conversation.conversation_id, followUp.previous);
+      const response = await sendMessage(
+        tenantId,
+        conversation.conversation_id,
+        followUp.followUp,
+      );
+      return normalizeResponse(
+        row,
+        index,
+        response,
+        Date.now() - startedAt,
+        tenantId,
+      );
+    }
+    const response = await sendMessage(
+      tenantId,
+      conversation.conversation_id,
+      row.question,
+    );
+    return normalizeResponse(
+      row,
+      index,
+      response,
+      Date.now() - startedAt,
+      tenantId,
+    );
+  }
+
+  for (let index = 0; index < selected.length; index += 1) {
+    const row = selected[index];
+    const absoluteIndex = start + index;
+    const startedAt = Date.now();
+    const tenantId = tenantForCase(row, adminTenantId, sellerTenantId);
+    const result = await runRow(row, absoluteIndex).catch((error) => ({
+      id: row.id,
+      index: absoluteIndex,
+      question: row.question,
+      tenant_id: tenantId,
+      tenant_scope: row.context?.tenantScope ?? "",
+      analysis_type: row.analysisType ?? "",
+      ok: false,
+      rows_count: 0,
+      message_type: "error",
+      error_code: "EVAL_RUNNER_ERROR",
+      error: error instanceof Error ? error.message : String(error),
+      sql: "",
+      contextualized_question: "",
+      trace: [],
+      version_pins: null,
+      duration_ms: Date.now() - startedAt,
+    }));
+    results.push(result);
+    console.log(`EVAL_RESULT ${JSON.stringify(summarize(result))}`);
+  }
+
+  console.log(
+    `EVAL_SUMMARY ${JSON.stringify({
+      total: results.length,
+      ok: results.filter((result) => result.ok).length,
+      failed: results
+        .filter((result) => !result.ok)
+        .map((result) => ({
+          id: result.id,
+          error_code: result.error_code,
+          error: result.error,
+        })),
+    })}`,
+  );
+  console.log(`EVAL_RESULTS_JSON ${JSON.stringify(results)}`);
+  return results;
 }
 
 function summarize(result) {
@@ -162,36 +253,12 @@ function summarize(result) {
     ok: result.ok,
     rows_count: result.rows_count,
     message_type: result.message_type,
+    error_code: result.error_code,
     error: result.error,
     duration_ms: result.duration_ms,
-    tool_call_count: result.tool_call_count || 0,
-    validation_retry_count: result.validation_retry_count || 0,
-    tool_error_count: result.tool_error_count || 0,
-    total_tool_duration_ms: result.total_tool_duration_ms || 0,
-    policy_block_count: result.policy_block_count || 0,
+    trace_error_count: result.trace.filter((event) => event?.status === "failed").length,
     contextualized_question: result.contextualized_question,
     sql: result.sql.replace(/\s+/g, " ").slice(0, 240),
-  };
-}
-
-function summarizeToolTrace(toolTrace) {
-  const validationTools = new Set(["prepare_sql", "validate_sql"]);
-  const policyErrorCodes = new Set([
-    "tool_risk_not_allowed",
-    "missing_tenant_id",
-    "tool_call_budget_exceeded",
-    "tool_write_blocked",
-  ]);
-  return {
-    tool_call_count: toolTrace.length,
-    validation_retry_count: toolTrace.filter(
-      (event) => validationTools.has(event.canonical_name) && event.ok === false,
-    ).length,
-    tool_error_count: toolTrace.filter((event) => event.ok === false).length,
-    total_tool_duration_ms: Math.round(
-      toolTrace.reduce((total, event) => total + Number(event.duration_ms || 0), 0),
-    ),
-    policy_block_count: toolTrace.filter((event) => policyErrorCodes.has(event.error_code)).length,
   };
 }
 
@@ -207,6 +274,17 @@ function parseFollowUp(question) {
     previous: withoutPrefix.slice(0, markerIndex).trim(),
     followUp: withoutPrefix.slice(markerIndex + marker.length).trim(),
   };
+}
+
+function parseNonNegativeInteger(value, fallback, name) {
+  if (value == null) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+  return parsed;
 }
 
 function parseArgs(argv) {
@@ -226,4 +304,16 @@ function parseArgs(argv) {
     }
   }
   return parsed;
+}
+
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const entryUrl = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : "";
+if (import.meta.url === entryUrl) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });
 }

@@ -20,8 +20,8 @@ describe("createAssistantViewModel", () => {
         answer: "East leads with 1.28M GMV.",
         message_type: "table",
         ok: true,
-        error: "",
-        trace: [{ node: "validate_sql", ok: true, message: "success" }],
+        error: null,
+        trace: [{ node: "validate_sql", status: "completed", error_code: null }],
       },
     };
 
@@ -31,10 +31,11 @@ describe("createAssistantViewModel", () => {
     expect(viewModel.rows).toEqual([{ region: "East", gmv: "1.28M" }]);
     expect(viewModel.showTable).toBe(true);
     expect(viewModel.status).toBe("validated");
-    expect(viewModel.showSqlCard).toBe(false);
+    expect(viewModel.showSqlCard).toBe(true);
+    expect(viewModel.sql).toBe("SELECT region, SUM(amount) AS gmv FROM orders");
   });
 
-  it("shows table data when a text response still returns multiple rows", () => {
+  it("preserves an explicit text response even when rows are present", () => {
     const message: ChatMessage = {
       id: "assistant-2",
       role: "assistant",
@@ -47,7 +48,7 @@ describe("createAssistantViewModel", () => {
         answer: "Average payment amount by credit-card installments.",
         message_type: "text",
         ok: true,
-        error: "",
+        error: null,
         trace: [],
       },
     };
@@ -58,8 +59,51 @@ describe("createAssistantViewModel", () => {
       { payment_installments: 1, avg_payment_amount: 104.1 },
       { payment_installments: 2, avg_payment_amount: 138.84 },
     ]);
-    expect(viewModel.messageType).toBe("table");
-    expect(viewModel.showTable).toBe(true);
+    expect(viewModel.messageType).toBe("text");
+    expect(viewModel.showTable).toBe(false);
+  });
+
+  it("preserves an explicit server message type on a failed response", () => {
+    const message: ChatMessage = {
+      id: "assistant-chart-error",
+      role: "assistant",
+      content: "The governed run failed safely.",
+      metadata: {
+        message_type: "chart",
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The governed run failed safely.",
+          retryable: false,
+        },
+      },
+    };
+
+    const viewModel = createAssistantViewModel(message);
+
+    expect(viewModel.messageType).toBe("chart");
+    expect(viewModel.status).toBe("error");
+  });
+
+  it("falls back to error only when the server message type is absent", () => {
+    const message: ChatMessage = {
+      id: "assistant-untyped-error",
+      role: "assistant",
+      content: "The governed run failed safely.",
+      metadata: {
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "The governed run failed safely.",
+          retryable: false,
+        },
+      },
+    };
+
+    const viewModel = createAssistantViewModel(message);
+
+    expect(viewModel.messageType).toBe("error");
+    expect(viewModel.status).toBe("error");
   });
 
   it("removes markdown table text when structured table rows are available", () => {
@@ -82,7 +126,7 @@ describe("createAssistantViewModel", () => {
         ].join("\n"),
         message_type: "table",
         ok: true,
-        error: "",
+        error: null,
         trace: [],
       },
     };
@@ -109,7 +153,7 @@ describe("createAssistantViewModel", () => {
           "Only the first 10 rows are shown. Run the original query to get all 20 rows. Sao Paulo leads clearly.",
         message_type: "table",
         ok: true,
-        error: "",
+        error: null,
         trace: [],
       },
     };
@@ -143,7 +187,7 @@ describe("createAssistantViewModel", () => {
         ].join("\n"),
         message_type: "table",
         ok: true,
-        error: "",
+        error: null,
         trace: [],
       },
     };
@@ -166,7 +210,7 @@ describe("createAssistantViewModel", () => {
         ],
         answer: "Returned the latest order records.",
         ok: true,
-        error: "",
+        error: null,
         trace: [],
       },
     };
@@ -192,6 +236,35 @@ describe("createAssistantViewModel", () => {
     expect(viewModel.isThinking).toBe(true);
     expect(viewModel.status).toBe("pending");
     expect(viewModel.showTable).toBe(false);
+  });
+
+  it("exposes plan, structured error, and pending memory proposals", () => {
+    const message: ChatMessage = {
+      id: "assistant-plan",
+      role: "assistant",
+      content: "",
+      metadata: {
+        logical_plan: { analysis_type: "aggregate", metrics: ["commerce.gmv"] },
+        sql: "SELECT 1",
+        error: {
+          code: "COST_EXCEEDED",
+          message: "The governed run failed safely.",
+          retryable: false,
+        },
+        pending_memory_updates: [
+          { scope: "user", source: "runtime.finalize", status: "pending_approval" },
+        ],
+        ok: false,
+      },
+    };
+
+    const viewModel = createAssistantViewModel(message);
+
+    expect(viewModel.logicalPlan).toEqual(message.metadata.logical_plan);
+    expect(viewModel.sql).toBe("SELECT 1");
+    expect(viewModel.error?.code).toBe("COST_EXCEEDED");
+    expect(viewModel.pendingMemoryUpdates).toHaveLength(1);
+    expect(viewModel.status).toBe("error");
   });
 
   it("uses Chinese labels for common table columns", () => {

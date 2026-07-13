@@ -71,6 +71,18 @@ _DOMAIN_PACK_FRAGMENTS: tuple[tuple[str, frozenset[str]], ...] = (
     ("policies.yaml", frozenset({"policies"})),
     ("evals.yaml", frozenset({"evals"})),
 )
+DOMAIN_PACK_SOURCE_FILES: tuple[str, ...] = (
+    "pack.yaml",
+    *(filename for filename, _allowed_keys in _DOMAIN_PACK_FRAGMENTS),
+)
+_ENTERPRISE_BINDING_FRAGMENTS: tuple[tuple[Path, frozenset[str]], ...] = (
+    (Path("sources.yaml"), frozenset({"domains", "sources"})),
+    (
+        Path("bindings") / "commerce.yaml",
+        frozenset({"bindings", "relationships"}),
+    ),
+    (Path("policies.yaml"), frozenset({"policies"})),
+)
 
 
 def _load_yaml_mapping(path: Path) -> dict:
@@ -93,18 +105,43 @@ def load_pack_yaml(path: str | Path, model: type[PackType]) -> PackType:
         raise PackLoadError(f"could not load a valid {model.__name__}") from exc
 
 
+def domain_pack_source_paths(root: str | Path) -> tuple[Path, ...]:
+    """Return the fixed six-file source set consumed by ``load_domain_pack``."""
+
+    pack_root = Path(root)
+    return tuple(pack_root / filename for filename in DOMAIN_PACK_SOURCE_FILES)
+
+
+def enterprise_binding_source_paths(root: str | Path) -> tuple[Path, ...]:
+    """Return the exact monolithic or split sources consumed by the loader."""
+
+    pack_root = Path(root)
+    path = pack_root if pack_root.is_file() else pack_root / "pack.yaml"
+    document = _load_yaml_mapping(path)
+    if "spec" in document:
+        return (path,)
+    if pack_root.is_file():
+        raise TypeError("a split enterprise binding requires a directory root")
+    return (path, *(pack_root / relative for relative, _keys in _ENTERPRISE_BINDING_FRAGMENTS))
+
+
 def load_domain_pack(root: str | Path) -> DomainPack:
     """Load a split Domain Pack from a fixed, deterministic fragment set."""
 
     pack_root = Path(root)
     try:
-        document = _load_yaml_mapping(pack_root / "pack.yaml")
+        source_paths = domain_pack_source_paths(pack_root)
+        document = _load_yaml_mapping(source_paths[0])
         if "spec" in document:
             raise TypeError("split domain pack metadata must not contain spec")
 
         spec: dict = {}
-        for filename, allowed_keys in _DOMAIN_PACK_FRAGMENTS:
-            fragment = _load_yaml_mapping(pack_root / filename)
+        for fragment_path, (filename, allowed_keys) in zip(
+            source_paths[1:],
+            _DOMAIN_PACK_FRAGMENTS,
+            strict=True,
+        ):
+            fragment = _load_yaml_mapping(fragment_path)
             unexpected = set(fragment) - allowed_keys
             missing = allowed_keys - set(fragment)
             if unexpected or missing:
@@ -129,23 +166,23 @@ def load_enterprise_binding(root: str | Path) -> EnterpriseDataBinding:
     duplicate-key-safe loader before Pydantic validation.
     """
 
-    pack_root = Path(root)
-    path = pack_root if pack_root.is_file() else pack_root / "pack.yaml"
     try:
-        document = _load_yaml_mapping(path)
-        if "spec" in document:
+        pack_root = Path(root)
+        source_paths = enterprise_binding_source_paths(pack_root)
+        document = _load_yaml_mapping(source_paths[0])
+        if len(source_paths) == 1:
             return EnterpriseDataBinding.model_validate(document)
 
         spec: dict = {}
-        fragments: tuple[tuple[Path, frozenset[str]], ...] = (
-            (pack_root / "sources.yaml", frozenset({"sources"})),
-            (pack_root / "bindings" / "commerce.yaml", frozenset({"bindings", "relationships"})),
-            (pack_root / "policies.yaml", frozenset({"policies"})),
-        )
-        for fragment_path, allowed_keys in fragments:
+        for fragment_path, (_relative, allowed_keys) in zip(
+            source_paths[1:],
+            _ENTERPRISE_BINDING_FRAGMENTS,
+            strict=True,
+        ):
             fragment = _load_yaml_mapping(fragment_path)
             unexpected = set(fragment) - allowed_keys
-            if unexpected:
+            missing = allowed_keys - set(fragment)
+            if unexpected or missing:
                 raise TypeError(f"invalid keys in enterprise binding fragment {fragment_path.name}")
             overlap = set(spec) & set(fragment)
             if overlap:
@@ -162,6 +199,7 @@ def compile_profile_bundle(
     enterprise_binding: EnterpriseDataBinding,
     deployment_profile: DeploymentProfile,
     schema_catalog: str | Path | list[dict] | None = None,
+    pack_lock: str | Path | dict | None = None,
 ):
     """Load a domain and compile a binding/profile pair for contract checks."""
 
@@ -175,6 +213,7 @@ def compile_profile_bundle(
         skill_versions={"commerce.analytics": "1.0.0"},
         tool_registry_version="1.0.0",
         schema_catalog=schema_catalog,
+        pack_lock=pack_lock,
     )
 
 

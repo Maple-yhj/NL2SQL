@@ -8,6 +8,7 @@ import type {
   SendMessagePayload,
   StoredSession,
 } from "./types";
+import { isAgentResponse } from "./agentResponseValidator";
 
 export class ApiError extends Error {
   constructor(
@@ -92,6 +93,9 @@ export class ApiClient {
         method: "POST",
         body: JSON.stringify(payload),
       },
+      true,
+      true,
+      isAgentResponse,
     );
   }
 
@@ -100,6 +104,7 @@ export class ApiClient {
     init: RequestInit = {},
     authenticated = true,
     retryOnUnauthorized = true,
+    acceptedErrorResponse?: (body: unknown) => body is T,
   ): Promise<T> {
     const headers = new Headers(init.headers);
     if (init.body && !headers.has("Content-Type")) {
@@ -114,11 +119,15 @@ export class ApiClient {
     const response = await fetch(path, { ...init, headers });
     if (response.status === 401 && authenticated && retryOnUnauthorized) {
       await this.refreshSession();
-      return this.request<T>(path, init, authenticated, false);
+      return this.request<T>(path, init, authenticated, false, acceptedErrorResponse);
     }
 
     if (!response.ok) {
-      throw new ApiError(response.status, await readErrorMessage(response));
+      const body = await readJsonBody(response);
+      if (acceptedErrorResponse?.(body)) {
+        return body;
+      }
+      throw new ApiError(response.status, readErrorMessage(body, response.statusText));
     }
 
     return response.json() as Promise<T>;
@@ -140,17 +149,29 @@ export class ApiClient {
   }
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function readJsonBody(response: Response): Promise<unknown> {
   try {
-    const body = await response.json();
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function readErrorMessage(body: unknown, statusText: string): string {
+  if (isRecord(body)) {
     if (typeof body.detail === "string") {
       return body.detail;
     }
-    if (typeof body.error === "string") {
-      return body.detail ? `${body.error}: ${body.detail}` : body.error;
+    if (
+      isRecord(body.error) &&
+      typeof body.error.message === "string"
+    ) {
+      return body.error.message;
     }
-  } catch {
-    return response.statusText || "Request failed";
   }
-  return response.statusText || "Request failed";
+  return statusText || "Request failed";
 }

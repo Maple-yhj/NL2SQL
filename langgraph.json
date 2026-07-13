@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "nl2sql": "./graph/pipeline.py:graph"
+    "data-agent": "./src/data_agent/adapters/studio.py:graph"
   },
   "env": ".env"
 }

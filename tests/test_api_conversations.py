@@ -1,414 +1,310 @@
-import asyncio
+from __future__ import annotations
+
 import unittest
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from unittest import mock
 
 from fastapi.testclient import TestClient
 
 from api.app import create_app
 from api.auth import AuthPrincipal, AuthSettings, create_access_token
-from graph.memory_store import InMemoryConversationStore
+from data_agent.runtime import (
+    AgentEvent,
+    AgentEventType,
+    AgentRequest,
+    AgentResponse,
+    ConversationMessage,
+    ConversationMessageMetadata,
+    ConversationSummary,
+    PrincipalContext,
+)
+from data_agent.runtime.events import RunCompletedPayload
 
 
 TEST_JWT_SECRET = "test-secret-key-with-at-least-32-bytes"
+NOW = datetime(2026, 7, 12, tzinfo=UTC)
 
 
 def auth_headers(
     tenant_id: str = "demo",
     user_id: str = "user-1",
-    username: str = "analyst",
 ) -> dict[str, str]:
     token = create_access_token(
         AuthPrincipal(
             tenant_id=tenant_id,
             user_id=user_id,
-            username=username,
+            username="analyst",
             roles=["analyst"],
             token_version=1,
-            token_id="test-token-id",
+            token_id=f"token-{tenant_id}-{user_id}",
         ),
         AuthSettings(secret_key=TEST_JWT_SECRET),
     )
     return {"Authorization": f"Bearer {token}"}
 
 
-def graph_output(**overrides):
-    output = {
-        "ok": True,
-        "question": "那按地区呢",
-        "contextualized_question": "按地区统计上月GMV",
-        "conversation_id": "conv-1",
-        "user_id": "user-1",
-        "tenant_id": "demo",
-        "intent": {"metrics": ["gmv"], "dimensions": ["region"]},
-        "sql": "SELECT region, sum(amount) AS gmv FROM orders GROUP BY region LIMIT 1000",
-        "message_type": "text",
-        "rows": [],
-        "answer": "",
-        "error": "",
-        "trace": [{"node": "initialize", "ok": True, "message": "success"}],
-        "tool_trace": [
-            {
-                "tool_name": "sql.generate",
-                "canonical_name": "generate_sql",
-                "started_at": "2026-07-08T00:00:00+00:00",
-                "duration_ms": 1.0,
-                "ok": True,
-                "error_code": "",
-                "input_summary": {"keys": ["question"]},
-                "output_summary": {"keys": ["candidate_sql"]},
-                "retry_count": 0,
+class _ConversationRuntime:
+    def __init__(self) -> None:
+        self.items: dict[str, ConversationSummary] = {}
+        self.run_calls: list[tuple[AgentRequest, PrincipalContext]] = []
+
+    async def run(
+        self,
+        request: AgentRequest,
+        principal: PrincipalContext,
+    ) -> AsyncIterator[AgentEvent]:
+        self.run_calls.append((request, principal))
+        response = AgentResponse(
+            ok=True,
+            question=request.question,
+            contextualized_question=request.question,
+            conversation_id=request.conversation_id,
+            tenant_id=principal.tenant_id,
+            sql="SELECT 1",
+            answer="done",
+        )
+        yield AgentEvent(
+            type=AgentEventType.RUN_COMPLETED,
+            run_id="run-1",
+            sequence=0,
+            data=RunCompletedPayload(),
+            response=response,
+        )
+
+    async def create_conversation(
+        self,
+        *,
+        principal: PrincipalContext,
+        domain_id: str,
+        title: str = "",
+    ) -> ConversationSummary:
+        conversation_id = f"conv-{len(self.items) + 1}"
+        item = ConversationSummary(
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+            title=title,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        self.items[conversation_id] = item
+        return item
+
+    async def list_conversations(
+        self,
+        *,
+        principal: PrincipalContext,
+        domain_id: str,
+        limit: int,
+        include_archived: bool = False,
+    ) -> tuple[ConversationSummary, ...]:
+        return tuple(
+            item
+            for item in self.items.values()
+            if item.tenant_id == principal.tenant_id
+            and item.user_id == principal.user_id
+            and item.domain_id == domain_id
+            and (include_archived or not item.archived)
+        )[:limit]
+
+    async def get_conversation(
+        self,
+        *,
+        principal: PrincipalContext,
+        domain_id: str,
+        conversation_id: str,
+    ) -> ConversationSummary | None:
+        item = self.items.get(conversation_id)
+        if (
+            item is None
+            or item.tenant_id != principal.tenant_id
+            or item.user_id != principal.user_id
+            or item.domain_id != domain_id
+        ):
+            return None
+        return item
+
+    async def update_conversation(
+        self,
+        *,
+        principal: PrincipalContext,
+        domain_id: str,
+        conversation_id: str,
+        title: str | None = None,
+        archived: bool | None = None,
+    ) -> ConversationSummary | None:
+        item = await self.get_conversation(
+            principal=principal,
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+        )
+        if item is None:
+            return None
+        updated = item.model_copy(
+            update={
+                "title": item.title if title is None else title,
+                "archived": item.archived if archived is None else archived,
             }
-        ],
-        "pending_memory_updates": [],
-    }
-    output.update(overrides)
-    return output
+        )
+        self.items[conversation_id] = updated
+        return updated
+
+    async def list_conversation_messages(
+        self,
+        *,
+        principal: PrincipalContext,
+        domain_id: str,
+        conversation_id: str,
+        limit: int,
+    ) -> tuple[ConversationMessage, ...]:
+        item = await self.get_conversation(
+            principal=principal,
+            domain_id=domain_id,
+            conversation_id=conversation_id,
+        )
+        if item is None:
+            return ()
+        return (
+            ConversationMessage(role="user", content="show gmv"),
+            ConversationMessage(
+                role="assistant",
+                content="done",
+                metadata=ConversationMessageMetadata(
+                    answer="done",
+                    ok=True,
+                ),
+            ),
+        )[-limit:]
+
+
+class _Composition:
+    def __init__(self, runtime: _ConversationRuntime) -> None:
+        self.runtime = runtime
+
+    async def close(self) -> None:
+        return None
 
 
 class ApiConversationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.runtime = _ConversationRuntime()
+        self.env = mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET})
+        self.env.start()
+        app = create_app(
+            runtime_factory=mock.AsyncMock(return_value=_Composition(self.runtime))
+        )
+        self.client_context = TestClient(app)
+        self.client = self.client_context.__enter__()
+
+    def tearDown(self) -> None:
+        self.client_context.__exit__(None, None, None)
+        self.env.stop()
+
+    def _create(self, *, user_id: str = "user-1") -> dict:
+        response = self.client.post(
+            "/api/conversations",
+            headers=auth_headers(user_id=user_id),
+            json={"title": "GMV analysis", "domain_id": "commerce"},
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.json()
+
     def test_conversation_routes_require_token(self):
-        client = TestClient(create_app())
-        cases = [
+        cases = (
+            ("post", "/api/conversations", {"json": {"title": "GMV"}}),
+            ("get", "/api/conversations", {}),
+            ("get", "/api/conversations/missing", {}),
+            ("patch", "/api/conversations/missing", {"json": {"title": "New"}}),
+            ("get", "/api/conversations/missing/messages", {}),
             (
-                "post create",
                 "post",
-                "/api/conversations",
-                {"json": {"tenant_id": "demo", "user_id": "user-1", "title": "GMV"}},
-            ),
-            ("get list", "get", "/api/conversations", {}),
-            ("get one", "get", "/api/conversations/some-id", {}),
-            (
-                "patch one",
-                "patch",
-                "/api/conversations/some-id",
-                {"json": {"tenant_id": "demo", "user_id": "user-1", "title": "New"}},
-            ),
-            ("get messages", "get", "/api/conversations/some-id/messages", {}),
-            (
-                "post message",
-                "post",
-                "/api/conversations/some-id/messages",
-                {"json": {"tenant_id": "demo", "user_id": "user-1", "question": "show gmv"}},
-            ),
-        ]
-
-        for label, method, url, kwargs in cases:
-            with self.subTest(label=label):
-                response = getattr(client, method)(url, **kwargs)
-                self.assertEqual(response.status_code, 401)
-
-    def test_create_conversation_returns_session(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            response = client.post(
-                "/api/conversations",
-                headers=auth_headers(),
-                json={
-                    "tenant_id": "demo",
-                    "user_id": "user-1",
-                    "title": "GMV analysis",
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["tenant_id"], "demo")
-        self.assertEqual(payload["user_id"], "user-1")
-        self.assertEqual(payload["title"], "GMV analysis")
-        self.assertFalse(payload["archived"])
-        self.assertTrue(payload["conversation_id"])
-
-    def test_create_conversation_uses_token_identity_when_request_omits_identity(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            response = client.post(
-                "/api/conversations",
-                headers=auth_headers(tenant_id="token-tenant", user_id="token-user"),
-                json={"title": "GMV analysis"},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        payload = response.json()
-        self.assertEqual(payload["tenant_id"], "token-tenant")
-        self.assertEqual(payload["user_id"], "token-user")
-
-    def test_create_conversation_rejects_mismatched_user_id(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            response = client.post(
-                "/api/conversations",
-                headers=auth_headers(user_id="user-1"),
-                json={"tenant_id": "demo", "user_id": "user-2", "title": "GMV"},
-            )
-
-        self.assertEqual(response.status_code, 403)
-
-    def test_list_conversations_filters_by_user(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            client.post(
-                "/api/conversations",
-                headers=auth_headers(user_id="user-1"),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "User 1"},
-            )
-            client.post(
-                "/api/conversations",
-                headers=auth_headers(user_id="user-2"),
-                json={"tenant_id": "demo", "user_id": "user-2", "title": "User 2"},
-            )
-            response = client.get(
-                "/api/conversations",
-                headers=auth_headers(user_id="user-1"),
-                params={"tenant_id": "demo", "user_id": "user-1"},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual([item["title"] for item in response.json()["items"]], ["User 1"])
-
-    def test_get_conversation_requires_matching_user(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            created = client.post(
-                "/api/conversations",
-                headers=auth_headers(user_id="user-1"),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "User 1"},
-            ).json()
-            response = client.get(
-                f"/api/conversations/{created['conversation_id']}",
-                headers=auth_headers(user_id="user-2"),
-                params={"tenant_id": "demo", "user_id": "user-2"},
-            )
-
-        self.assertEqual(response.status_code, 404)
-
-    def test_patch_conversation_updates_title_and_archived_status(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            created = client.post(
-                "/api/conversations",
-                headers=auth_headers(),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "Old"},
-            ).json()
-            response = client.patch(
-                f"/api/conversations/{created['conversation_id']}",
-                headers=auth_headers(),
-                json={
-                    "tenant_id": "demo",
-                    "user_id": "user-1",
-                    "title": "New",
-                    "archived": True,
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["title"], "New")
-        self.assertTrue(response.json()["archived"])
-
-    def test_get_messages_returns_conversation_history(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            created = client.post(
-                "/api/conversations",
-                headers=auth_headers(),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
-            ).json()
-            asyncio.run(
-                store.save_turn(
-                    tenant_id="demo",
-                    conversation_id=created["conversation_id"],
-                    user_id="user-1",
-                    question="show gmv",
-                    contextualized_question="show gmv",
-                    sql="SELECT 1",
-                    rows=[{"region": "East", "gmv": "1.28M"}],
-                    answer="GMV is 100.",
-                    message_type="table",
-                    ok=True,
-                    error="",
-                    trace=[],
-                )
-            )
-            response = client.get(
-                f"/api/conversations/{created['conversation_id']}/messages",
-                headers=auth_headers(),
-                params={"tenant_id": "demo", "user_id": "user-1"},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual([item["role"] for item in response.json()["items"]], ["user", "assistant"])
-        self.assertEqual(
-            response.json()["items"][1]["metadata"]["rows"],
-            [{"region": "East", "gmv": "1.28M"}],
-        )
-        self.assertEqual(response.json()["items"][1]["metadata"]["message_type"], "table")
-
-    def test_post_message_calls_graph_with_conversation_identity(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ), mock.patch(
-            "api.routes.run_nl2sql",
-            new=mock.AsyncMock(return_value=graph_output()),
-        ) as run_nl2sql:
-            created = client.post(
-                "/api/conversations",
-                headers=auth_headers(),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
-            ).json()
-            response = client.post(
-                f"/api/conversations/{created['conversation_id']}/messages",
-                headers=auth_headers(),
-                json={
-                    "tenant_id": "demo",
-                    "user_id": "user-1",
-                    "question": " 那按地区呢 ",
-                    "execute": False,
-                    "timeout_ms": 5000,
-                    "max_limit": 200,
-                    "max_validation_attempts": 3,
-                    "memory_history_limit": 6,
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["message_type"], "text")
-        self.assertNotIn("tool_trace", response.json())
-        run_nl2sql.assert_awaited_once_with(
-            "那按地区呢",
-            tenant_id="demo",
-            execute=False,
-            conversation_id=created["conversation_id"],
-            user_id="user-1",
-            timeout_ms=5000,
-            max_limit=200,
-            max_validation_attempts=3,
-            memory_history_limit=6,
-            memory_store=store,
-        )
-
-    def test_post_message_includes_tool_trace_when_requested(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ), mock.patch(
-            "api.routes.run_nl2sql",
-            new=mock.AsyncMock(return_value=graph_output(question="show gmv")),
-        ) as run_nl2sql:
-            created = client.post(
-                "/api/conversations",
-                headers=auth_headers(),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
-            ).json()
-            response = client.post(
-                f"/api/conversations/{created['conversation_id']}/messages",
-                headers=auth_headers(),
-                json={
-                    "tenant_id": "demo",
-                    "user_id": "user-1",
-                    "question": "show gmv",
-                    "include_tool_trace": True,
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["tool_trace"][0]["canonical_name"], "generate_sql")
-        run_nl2sql.assert_awaited_once_with(
-            "show gmv",
-            tenant_id="demo",
-            execute=True,
-            conversation_id=created["conversation_id"],
-            user_id="user-1",
-            timeout_ms=10000,
-            max_limit=1000,
-            max_validation_attempts=2,
-            memory_history_limit=8,
-            memory_store=store,
-            include_tool_trace=True,
-        )
-
-    def test_post_message_response_includes_pending_memory_updates(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ), mock.patch(
-            "api.routes.run_nl2sql",
-            new=mock.AsyncMock(
-                return_value=graph_output(
-                    pending_memory_updates=[
-                        {
-                            "scope": "user",
-                            "text": "GMV excludes refunds.",
-                            "source": "explicit_user_instruction",
-                        }
-                    ]
-                )
-            ),
-        ):
-            created = client.post(
-                "/api/conversations",
-                headers=auth_headers(),
-                json={"tenant_id": "demo", "user_id": "user-1", "title": "GMV"},
-            ).json()
-            response = client.post(
-                f"/api/conversations/{created['conversation_id']}/messages",
-                headers=auth_headers(),
-                json={
-                    "tenant_id": "demo",
-                    "user_id": "user-1",
-                    "question": "remember: GMV excludes refunds",
-                },
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["pending_memory_updates"][0]["scope"], "user")
-
-    def test_post_message_rejects_unknown_conversation(self):
-        client = TestClient(create_app())
-        store = InMemoryConversationStore()
-
-        with mock.patch.dict("os.environ", {"JWT_SECRET_KEY": TEST_JWT_SECRET}), mock.patch(
-            "api.routes.create_conversation_store", return_value=store
-        ):
-            response = client.post(
                 "/api/conversations/missing/messages",
-                headers=auth_headers(),
-                json={"tenant_id": "demo", "user_id": "user-1", "question": "show gmv"},
-            )
+                {"json": {"question": "show gmv"}},
+            ),
+        )
+        for method, url, kwargs in cases:
+            with self.subTest(method=method, url=url):
+                self.assertEqual(getattr(self.client, method)(url, **kwargs).status_code, 401)
 
+    def test_crud_uses_authenticated_principal_and_runtime_facade(self):
+        created = self._create()
+        self.assertEqual(created["tenant_id"], "demo")
+        self.assertEqual(created["user_id"], "user-1")
+        self.assertEqual(created["domain_id"], "commerce")
+
+        listed = self.client.get(
+            "/api/conversations",
+            headers=auth_headers(),
+            params={"domain_id": "commerce", "limit": 20},
+        )
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual(listed.json()["items"], [created])
+        fetched = self.client.get(
+            f"/api/conversations/{created['conversation_id']}",
+            headers=auth_headers(),
+            params={"domain_id": "commerce"},
+        )
+        self.assertEqual(fetched.json(), created)
+
+        updated = self.client.patch(
+            f"/api/conversations/{created['conversation_id']}",
+            headers=auth_headers(),
+            params={"domain_id": "commerce"},
+            json={"title": "Final GMV", "archived": True},
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.json()["title"], "Final GMV")
+        self.assertTrue(updated.json()["archived"])
+
+    def test_identity_fields_are_forbidden_in_conversation_bodies(self):
+        for field in ("tenant_id", "user_id"):
+            with self.subTest(field=field):
+                response = self.client.post(
+                    "/api/conversations",
+                    headers=auth_headers(),
+                    json={"title": "GMV", field: "attacker"},
+                )
+                self.assertEqual(response.status_code, 422)
+
+    def test_messages_and_agent_turn_use_only_runtime(self):
+        created = self._create()
+        conversation_id = created["conversation_id"]
+        history = self.client.get(
+            f"/api/conversations/{conversation_id}/messages",
+            headers=auth_headers(),
+            params={"domain_id": "commerce", "limit": 50},
+        )
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual([item["role"] for item in history.json()["items"]], ["user", "assistant"])
+
+        response = self.client.post(
+            f"/api/conversations/{conversation_id}/messages",
+            headers=auth_headers(),
+            json={
+                "question": " show gmv ",
+                "domain_id": "commerce",
+                "enterprise_id": "olist",
+                "mode": "preview",
+                "requested_output": "answer",
+                "include_trace": False,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        request, principal = self.runtime.run_calls[-1]
+        self.assertEqual(request.conversation_id, conversation_id)
+        self.assertEqual(request.mode.value, "preview")
+        self.assertEqual(principal.tenant_id, "demo")
+        self.assertEqual(principal.user_id, "user-1")
+
+    def test_unknown_or_cross_user_conversation_is_not_found(self):
+        created = self._create(user_id="user-1")
+        response = self.client.get(
+            f"/api/conversations/{created['conversation_id']}",
+            headers=auth_headers(user_id="user-2"),
+            params={"domain_id": "commerce"},
+        )
         self.assertEqual(response.status_code, 404)
 
 

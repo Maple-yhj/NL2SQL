@@ -1,8 +1,10 @@
 apiVersion: dataagent.io/lock/v1
 enterprisePack: olist@1.0.0
+accessMode: tenant_scoped
 domains:
   - commerce@1.0.0
-schemaFingerprint: ebbbd15bc0bbfb3f8f51631424d85c4c5f11997ff976570f29c18b02e8d4e17a
+schemaFingerprint: 0d9c342b75693bf64c46473b0afcc117ebd54bb6dabf9143d404f24d68015bbb
+policyDigest: 28cc4664bea2eb929355cdba1669745b7c957ceadbe7ee0adae4410cb42c4ac6
 relations:
   - public.olist_orders_dataset
   - public.olist_order_items_dataset

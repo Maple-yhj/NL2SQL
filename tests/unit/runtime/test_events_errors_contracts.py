@@ -64,7 +64,11 @@ class RuntimeEventErrorContractTests(unittest.TestCase):
             type=events.AgentEventType.RUN_STARTED,
             run_id="run-1",
             sequence=0,
-            data={"mode": "plan"},
+            data=events.RunStartedPayload(
+                mode="plan",
+                enterprise_id="olist",
+                domain_id="commerce",
+            ),
         )
         self.assertEqual(event.model_dump(mode="json")["type"], "run_started")
 

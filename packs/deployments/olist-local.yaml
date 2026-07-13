@@ -9,7 +9,6 @@ spec:
   secretsProvider: environment
   datasourceSecrets:
     secret://olist/local/database: DATABASE_URL
-  memoryDatabaseRef: MEMORY_DATABASE_URL
   runtime:
     maxToolCalls: 24
     maxCorrectionRounds: 2

@@ -3,9 +3,9 @@ requires = ["setuptools>=75"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nl2sql-langgraph"
+name = "data-agent"
 version = "0.1.0"
-description = "A secure NL2SQL workflow built with LangChain and LangGraph"
+description = "A governed, configuration-driven Data Agent runtime"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -15,7 +15,6 @@ dependencies = [
   "langchain-google-genai>=4.2",
   "langchain-openai>=1.1",
   "langgraph>=1.2",
-  "pgvector>=0.4",
   "pydantic>=2.11,<3",
   "psycopg2-binary>=2.9",
   "PyYAML>=6.0",
@@ -31,11 +30,31 @@ dev = [
   "jsonschema>=4.23",
   "langgraph-cli[inmem]>=0.4",
 ]
-memory = ["graphiti-core>=0.19"]
+
+[project.scripts]
+data-agent = "data_agent.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["data_agent*"]
+include = ["data_agent*", "api*"]
+
+[tool.setuptools.data-files]
+"share/data-agent/packs/domains/commerce" = [
+  "packs/domains/commerce/pack.yaml",
+  "packs/domains/commerce/semantic-model.yaml",
+  "packs/domains/commerce/metrics.yaml",
+  "packs/domains/commerce/vocabulary.zh-CN.yaml",
+  "packs/domains/commerce/policies.yaml",
+  "packs/domains/commerce/evals.yaml",
+]
+"share/data-agent/packs/enterprises/olist" = [
+  "packs/enterprises/olist/pack.yaml",
+  "packs/enterprises/olist/pack.lock",
+]
+"share/data-agent/packs/deployments" = ["packs/deployments/olist-local.yaml"]
+"share/data-agent" = ["schema_catalog.json"]
+"share/data-agent/generated/bundles" = ["generated/bundles/olist-local.json"]
+"share/data-agent/generated/semantic" = ["generated/semantic/commerce.json"]

@@ -9,7 +9,16 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 class SrcPackagingContractTests(unittest.TestCase):
-    def test_pyproject_discovers_data_agent_from_src_with_direct_dependencies(self) -> None:
+    def test_readme_documents_supported_local_wheel_build_command(self) -> None:
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertNotIn("python -m build", readme)
+        self.assertIn(
+            "python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist",
+            readme,
+        )
+
+    def test_pyproject_discovers_installable_data_agent_product(self) -> None:
         document = tomllib.loads(
             (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
         )
@@ -18,12 +27,46 @@ class SrcPackagingContractTests(unittest.TestCase):
         normalized = {dependency.lower() for dependency in dependencies}
         self.assertTrue(any(item.startswith("pydantic>=2") for item in normalized))
         self.assertTrue(any(item.startswith("pyyaml>=") for item in normalized))
+        self.assertEqual(document["project"]["name"], "data-agent")
 
         setuptools = document["tool"]["setuptools"]
         self.assertEqual(setuptools["package-dir"], {"": "src"})
         self.assertEqual(setuptools["packages"]["find"]["where"], ["src"])
         self.assertIn("data_agent*", setuptools["packages"]["find"]["include"])
-        self.assertNotIn("scripts", document["project"])
+        self.assertIn("api*", setuptools["packages"]["find"]["include"])
+        self.assertEqual(
+            document["project"]["scripts"],
+            {"data-agent": "data_agent.cli:main"},
+        )
+
+        data_files = setuptools["data-files"]
+        self.assertEqual(
+            set(data_files["share/data-agent/packs/domains/commerce"]),
+            {
+                "packs/domains/commerce/pack.yaml",
+                "packs/domains/commerce/semantic-model.yaml",
+                "packs/domains/commerce/metrics.yaml",
+                "packs/domains/commerce/vocabulary.zh-CN.yaml",
+                "packs/domains/commerce/policies.yaml",
+                "packs/domains/commerce/evals.yaml",
+            },
+        )
+        self.assertEqual(
+            set(data_files["share/data-agent/packs/enterprises/olist"]),
+            {
+                "packs/enterprises/olist/pack.yaml",
+                "packs/enterprises/olist/pack.lock",
+            },
+        )
+        self.assertEqual(
+            data_files["share/data-agent/packs/deployments"],
+            ["packs/deployments/olist-local.yaml"],
+        )
+        self.assertEqual(data_files["share/data-agent"], ["schema_catalog.json"])
+        self.assertEqual(
+            data_files["share/data-agent/generated/bundles"],
+            ["generated/bundles/olist-local.json"],
+        )
 
         dev_dependencies = {
             dependency.lower()

@@ -73,7 +73,10 @@ def _enterprise_document() -> dict:
                 }
             },
             "bindings": {},
-            "policies": {},
+            "policies": {
+                "accessMode": "single_tenant",
+                "relationAllowlist": ["public.olist_orders_dataset"],
+            },
         },
     }
 

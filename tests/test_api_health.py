@@ -12,7 +12,7 @@ class ApiHealthTests(unittest.TestCase):
         response = client.get("/health")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ok": True, "service": "nl2sql-api"})
+        self.assertEqual(response.json(), {"ok": True, "service": "data-agent-api"})
 
 
 if __name__ == "__main__":

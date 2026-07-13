@@ -1,8 +1,14 @@
 import os
+import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
-from core.llm import LangChainLLM, create_llm
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from data_agent.adapters.llm import LangChainLLM, create_llm
 
 
 class FakeMessage:
@@ -39,10 +45,10 @@ class LLMAdapterTests(unittest.IsolatedAsyncioTestCase):
             },
             clear=True,
         ), mock.patch(
-            "core.llm.load_dotenv",
+            "data_agent.adapters.llm.load_dotenv",
             create=True,
             side_effect=AssertionError("runtime dotenv load is blocking"),
-        ), mock.patch("core.llm.ChatOpenAI") as chat_openai:
+        ), mock.patch("data_agent.adapters.llm.ChatOpenAI") as chat_openai:
             result = create_llm()
 
         self.assertIsInstance(result, LangChainLLM)

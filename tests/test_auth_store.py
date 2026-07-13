@@ -385,7 +385,7 @@ class RefreshTokenHashTests(unittest.TestCase):
 
 class CreateAuthStoreTests(unittest.TestCase):
     def test_create_auth_store_loads_project_environment_before_reading_env_dsn(self):
-        for key in ("AUTH_DATABASE_URL", "MEMORY_DATABASE_URL", "MEMORY_POSTGRES_DSN"):
+        for key in ("AUTH_DATABASE_URL", "DATABASE_URL"):
             os.environ.pop(key, None)
 
         with mock.patch.dict(
@@ -397,6 +397,18 @@ class CreateAuthStoreTests(unittest.TestCase):
 
         self.assertIsInstance(store, PostgresAuthStore)
         self.assertEqual(store.dsn, "postgresql://auth")
+        load_environment.assert_called_once_with()
+
+    def test_create_auth_store_defaults_to_the_governed_database_url(self):
+        with mock.patch.dict(
+            os.environ,
+            {"DATABASE_URL": "postgresql://data-agent"},
+            clear=True,
+        ), mock.patch("api.auth_store.load_project_environment") as load_environment:
+            store = create_auth_store()
+
+        self.assertIsInstance(store, PostgresAuthStore)
+        self.assertEqual(store.dsn, "postgresql://data-agent")
         load_environment.assert_called_once_with()
 
 

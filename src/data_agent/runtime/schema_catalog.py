@@ -43,9 +43,7 @@ _SAFE_CASTS: set[tuple[str, str]] = {
     ("integer", "string"),
     ("integer", "decimal"),
     ("decimal", "string"),
-    ("decimal", "integer"),
     ("date", "datetime"),
-    ("datetime", "date"),
 }
 
 
@@ -59,9 +57,13 @@ def load_schema_catalog(path: str | Path) -> list[dict[str, Any]]:
         raise ValueError(f"could not load schema catalog {source}") from exc
     if not isinstance(value, list):
         raise ValueError("schema catalog must be a list")
+    table_names: set[str] = set()
     for index, table in enumerate(value):
         if not isinstance(table, dict) or not isinstance(table.get("table"), str):
             raise ValueError(f"schema catalog entry {index} has no table name")
+        if table["table"] in table_names:
+            raise ValueError(f"schema catalog has duplicate relation {table['table']!r}")
+        table_names.add(table["table"])
         columns = table.get("columns")
         if not isinstance(columns, list):
             raise ValueError(f"schema catalog table {table['table']!r} has no columns")
@@ -76,6 +78,22 @@ def load_schema_catalog(path: str | Path) -> list[dict[str, Any]]:
             if name in seen:
                 raise ValueError(f"schema catalog table {table['table']!r} has duplicate column")
             seen.add(name)
+        unique_keys = table.get("unique_keys")
+        if not isinstance(unique_keys, list) or not unique_keys:
+            raise ValueError(
+                f"schema catalog table {table['table']!r} has no declared unique key"
+            )
+        for key in unique_keys:
+            if (
+                not isinstance(key, list)
+                or not key
+                or not all(isinstance(column, str) for column in key)
+                or len(key) != len(set(key))
+                or set(key) - seen
+            ):
+                raise ValueError(
+                    f"schema catalog table {table['table']!r} has invalid unique key"
+                )
     return value
 
 
@@ -104,12 +122,17 @@ def schema_fingerprint(catalog: Iterable[Mapping[str, Any]]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _catalog_index(catalog: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, str]]:
-    index: dict[str, dict[str, str]] = {}
+def _catalog_index(catalog: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, dict[str, Any]]]:
+    index: dict[str, dict[str, dict[str, Any]]] = {}
     for table in catalog:
         name = str(table["table"])
+        if name in index:
+            raise ValueError(f"schema catalog has duplicate relation {name!r}")
         index[name] = {
-            str(column["name"]): str(column["type"])
+            str(column["name"]): {
+                "type": str(column["type"]),
+                "nullable": bool(column.get("nullable", True)),
+            }
             for column in table.get("columns", [])
         }
     return index
@@ -117,6 +140,18 @@ def _catalog_index(catalog: Iterable[Mapping[str, Any]]) -> dict[str, dict[str, 
 
 def _canonical_type(data_type: str) -> str | None:
     return _CATALOG_TYPE_ALIASES.get(data_type.strip().lower())
+
+
+def _constant_matches_type(value: object, canonical_type: str) -> bool:
+    if canonical_type == "string":
+        return isinstance(value, str)
+    if canonical_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if canonical_type == "decimal":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if canonical_type == "boolean":
+        return isinstance(value, bool)
+    return False
 
 
 def validate_enterprise_binding_schema(
@@ -131,7 +166,21 @@ def validate_enterprise_binding_schema(
 
     catalog = list(catalog)
     index = _catalog_index(catalog)
+    unique_keys_by_relation = {
+        str(table["table"]): {
+            tuple(str(column) for column in key)
+            for key in table.get("unique_keys", [])
+        }
+        for table in catalog
+    }
     relation_allowlist = set(enterprise_binding.spec.policies.relation_allowlist)
+    known_relations = {f"public.{name}" for name in index}
+    unknown_allowlist = relation_allowlist - known_relations
+    if unknown_allowlist:
+        raise ValueError(
+            "relation allowlist references unknown relation(s): "
+            + ", ".join(sorted(unknown_allowlist))
+        )
     for entity_id, binding in enterprise_binding.spec.bindings.items():
         if relation_allowlist and binding.relation not in relation_allowlist:
             raise ValueError(f"binding {entity_id!r} relation is not allowed")
@@ -139,18 +188,27 @@ def validate_enterprise_binding_schema(
             schema, relation = binding.relation.split(".", 1)
         except ValueError as exc:  # defensive; pydantic validates this too
             raise ValueError(f"invalid relation {binding.relation!r}") from exc
-        if schema != "public" or binding.relation not in {
-            f"public.{name}" for name in index
-        }:
+        if schema != "public" or binding.relation not in known_relations:
             raise ValueError(f"binding {entity_id!r} references unknown relation")
         columns = index[relation]
         entity = domain_pack.spec.entities[entity_id]
         for field_name, field_binding in binding.fields.items():
+            if field_binding.value is not None:
+                if field_binding.column is not None:
+                    raise ValueError(f"binding {entity_id!r} constant field has a physical column")
+                if not _constant_matches_type(
+                    field_binding.value, entity.fields[field_name].type
+                ):
+                    raise ValueError(
+                        f"binding {entity_id!r} field {field_name!r} has incompatible constant type"
+                    )
+                continue
             if field_binding.column not in columns:
                 raise ValueError(
                     f"binding {entity_id!r} field {field_name!r} references unknown column"
                 )
-            catalog_type = _canonical_type(columns[field_binding.column])
+            catalog_column = columns[field_binding.column]
+            catalog_type = _canonical_type(catalog_column["type"])
             canonical_type = entity.fields[field_name].type
             target_type = field_binding.cast or canonical_type
             compatible = (
@@ -165,6 +223,38 @@ def validate_enterprise_binding_schema(
                 raise ValueError(
                     f"binding {entity_id!r} field {field_name!r} has incompatible type"
                 )
+            if field_binding.coalesce_value is not None and not _constant_matches_type(
+                field_binding.coalesce_value, canonical_type
+            ):
+                raise ValueError(
+                    f"binding {entity_id!r} field {field_name!r} has incompatible coalesce type"
+                )
+            if entity.fields[field_name].type == "datetime" and not field_binding.timezone:
+                raise ValueError(
+                    f"binding {entity_id!r} datetime field {field_name!r} requires timezone"
+                )
+            if (
+                enterprise_binding.spec.policies.access_mode == "tenant_scoped"
+                and not entity.fields[field_name].nullable
+                and catalog_column["nullable"]
+                and field_binding.null_policy == "preserve"
+            ):
+                raise ValueError(
+                    f"binding {entity_id!r} non-nullable field {field_name!r} preserves catalog nulls"
+                )
+
+        grain_columns = []
+        for grain_field in binding.grain:
+            grain_binding = binding.fields[grain_field]
+            if grain_binding.column is None:
+                raise ValueError(f"binding {entity_id!r} grain field must map to a column")
+            grain_columns.append(grain_binding.column)
+        if len(grain_columns) != len(set(grain_columns)):
+            raise ValueError(f"binding {entity_id!r} physical grain columns are not unique")
+        if tuple(grain_columns) not in unique_keys_by_relation[relation]:
+            raise ValueError(
+                f"binding {entity_id!r} physical grain is not a declared unique key"
+            )
 
     # Relationship key columns must be present in the corresponding entity
     # bindings and match the canonical relationship endpoints.
