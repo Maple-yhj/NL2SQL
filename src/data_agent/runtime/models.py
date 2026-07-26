@@ -75,9 +75,30 @@ class AgentRequest(ContractModel):
     enterprise_id: NonBlankText = "olist"
     domain_id: NonBlankText = "commerce"
     conversation_id: NonBlankText | None = None
+    source_id: NonBlankText | None = None
+    source_version: int | None = Field(default=None, ge=1)
+    binding_id: NonBlankText | None = None
+    binding_version: int | None = Field(default=None, ge=1)
     mode: AgentMode = AgentMode.EXECUTE
     requested_output: NonBlankText = "answer"
     include_trace: bool = False
+
+    @model_validator(mode="after")
+    def validate_datasource_pins(self) -> "AgentRequest":
+        pins = (
+            self.source_id,
+            self.source_version,
+            self.binding_id,
+            self.binding_version,
+        )
+        if any(item is not None for item in pins) and not all(
+            item is not None for item in pins
+        ):
+            raise ValueError(
+                "source_id, source_version, binding_id, and binding_version "
+                "must be supplied together"
+            )
+        return self
 
 
 class PrincipalContext(ContractModel):
@@ -96,6 +117,13 @@ class RunBudget(ContractModel):
 
 class AgentRow(RootModel[dict[NonBlankText, JsonValue]]):
     model_config = ConfigDict(frozen=True, revalidate_instances="always")
+
+
+class ChartSpec(PublicContractModel):
+    chart_type: Literal["bar"] = "bar"
+    title: NonBlankText
+    x_field: NonBlankText
+    y_field: NonBlankText
 
 
 class AgentTraceEntry(PublicContractModel):
@@ -179,6 +207,7 @@ class AgentResponse(PublicContractModel):
     sql: str | None = None
     message_type: NonBlankText = "text"
     rows: tuple[AgentRow, ...] = ()
+    chart: ChartSpec | None = None
     answer: str | None = None
     error: AgentError | None = None
     trace: tuple[AgentTraceEntry, ...] = ()
@@ -204,6 +233,26 @@ class AgentResponse(PublicContractModel):
             "rows",
             tuple(AgentRow.model_validate(row.root) for row in self.rows),
         )
+        if self.chart is not None:
+            chart = ChartSpec.model_validate(dict(self.chart.__dict__))
+            columns = {
+                column
+                for row in self.rows
+                for column in row.root
+            }
+            if not self.rows or not {
+                chart.x_field,
+                chart.y_field,
+            }.issubset(columns):
+                raise ValueError(
+                    "chart fields must reference returned result columns"
+                )
+            if not any(
+                _is_finite_chart_number(row.root.get(chart.y_field))
+                for row in self.rows
+            ):
+                raise ValueError("chart y_field requires numeric result values")
+            object.__setattr__(self, "chart", chart)
         object.__setattr__(
             self,
             "trace",
@@ -227,3 +276,17 @@ class AgentResponse(PublicContractModel):
                 raw_error.update(error_extra)
             object.__setattr__(self, "error", AgentError.model_validate(raw_error))
         return self
+
+
+def _is_finite_chart_number(value: JsonValue | None) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value == value and value not in {float("inf"), float("-inf")}
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return False
+        return parsed == parsed and parsed not in {float("inf"), float("-inf")}
+    return False

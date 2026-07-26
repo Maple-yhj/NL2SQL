@@ -28,6 +28,7 @@ class StudioOutput(TypedDict):
     sql: str | None
     message_type: str
     rows: list[dict[str, Any]]
+    chart: dict[str, Any] | None
     answer: str | None
     error: dict[str, Any] | None
     trace: list[dict[str, Any]]
@@ -47,6 +48,7 @@ class StudioState(TypedDict, total=False):
     sql: str | None
     message_type: str
     rows: list[dict[str, Any]]
+    chart: dict[str, Any] | None
     answer: str | None
     error: dict[str, Any] | None
     trace: list[dict[str, Any]]

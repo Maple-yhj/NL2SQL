@@ -48,6 +48,26 @@ Set `DATABASE_URL`, one model provider/key, and `JWT_SECRET_KEY`. The default
 runtime uses the same PostgreSQL database for OList data, Data Agent memory,
 and auth unless `AUTH_DATABASE_URL` is explicitly set.
 
+The planner is provider-neutral. Set `LLM_PROVIDER` and an explicit
+`DEFAULT_MODEL_NAME`, then configure the matching credential:
+
+| Model family | `LLM_PROVIDER` | Credential | Optional endpoint override |
+| --- | --- | --- | --- |
+| GPT / OpenAI | `openai` or `gpt` | `OPENAI_API_KEY` | `OPENAI_BASE_URL` |
+| Qwen | `qwen` | `DASHSCOPE_API_KEY` | `QWEN_BASE_URL` |
+| Gemini | `google` or `gemini` | `GEMINI_API_KEY` | `GEMINI_BASE_URL` |
+| Claude | `anthropic` or `claude` | `ANTHROPIC_API_KEY` | `ANTHROPIC_BASE_URL` |
+| GLM | `glm` or `zhipu` | `ZAI_API_KEY` | `GLM_BASE_URL` |
+| DeepSeek | `deepseek` | `DEEPSEEK_API_KEY` | `DEEPSEEK_BASE_URL` |
+| Other compatible service | `openai-compatible` | `LLM_API_KEY` | `LLM_BASE_URL` (required) |
+
+Provider-specific adapters normalize system/user messages, output token
+limits, and text-block responses behind the same runtime protocol. Qwen, GLM,
+DeepSeek, and custom services use their OpenAI-compatible Chat Completions
+endpoints; Gemini and Claude use native adapters. For Qwen production
+deployments, set the workspace-specific `QWEN_BASE_URL` issued for the selected
+Alibaba Cloud region.
+
 ```powershell
 psql $env:DATABASE_URL -f db/data_agent_memory.sql
 psql $env:DATABASE_URL -f db/auth.sql
@@ -93,6 +113,35 @@ new product contract only:
 
 The terminal `AgentResponse` contains the logical plan, compiled SQL, bounded
 rows, answer, safe trace, pending memory proposals, and immutable version pins.
+
+## User-selected datasources
+
+The web datasource panel accepts CSV, XLSX, and SQLite uploads, discovers their
+catalog, and requires an explicit semantic-field confirmation before querying.
+Uploads become immutable read-only snapshots under `DATA_AGENT_STATE_DIR`;
+registry metadata, binding versions, and conversation pins are stored in the
+separate control-plane SQLite database.
+
+PostgreSQL registration accepts a `credential_ref`, never a password. A
+reference such as `secret://team/warehouse` is resolved at runtime from
+`DATA_SOURCE_SECRET_TEAM_WAREHOUSE`. The first catalog request opens the
+deployment-side secret, snapshots the accessible schema, and registers the same
+governed read-only connector used by the query path.
+
+Datasource-backed requests pin all four authority fields together:
+
+```json
+{
+  "source_id": "orders",
+  "source_version": 1,
+  "binding_id": "orders-binding-1",
+  "binding_version": 1
+}
+```
+
+The model sees logical field references only. Physical identifiers are added
+later by the deterministic compiler, and stale or cross-conversation pins are
+rejected before planning.
 
 ## Pack and contract generation
 

@@ -35,6 +35,33 @@ describe("createAssistantViewModel", () => {
     expect(viewModel.sql).toBe("SELECT region, SUM(amount) AS gmv FROM orders");
   });
 
+  it("keeps the governed chart and its source table together", () => {
+    const message: ChatMessage = {
+      id: "assistant-chart",
+      role: "assistant",
+      content: "Sales by city.",
+      metadata: {
+        rows: [
+          { city: "Shanghai", sales: 12.5 },
+          { city: "Beijing", sales: 8 },
+        ],
+        chart: {
+          chart_type: "bar",
+          title: "Sales by city",
+          x_field: "city",
+          y_field: "sales",
+        },
+        message_type: "chart",
+        ok: true,
+      },
+    };
+
+    const viewModel = createAssistantViewModel(message);
+
+    expect(viewModel.chart?.y_field).toBe("sales");
+    expect(viewModel.showTable).toBe(true);
+  });
+
   it("preserves an explicit text response even when rows are present", () => {
     const message: ChatMessage = {
       id: "assistant-2",

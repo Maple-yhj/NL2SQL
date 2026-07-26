@@ -29,9 +29,40 @@ export function parseListeningPids(output, port) {
   return Array.from(pids);
 }
 
-export async function findListeningPids(port, run = execFileAsync) {
-  const { stdout } = await run("netstat", ["-ano"], { windowsHide: true });
-  return parseListeningPids(stdout, port);
+export function parsePidList(output) {
+  return Array.from(
+    new Set(
+      output
+        .split(/\r?\n/)
+        .map((value) => Number(value.trim()))
+        .filter((pid) => Number.isInteger(pid) && pid > 0),
+    ),
+  );
+}
+
+export async function findListeningPids(
+  port,
+  run = execFileAsync,
+  platform = process.platform,
+) {
+  if (platform === "win32") {
+    const { stdout } = await run("netstat", ["-ano"], { windowsHide: true });
+    return parseListeningPids(stdout, port);
+  }
+
+  try {
+    const { stdout } = await run(
+      "lsof",
+      ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN", "-t"],
+      { windowsHide: true },
+    );
+    return parsePidList(stdout);
+  } catch (error) {
+    if (error?.code === 1) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function stopProcesses(pids, run = execFileAsync, platform = process.platform) {
@@ -47,7 +78,9 @@ export async function stopProcesses(pids, run = execFileAsync, platform = proces
 export async function freePort(port, options = {}) {
   const run = options.run ?? execFileAsync;
   const platform = options.platform ?? process.platform;
-  const pids = (await findListeningPids(port, run)).filter((pid) => pid !== process.pid);
+  const pids = (await findListeningPids(port, run, platform)).filter(
+    (pid) => pid !== process.pid,
+  );
 
   await stopProcesses(pids, run, platform);
   return pids;

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from data_agent.runtime.binding import BindingCompiler
+from data_agent.tools.connectors import DataSourceConnector
 
 from ..models import ProviderContext, RetryPolicy, ToolErrorCode, ToolSpec
 from .contracts import (
@@ -19,7 +20,7 @@ from .evidence import EvidenceSigner
 QUERY_COMPILE_SPEC = ToolSpec(
     name="query.compile",
     version="1.0.0",
-    description="Bind a governed logical plan and compile a parameterized PostgreSQL query.",
+    description="Bind a governed logical plan and compile a parameterized query.",
     input_schema=QueryCompileInput,
     output_schema=QueryCompileOutput,
     risk_level="medium",
@@ -44,7 +45,7 @@ QUERY_EXECUTE_SPEC = ToolSpec(
     idempotency="safe",
     timeout_seconds=10,
     retry_policy=RetryPolicy(max_attempts=1),
-    eval_tags=("postgres", "authorized-read"),
+    eval_tags=("datasource", "authorized-read"),
 )
 
 
@@ -82,7 +83,7 @@ class QueryExecuteProvider:
 
     def __init__(
         self,
-        connector: object,
+        connector: DataSourceConnector,
         compiler: BindingCompiler,
         evidence_signer: EvidenceSigner,
     ) -> None:

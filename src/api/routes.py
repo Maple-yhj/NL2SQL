@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import JSONResponse
 
 from api.auth import (
@@ -20,17 +31,34 @@ from api.auth_store import create_auth_store, hash_refresh_token
 from api.schemas import (
     AuthUserResponse,
     ConversationCreateRequest,
+    ConversationDataSourceBindingResponse,
     ConversationListResponse,
     ConversationMessageRequest,
     ConversationMessagesResponse,
     ConversationResponse,
     ConversationUpdateRequest,
+    DataSourceCatalogResponse,
+    DataSourceListResponse,
+    DataSourceResponse,
     LoginRequest,
     LogoutRequest,
     LogoutResponse,
     Nl2SqlRequest,
+    PostgresDataSourceRequest,
     RefreshRequest,
+    SemanticBindingCreateRequest,
+    SemanticBindingListResponse,
     TokenResponse,
+)
+from api.datasource_service import DataSourceService
+from api.dataset_query_service import DataSourceQueryService
+from data_agent.datasources import (
+    DataSourceDefinition,
+    DataSourceRegistryError,
+    DataSourceRegistryErrorCode,
+    FileSnapshotError,
+    FileSnapshotErrorCode,
+    SemanticBindingRecord,
 )
 from data_agent.runtime import (
     AgentRequest,
@@ -165,15 +193,214 @@ def get_runtime(request: Request) -> ProductRuntime:
     return runtime
 
 
+def get_data_source_service(request: Request) -> DataSourceService:
+    service = getattr(request.app.state, "data_source_service", None)
+    if service is None:
+        raise RuntimeError("Datasource service is unavailable outside app lifespan")
+    return service
+
+
+def get_data_source_query_service(
+    request: Request,
+) -> DataSourceQueryService | None:
+    return getattr(request.app.state, "data_source_query_service", None)
+
+
+@router.get("/api/data-sources", response_model=DataSourceListResponse)
+async def list_data_sources(
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    sources = await service.list_sources(tenant_id=principal.tenant_id)
+    return DataSourceListResponse(
+        items=[_data_source_response(source) for source in sources]
+    )
+
+
+@router.post(
+    "/api/data-sources/postgres",
+    response_model=DataSourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def register_postgres_data_source(
+    request: PostgresDataSourceRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        source = await service.register_postgres(
+            tenant_id=principal.tenant_id,
+            source_id=request.source_id,
+            name=request.name,
+            credential_ref=request.credential_ref,
+            options={
+                "host": request.host,
+                "port": request.port,
+                "database": request.database,
+                "ssl_mode": request.ssl_mode,
+            },
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+    return _data_source_response(source)
+
+
+@router.post(
+    "/api/data-sources/files",
+    response_model=DataSourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_file_data_source(
+    files: Annotated[list[UploadFile], File()],
+    name: Annotated[str, Form(min_length=1)],
+    source_id: Annotated[str | None, Form()] = None,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        source = await service.import_file_source(
+            tenant_id=principal.tenant_id,
+            source_id=source_id,
+            name=name.strip(),
+            uploads=files,
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+    return _data_source_response(source)
+
+
+@router.post(
+    "/api/data-sources/sqlite",
+    response_model=DataSourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_sqlite_data_source(
+    file: Annotated[UploadFile, File()],
+    name: Annotated[str, Form(min_length=1)],
+    source_id: Annotated[str | None, Form()] = None,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        source = await service.import_sqlite_source(
+            tenant_id=principal.tenant_id,
+            source_id=source_id,
+            name=name.strip(),
+            upload=file,
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+    return _data_source_response(source)
+
+
+@router.get(
+    "/api/data-sources/{source_id}/catalog",
+    response_model=DataSourceCatalogResponse,
+)
+async def get_data_source_catalog(
+    source_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        snapshot = await service.get_snapshot(
+            tenant_id=principal.tenant_id,
+            source_id=source_id,
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+    return DataSourceCatalogResponse(
+        source_id=snapshot.source_id,
+        version=snapshot.version,
+        fingerprint=snapshot.fingerprint,
+        catalog=snapshot.catalog,
+    )
+
+
+@router.get(
+    "/api/data-sources/{source_id}/bindings",
+    response_model=SemanticBindingListResponse,
+)
+async def list_data_source_bindings(
+    source_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    items = await service.list_bindings(
+        tenant_id=principal.tenant_id,
+        source_id=source_id,
+    )
+    return SemanticBindingListResponse(items=list(items))
+
+
+@router.post(
+    "/api/data-sources/{source_id}/bindings",
+    response_model=SemanticBindingRecord,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_data_source_binding(
+    source_id: str,
+    request: SemanticBindingCreateRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        return await service.create_binding(
+            tenant_id=principal.tenant_id,
+            source_id=source_id,
+            binding_id=request.binding_id,
+            domain_id=request.domain_id,
+            mappings=request.mappings,
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+
+
+@router.post(
+    "/api/data-sources/{source_id}/bindings/{binding_id}/activate",
+    response_model=SemanticBindingRecord,
+)
+async def activate_data_source_binding(
+    source_id: str,
+    binding_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        return await service.activate_binding(
+            tenant_id=principal.tenant_id,
+            source_id=source_id,
+            binding_id=binding_id,
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+
+
 @router.post("/api/nl2sql", response_model=AgentResponse)
 async def nl2sql(
     request: Nl2SqlRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
+    data_query: DataSourceQueryService | None = Depends(
+        get_data_source_query_service
+    ),
 ):
     runtime_principal = _runtime_principal(principal)
     try:
-        response = await _collect_terminal_response(runtime, request, runtime_principal)
+        if request.source_id is not None:
+            if data_query is None:
+                response = _unavailable_dataset_response(
+                    request,
+                    runtime_principal,
+                )
+            else:
+                response = await data_query.run(request, runtime_principal)
+        else:
+            response = await _collect_terminal_response(
+                runtime,
+                request,
+                runtime_principal,
+            )
     except Exception:
         response = _safe_internal_response(request, runtime_principal)
     status_code = _status_for_response(response)
@@ -219,6 +446,23 @@ async def list_conversations(
         return ConversationListResponse(items=list(items))
     except Exception as exc:
         raise _safe_server_error() from exc
+
+
+@router.get(
+    "/api/conversations/{conversation_id}/data-source-binding",
+    response_model=ConversationDataSourceBindingResponse,
+)
+async def get_conversation_data_source_binding(
+    conversation_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    binding = await service.get_conversation_binding(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        conversation_id=conversation_id.strip(),
+    )
+    return ConversationDataSourceBindingResponse(binding=binding)
 
 
 @router.get(
@@ -312,6 +556,9 @@ async def send_conversation_message(
     request: ConversationMessageRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
+    data_query: DataSourceQueryService | None = Depends(
+        get_data_source_query_service
+    ),
 ):
     path_conversation_id = conversation_id.strip()
     if request.conversation_id not in (None, path_conversation_id):
@@ -321,21 +568,46 @@ async def send_conversation_message(
         )
     runtime_principal = _runtime_principal(principal)
     try:
-        conversation = await runtime.get_conversation(
-            principal=runtime_principal,
-            domain_id=request.domain_id,
-            conversation_id=path_conversation_id,
-        )
-        if conversation is None:
-            raise HTTPException(status_code=404, detail="Conversation not found")
         payload = request.model_dump(mode="python")
         payload["conversation_id"] = path_conversation_id
         agent_request = AgentRequest.model_validate(payload)
-        response = await _collect_terminal_response(
-            runtime,
-            agent_request,
-            runtime_principal,
-        )
+        if agent_request.source_id is not None:
+            conversation = await runtime.get_conversation(
+                principal=runtime_principal,
+                domain_id="commerce",
+                conversation_id=path_conversation_id,
+            )
+            if conversation is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Conversation not found",
+                )
+            if data_query is None:
+                response = _unavailable_dataset_response(
+                    agent_request,
+                    runtime_principal,
+                )
+            else:
+                response = await data_query.run(
+                    agent_request,
+                    runtime_principal,
+                )
+        else:
+            conversation = await runtime.get_conversation(
+                principal=runtime_principal,
+                domain_id=request.domain_id,
+                conversation_id=path_conversation_id,
+            )
+            if conversation is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Conversation not found",
+                )
+            response = await _collect_terminal_response(
+                runtime,
+                agent_request,
+                runtime_principal,
+            )
     except HTTPException:
         raise
     except Exception:
@@ -347,6 +619,24 @@ async def send_conversation_message(
             content=response.model_dump(mode="json"),
         )
     return response
+
+
+def _unavailable_dataset_response(
+    request: AgentRequest,
+    principal: PrincipalContext,
+) -> AgentResponse:
+    return AgentResponse(
+        ok=False,
+        question=request.question,
+        contextualized_question=request.question,
+        conversation_id=request.conversation_id,
+        tenant_id=principal.tenant_id,
+        answer="用户数据源查询服务尚未配置模型。",
+        error=AgentError(
+            code=ErrorCode.CONFIG_INVALID,
+            message="用户数据源查询服务尚未配置模型。",
+        ),
+    )
 
 
 async def _collect_terminal_response(
@@ -417,6 +707,40 @@ def _safe_server_error() -> HTTPException:
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Internal server error",
     )
+
+
+def _data_source_response(
+    source: DataSourceDefinition,
+) -> DataSourceResponse:
+    return DataSourceResponse(
+        source_id=source.source_id,
+        name=source.name,
+        kind=source.kind,
+        status=source.status,
+        active_snapshot_version=source.active_snapshot_version,
+        options=source.options,
+        created_at=source.created_at.isoformat(),
+        updated_at=source.updated_at.isoformat(),
+    )
+
+
+def _data_source_error(
+    error: DataSourceRegistryError | FileSnapshotError | ValueError,
+) -> HTTPException:
+    if isinstance(error, DataSourceRegistryError):
+        status_code = {
+            DataSourceRegistryErrorCode.NOT_FOUND: status.HTTP_404_NOT_FOUND,
+            DataSourceRegistryErrorCode.ALREADY_EXISTS: status.HTTP_409_CONFLICT,
+            DataSourceRegistryErrorCode.VERSION_CONFLICT: status.HTTP_409_CONFLICT,
+        }.get(error.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    elif (
+        isinstance(error, FileSnapshotError)
+        and error.code == FileSnapshotErrorCode.SIZE_LIMIT_EXCEEDED
+    ):
+        status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
+    else:
+        status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    return HTTPException(status_code=status_code, detail=str(error))
 
 
 def _principal_from_user(user: dict, token_id: str) -> AuthPrincipal:

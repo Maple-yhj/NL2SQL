@@ -4,8 +4,12 @@ import type {
   Conversation,
   ConversationUpdatePayload,
   ConversationMessageResponse,
+  DataSource,
+  DataSourceCatalog,
   LoginPayload,
   SendMessagePayload,
+  SemanticBinding,
+  SemanticBindingCreatePayload,
   StoredSession,
 } from "./types";
 import { isAgentResponse } from "./agentResponseValidator";
@@ -83,6 +87,14 @@ export class ApiClient {
     );
   }
 
+  getConversationDataSourceBinding(
+    conversationId: string,
+  ): Promise<{ binding: SemanticBinding | null }> {
+    return this.request<{ binding: SemanticBinding | null }>(
+      `/api/conversations/${encodeURIComponent(conversationId)}/data-source-binding`,
+    );
+  }
+
   sendMessage(
     conversationId: string,
     payload: SendMessagePayload,
@@ -99,6 +111,83 @@ export class ApiClient {
     );
   }
 
+  listDataSources(): Promise<{ items: DataSource[] }> {
+    return this.request<{ items: DataSource[] }>("/api/data-sources");
+  }
+
+  getDataSourceCatalog(sourceId: string): Promise<DataSourceCatalog> {
+    return this.request<DataSourceCatalog>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/catalog`,
+    );
+  }
+
+  uploadFileDataSource(
+    name: string,
+    files: File[],
+    sourceId = "",
+  ): Promise<DataSource> {
+    const body = new FormData();
+    body.set("name", name);
+    if (sourceId.trim()) {
+      body.set("source_id", sourceId.trim());
+    }
+    for (const file of files) {
+      body.append("files", file);
+    }
+    return this.request<DataSource>("/api/data-sources/files", {
+      method: "POST",
+      body,
+    });
+  }
+
+  uploadSqliteDataSource(
+    name: string,
+    file: File,
+    sourceId = "",
+  ): Promise<DataSource> {
+    const body = new FormData();
+    body.set("name", name);
+    if (sourceId.trim()) {
+      body.set("source_id", sourceId.trim());
+    }
+    body.set("file", file);
+    return this.request<DataSource>("/api/data-sources/sqlite", {
+      method: "POST",
+      body,
+    });
+  }
+
+  listDataSourceBindings(
+    sourceId: string,
+  ): Promise<{ items: SemanticBinding[] }> {
+    return this.request<{ items: SemanticBinding[] }>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/bindings`,
+    );
+  }
+
+  createDataSourceBinding(
+    sourceId: string,
+    payload: SemanticBindingCreatePayload,
+  ): Promise<SemanticBinding> {
+    return this.request<SemanticBinding>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/bindings`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  }
+
+  activateDataSourceBinding(
+    sourceId: string,
+    bindingId: string,
+  ): Promise<SemanticBinding> {
+    return this.request<SemanticBinding>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/bindings/${encodeURIComponent(bindingId)}/activate`,
+      { method: "POST" },
+    );
+  }
+
   private async request<T>(
     path: string,
     init: RequestInit = {},
@@ -107,7 +196,11 @@ export class ApiClient {
     acceptedErrorResponse?: (body: unknown) => body is T,
   ): Promise<T> {
     const headers = new Headers(init.headers);
-    if (init.body && !headers.has("Content-Type")) {
+    if (
+      init.body &&
+      !(init.body instanceof FormData) &&
+      !headers.has("Content-Type")
+    ) {
       headers.set("Content-Type", "application/json");
     }
 

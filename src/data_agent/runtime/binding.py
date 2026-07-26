@@ -31,6 +31,7 @@ from .policy import compute_policy_decision_id
 
 NonBlankText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 ParameterScalar = str | int | float | bool
+SqlDialect = Literal["postgres", "sqlite", "duckdb"]
 
 
 class BindingModel(BaseModel):
@@ -203,7 +204,7 @@ def _statement_relations(statement: exp.Expression) -> tuple[str, ...]:
 
 
 class PreparedQuery(BindingModel):
-    dialect: Literal["postgres"] = "postgres"
+    dialect: SqlDialect = "postgres"
     logical_plan: LogicalQueryPlan
     logical_plan_hash: NonBlankText
     sql_ast_hash: NonBlankText
@@ -221,9 +222,11 @@ class PreparedQuery(BindingModel):
     @model_validator(mode="after")
     def validate_readonly_statement(self) -> "PreparedQuery":
         try:
-            statements = parse(self.executable_sql, read="postgres")
+            statements = parse(self.executable_sql, read=self.dialect)
         except Exception as exc:  # sqlglot uses several parse exception types
-            raise ValueError("prepared query is not valid PostgreSQL") from exc
+            raise ValueError(
+                f"prepared query is not valid {self.dialect} SQL"
+            ) from exc
         if len(statements) != 1 or not isinstance(statements[0], exp.Select):
             raise ValueError("prepared query must contain one read-only SELECT")
         statement = statements[0]
@@ -251,6 +254,11 @@ class PreparedQuery(BindingModel):
             for item in statement.find_all(exp.Parameter)
             if isinstance(item.this, exp.Literal) and str(item.this.this).isdigit()
         }
+        placeholders.update(
+            int(item.this)
+            for item in statement.find_all(exp.Placeholder)
+            if str(item.this).isdigit()
+        )
         if placeholders != set(positions):
             raise ValueError("prepared query placeholders do not match parameters")
         expected_hash = hashlib.sha256(
@@ -296,10 +304,15 @@ class BindingCompiler:
         domain_pack: DomainPack,
         enterprise_binding: EnterpriseDataBinding,
         bundle: ResolvedRuntimeBundle,
+        *,
+        dialect: SqlDialect = "postgres",
     ) -> None:
+        if dialect not in {"postgres", "sqlite", "duckdb"}:
+            raise ValueError("unsupported SQL dialect")
         self._domain = domain_pack
         self._enterprise = enterprise_binding
         self._bundle = bundle
+        self._dialect = dialect
         self._validator = CommercePlanValidator()
         self._validate_authority()
         self._relationships = {
@@ -1316,9 +1329,10 @@ class BindingCompiler:
         limit_expression = parameter(bound.limit, "limit", "integer")
         query.set("limit", exp.Limit(expression=limit_expression))
 
-        sql = query.sql(dialect="postgres", pretty=False)
+        sql = query.sql(dialect=self._dialect, pretty=False)
         sql_hash = hashlib.sha256(sql.encode("utf-8")).hexdigest()
         return PreparedQuery(
+            dialect=self._dialect,
             logical_plan=bound.logical_plan,
             logical_plan_hash=bound.logical_plan_hash,
             sql_ast_hash=sql_hash,
@@ -1865,8 +1879,9 @@ class BindingCompiler:
             "limit",
             exp.Limit(expression=parameter(bound.limit, "limit", "integer")),
         )
-        sql = query.sql(dialect="postgres", pretty=False)
+        sql = query.sql(dialect=self._dialect, pretty=False)
         return PreparedQuery(
+            dialect=self._dialect,
             logical_plan=bound.logical_plan,
             logical_plan_hash=bound.logical_plan_hash,
             sql_ast_hash=hashlib.sha256(sql.encode("utf-8")).hexdigest(),
@@ -1881,13 +1896,18 @@ class BindingCompiler:
             schema_fingerprint=self._bundle.schema_fingerprint,
         )
 
-    @staticmethod
     def _apply_cast(
+        self,
         expression: exp.Expression,
         binding: PhysicalFieldBinding,
     ) -> exp.Expression:
         if binding.cast is None:
             return expression
+        if self._dialect == "sqlite" and binding.cast in {"date", "datetime"}:
+            return exp.Anonymous(
+                this="DATE" if binding.cast == "date" else "DATETIME",
+                expressions=[expression],
+            )
         sql_type = {
             "string": "TEXT",
             "integer": "BIGINT",
@@ -1921,8 +1941,15 @@ def compile_bound_query(
     domain_pack: DomainPack,
     enterprise_binding: EnterpriseDataBinding,
     bundle: ResolvedRuntimeBundle,
+    *,
+    dialect: SqlDialect = "postgres",
 ) -> PreparedQuery:
-    return BindingCompiler(domain_pack, enterprise_binding, bundle).compile(
+    return BindingCompiler(
+        domain_pack,
+        enterprise_binding,
+        bundle,
+        dialect=dialect,
+    ).compile(
         bound_plan,
         principal,
     )

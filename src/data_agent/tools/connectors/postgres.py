@@ -10,7 +10,6 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from enum import StrEnum
 from typing import Protocol
 
 from data_agent.runtime.binding import PreparedQuery
@@ -26,24 +25,7 @@ from ..schemas import (
     QueryRow,
     TabularResult,
 )
-
-
-class ConnectorErrorCode(StrEnum):
-    GRANT_EXPIRED = "GRANT_EXPIRED"
-    GRANT_MISMATCH = "GRANT_MISMATCH"
-    CREDENTIAL_EXPIRED = "CREDENTIAL_EXPIRED"
-    CREDENTIAL_MISMATCH = "CREDENTIAL_MISMATCH"
-    RELATION_NOT_ALLOWED = "RELATION_NOT_ALLOWED"
-    ROW_LIMIT_EXCEEDED = "ROW_LIMIT_EXCEEDED"
-    TIMEOUT = "TIMEOUT"
-    DATABASE_UNAVAILABLE = "DATABASE_UNAVAILABLE"
-    CATALOG_INVALID = "CATALOG_INVALID"
-
-
-class ConnectorError(RuntimeError):
-    def __init__(self, code: ConnectorErrorCode, message: str) -> None:
-        self.code = code
-        super().__init__(message)
+from .base import ConnectorError, ConnectorErrorCode
 
 
 class PoolResolver(Protocol):
@@ -246,7 +228,8 @@ class PostgresConnector:
     ) -> None:
         self._validate_common_grant(grant, expected_tool="query.execute")
         if (
-            grant.bundle_digest != prepared.bundle_digest
+            prepared.dialect != "postgres"
+            or grant.bundle_digest != prepared.bundle_digest
             or grant.schema_fingerprint != prepared.schema_fingerprint
             or grant.policy_decision_id != prepared.policy_decision_id
             or grant.logical_plan_hash != prepared.logical_plan_hash

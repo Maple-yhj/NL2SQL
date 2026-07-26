@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from data_agent.tools.connectors import DataSourceConnector
+
 from ..models import ProviderContext, RetryPolicy, ToolSpec
 from .contracts import DataInspectInput, DataInspectOutput
 
@@ -9,7 +11,7 @@ from .contracts import DataInspectInput, DataInspectOutput
 DATA_INSPECT_SPEC = ToolSpec(
     name="data.inspect",
     version="1.0.0",
-    description="Inspect an authorized PostgreSQL schema snapshot.",
+    description="Inspect an authorized datasource schema snapshot.",
     input_schema=DataInspectInput,
     output_schema=DataInspectOutput,
     risk_level="medium",
@@ -25,7 +27,7 @@ DATA_INSPECT_SPEC = ToolSpec(
 class DataInspectProvider:
     spec = DATA_INSPECT_SPEC
 
-    def __init__(self, connector: object) -> None:
+    def __init__(self, connector: DataSourceConnector) -> None:
         self._connector = connector
 
     async def invoke(

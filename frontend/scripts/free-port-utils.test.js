@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseListeningPids } from "./free-port-utils.mjs";
+import { parseListeningPids, parsePidList } from "./free-port-utils.mjs";
 
 describe("parseListeningPids", () => {
   it("returns unique listening process ids for the requested port", () => {
@@ -11,5 +11,11 @@ describe("parseListeningPids", () => {
 `;
 
     expect(parseListeningPids(output, 5173)).toEqual([39092, 39093]);
+  });
+});
+
+describe("parsePidList", () => {
+  it("returns unique valid process ids from lsof output", () => {
+    expect(parsePidList("39092\n39093\n39092\n\n")).toEqual([39092, 39093]);
   });
 });

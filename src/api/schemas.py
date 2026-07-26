@@ -12,6 +12,13 @@ from data_agent.runtime.models import (
     ConversationMessage,
     ConversationSummary,
 )
+from data_agent.datasources import (
+    DataSourceKind,
+    DataSourceStatus,
+    SemanticBindingRecord,
+    SemanticFieldMapping,
+)
+from data_agent.tools.schemas import CatalogSnapshot
 
 
 def _strip_required_text(value: str) -> str:
@@ -129,10 +136,84 @@ class ConversationMessagesResponse(StrictApiModel):
 ConversationNl2SqlResponse = AgentResponse
 
 
+class DataSourceResponse(StrictApiModel):
+    source_id: str
+    name: str
+    kind: DataSourceKind
+    status: DataSourceStatus
+    active_snapshot_version: int
+    options: dict[str, str | int | float | bool]
+    created_at: str
+    updated_at: str
+
+
+class DataSourceListResponse(StrictApiModel):
+    items: list[DataSourceResponse]
+
+
+class DataSourceCatalogResponse(StrictApiModel):
+    source_id: str
+    version: int
+    fingerprint: str
+    catalog: CatalogSnapshot
+
+
+class PostgresDataSourceRequest(StrictApiModel):
+    source_id: str | None = None
+    name: str = Field(min_length=1)
+    credential_ref: str = Field(min_length=1)
+    host: str = Field(min_length=1)
+    port: int = Field(default=5432, ge=1, le=65535)
+    database: str = Field(min_length=1)
+    ssl_mode: str = Field(default="require", min_length=1)
+
+    @field_validator(
+        "source_id",
+        "name",
+        "credential_ref",
+        "host",
+        "database",
+        "ssl_mode",
+    )
+    @classmethod
+    def strip_datasource_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+
+class SemanticBindingCreateRequest(StrictApiModel):
+    binding_id: str | None = None
+    domain_id: str = Field(min_length=1)
+    mappings: tuple[SemanticFieldMapping, ...] = Field(min_length=1)
+
+    @field_validator("binding_id", "domain_id")
+    @classmethod
+    def strip_binding_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+
+class SemanticBindingListResponse(StrictApiModel):
+    items: list[SemanticBindingRecord]
+
+
+class ConversationDataSourceBindingResponse(StrictApiModel):
+    binding: SemanticBindingRecord | None = None
+
+
 __all__ = [
     "AccessTokenResponse",
     "AuthUserResponse",
     "ConversationCreateRequest",
+    "ConversationDataSourceBindingResponse",
     "ConversationListResponse",
     "ConversationMessage",
     "ConversationMessageRequest",
@@ -140,11 +221,17 @@ __all__ = [
     "ConversationNl2SqlResponse",
     "ConversationResponse",
     "ConversationUpdateRequest",
+    "DataSourceCatalogResponse",
+    "DataSourceListResponse",
+    "DataSourceResponse",
     "LoginRequest",
     "LogoutRequest",
     "LogoutResponse",
     "Nl2SqlRequest",
     "Nl2SqlResponse",
     "RefreshRequest",
+    "PostgresDataSourceRequest",
+    "SemanticBindingCreateRequest",
+    "SemanticBindingListResponse",
     "TokenResponse",
 ]

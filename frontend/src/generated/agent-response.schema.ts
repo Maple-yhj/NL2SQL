@@ -36,6 +36,16 @@ const schema = {
             }
           ]
         },
+        "chart": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/ChartSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "contextualized_question": {
           "anyOf": [
             {
@@ -138,6 +148,7 @@ const schema = {
       },
       "required": [
         "answer",
+        "chart",
         "contextualized_question",
         "conversation_id",
         "error",
@@ -223,6 +234,34 @@ const schema = {
         "composite_key"
       ],
       "type": "string"
+    },
+    "ChartSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_type": {
+          "const": "bar",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "x_field": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "y_field": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "chart_type",
+        "title",
+        "x_field",
+        "y_field"
+      ],
+      "type": "object"
     },
     "ComponentVersionPin": {
       "additionalProperties": false,

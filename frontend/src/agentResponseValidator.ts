@@ -214,6 +214,9 @@ function validatePydanticRefinements(body: Record<string, unknown>): boolean {
   ) {
     return false;
   }
+  if (!validateChart(body.chart, body.rows)) {
+    return false;
+  }
   if (body.logical_plan === null) {
     return true;
   }
@@ -227,6 +230,45 @@ function validatePydanticRefinements(body: Record<string, unknown>): boolean {
     validateSeriesAxis(plan.seriesAxis) &&
     validateCrossTab(plan.crossTab)
   );
+}
+
+function validateChart(chart: unknown, rows: unknown): boolean {
+  if (chart === null) {
+    return true;
+  }
+  if (
+    !isRecord(chart) ||
+    typeof chart.x_field !== "string" ||
+    typeof chart.y_field !== "string" ||
+    !Array.isArray(rows) ||
+    rows.length === 0
+  ) {
+    return false;
+  }
+  if (
+    !rows.every(
+      (row) =>
+        isRecord(row) &&
+        Object.hasOwn(row, chart.x_field as string) &&
+        Object.hasOwn(row, chart.y_field as string),
+    )
+  ) {
+    return false;
+  }
+  return rows.some((row) => {
+    if (!isRecord(row)) {
+      return false;
+    }
+    const value = row[chart.y_field as string];
+    if (typeof value === "number") {
+      return Number.isFinite(value);
+    }
+    return (
+      typeof value === "string" &&
+      value.trim() !== "" &&
+      Number.isFinite(Number(value))
+    );
+  });
 }
 
 function validateFilters(value: unknown): boolean {

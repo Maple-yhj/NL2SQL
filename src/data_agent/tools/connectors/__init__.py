@@ -1,5 +1,15 @@
-"""Database connector implementations used by governed Tool providers."""
+"""Governed datasource connector implementations."""
 
-from .postgres import ConnectorError, ConnectorErrorCode, PostgresConnector
+from .base import ConnectorError, ConnectorErrorCode, DataSourceConnector
+from .duckdb import DuckDBConnector
+from .postgres import PostgresConnector
+from .sqlite import SQLiteConnector
 
-__all__ = ["ConnectorError", "ConnectorErrorCode", "PostgresConnector"]
+__all__ = [
+    "ConnectorError",
+    "ConnectorErrorCode",
+    "DataSourceConnector",
+    "DuckDBConnector",
+    "PostgresConnector",
+    "SQLiteConnector",
+]

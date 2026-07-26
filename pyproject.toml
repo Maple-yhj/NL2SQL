@@ -10,25 +10,31 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
   "asyncpg>=0.30",
+  "duckdb>=1.5,<2",
   "fastapi>=0.115",
   "langchain>=1.2",
+  "langchain-anthropic>=1.0",
   "langchain-google-genai>=4.2",
   "langchain-openai>=1.1",
   "langgraph>=1.2",
   "pydantic>=2.11,<3",
+  "openpyxl>=3.1,<4",
   "psycopg2-binary>=2.9",
   "PyYAML>=6.0",
   "PyJWT>=2.10",
   "pwdlib[argon2]>=0.2",
   "python-dotenv>=1.1",
+  "python-multipart>=0.0.20",
   "sqlglot>=30.0",
   "uvicorn[standard]>=0.34",
 ]
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2",
   "jsonschema>=4.23",
   "langgraph-cli[inmem]>=0.4",
+  "pytest>=8.3",
 ]
 
 [project.scripts]

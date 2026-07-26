@@ -40,6 +40,98 @@ describe("ApiClient", () => {
     expect((init.headers as Headers).get("Authorization")).toBe("Bearer access-token");
   });
 
+  it("uploads file datasources as multipart without forcing a JSON content type", async () => {
+    const datasource = {
+      source_id: "orders",
+      name: "Orders",
+      kind: "csv",
+      status: "ready",
+      active_snapshot_version: 1,
+      options: { dialect: "duckdb" },
+      created_at: "2026-07-26T00:00:00Z",
+      updated_at: "2026-07-26T00:00:00Z",
+    } as const;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => datasource,
+    } as Response);
+    const api = createApi();
+    const file = new File(["order_id,amount\nA-1,10\n"], "orders.csv", {
+      type: "text/csv",
+    });
+
+    await expect(api.uploadFileDataSource("Orders", [file], "orders")).resolves.toEqual(
+      datasource,
+    );
+
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/data-sources/files");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.headers as Headers).has("Content-Type")).toBe(false);
+    expect((init.headers as Headers).get("Authorization")).toBe("Bearer access-token");
+  });
+
+  it("creates and activates a semantic binding with encoded source identifiers", async () => {
+    const draft = {
+      binding_id: "orders-binding-1",
+      tenant_id: "tenant-a",
+      source_id: "orders 2026",
+      source_snapshot_version: 1,
+      domain_id: "dataset.orders",
+      version: 1,
+      status: "draft",
+      mappings: [
+        {
+          logical_ref: "dataset.Orders.amount",
+          physical_relation: "public.orders",
+          physical_column: "amount",
+        },
+      ],
+      created_at: "2026-07-26T00:00:00Z",
+      updated_at: "2026-07-26T00:00:00Z",
+    } as const;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => draft,
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ ...draft, status: "active" }),
+      } as Response);
+    const api = createApi();
+
+    const created = await api.createDataSourceBinding("orders 2026", {
+      domain_id: draft.domain_id,
+      mappings: [...draft.mappings],
+    });
+    await api.activateDataSourceBinding("orders 2026", created.binding_id);
+
+    const [createPath, createInit] = fetchMock.mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    const [activatePath, activateInit] = fetchMock.mock.calls[1] as [
+      string,
+      RequestInit,
+    ];
+    expect(createPath).toBe("/api/data-sources/orders%202026/bindings");
+    expect(createInit.method).toBe("POST");
+    expect(JSON.parse(String(createInit.body))).toEqual({
+      domain_id: "dataset.orders",
+      mappings: draft.mappings,
+    });
+    expect(activatePath).toBe(
+      "/api/data-sources/orders%202026/bindings/orders-binding-1/activate",
+    );
+    expect(activateInit.method).toBe("POST");
+  });
+
   it.each([422, 403, 500])(
     "returns a complete typed AgentResponse for HTTP %i Runtime failures",
     async (status) => {
@@ -78,6 +170,7 @@ describe("ApiClient", () => {
         answer: failure.answer,
         message_type: failure.message_type,
         rows: failure.rows,
+        chart: failure.chart,
         ok: failure.ok,
         error: failure.error,
         trace: failure.trace,

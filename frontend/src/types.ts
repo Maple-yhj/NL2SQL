@@ -121,11 +121,19 @@ export interface AgentResponse {
   sql: string | null;
   message_type: MessageType;
   rows: DataRow[];
+  chart: ChartSpec | null;
   answer: string | null;
   error: RuntimeAgentError | null;
   trace: TraceEntry[];
   pending_memory_updates: PendingMemoryUpdate[];
   version_pins: RuntimeVersionPins | null;
+}
+
+export interface ChartSpec {
+  chart_type: "bar";
+  title: string;
+  x_field: string;
+  y_field: string;
 }
 
 export interface MessageMetadata {
@@ -134,6 +142,7 @@ export interface MessageMetadata {
   sql?: string | null;
   message_type?: MessageType;
   rows?: DataRow[];
+  chart?: ChartSpec | null;
   answer?: string | null;
   ok?: boolean;
   error?: AgentError | null;
@@ -160,7 +169,75 @@ export interface SendMessagePayload {
   question: string;
   enterprise_id: string;
   domain_id: string;
+  source_id?: string;
+  source_version?: number;
+  binding_id?: string;
+  binding_version?: number;
   mode: AgentMode;
   requested_output: string;
   include_trace: boolean;
+}
+
+export type DataSourceKind = "postgres" | "sqlite" | "xlsx" | "csv";
+export type DataSourceStatus = "registered" | "ready" | "error" | "disabled";
+
+export interface DataSource {
+  source_id: string;
+  name: string;
+  kind: DataSourceKind;
+  status: DataSourceStatus;
+  active_snapshot_version: number;
+  options: Record<string, string | number | boolean>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CatalogColumn {
+  name: string;
+  data_type: string;
+  nullable: boolean;
+}
+
+export interface CatalogRelation {
+  relation: string;
+  columns: CatalogColumn[];
+  estimated_rows: number | null;
+  freshness_at: string | null;
+}
+
+export interface DataSourceCatalog {
+  source_id: string;
+  version: number;
+  fingerprint: string;
+  catalog: {
+    schema_fingerprint: string;
+    relations: CatalogRelation[];
+  };
+}
+
+export type SemanticBindingStatus = "draft" | "active" | "retired";
+
+export interface SemanticFieldMapping {
+  logical_ref: string;
+  physical_relation: string;
+  physical_column: string;
+}
+
+export interface SemanticBinding {
+  binding_id: string;
+  tenant_id: string;
+  source_id: string;
+  source_snapshot_version: number;
+  domain_id: string;
+  version: number;
+  status: SemanticBindingStatus;
+  mappings: SemanticFieldMapping[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SemanticBindingCreatePayload {
+  binding_id?: string;
+  domain_id: string;
+  mappings: SemanticFieldMapping[];
 }

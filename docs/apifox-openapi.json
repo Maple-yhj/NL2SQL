@@ -49,6 +49,16 @@
             ],
             "title": "Answer"
           },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "contextualized_question": {
             "anyOf": [
               {
@@ -261,6 +271,71 @@
         "title": "AuthUserResponse",
         "type": "object"
       },
+      "Body_upload_file_data_source_api_data_sources_files_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "files",
+          "name"
+        ],
+        "title": "Body_upload_file_data_source_api_data_sources_files_post",
+        "type": "object"
+      },
+      "Body_upload_sqlite_data_source_api_data_sources_sqlite_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "file",
+          "name"
+        ],
+        "title": "Body_upload_sqlite_data_source_api_data_sources_sqlite_post",
+        "type": "object"
+      },
       "CalculationOperation": {
         "enum": [
           "sum",
@@ -277,6 +352,135 @@
         ],
         "title": "CalculationOperation",
         "type": "string"
+      },
+      "CatalogColumn": {
+        "additionalProperties": false,
+        "properties": {
+          "data_type": {
+            "minLength": 1,
+            "title": "Data Type",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "nullable": {
+            "title": "Nullable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "data_type",
+          "nullable"
+        ],
+        "title": "CatalogColumn",
+        "type": "object"
+      },
+      "CatalogRelation": {
+        "additionalProperties": false,
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "estimated_rows": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Rows"
+          },
+          "freshness_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness At"
+          },
+          "relation": {
+            "minLength": 1,
+            "title": "Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation",
+          "columns"
+        ],
+        "title": "CatalogRelation",
+        "type": "object"
+      },
+      "CatalogSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogRelation"
+            },
+            "title": "Relations",
+            "type": "array"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_fingerprint",
+          "relations"
+        ],
+        "title": "CatalogSnapshot",
+        "type": "object"
+      },
+      "ChartSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "chart_type": {
+            "const": "bar",
+            "default": "bar",
+            "title": "Chart Type",
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "x_field": {
+            "minLength": 1,
+            "title": "X Field",
+            "type": "string"
+          },
+          "y_field": {
+            "minLength": 1,
+            "title": "Y Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "x_field",
+          "y_field"
+        ],
+        "title": "ChartSpec",
+        "type": "object"
       },
       "ComponentVersionPin": {
         "additionalProperties": false,
@@ -315,6 +519,23 @@
           }
         },
         "title": "ConversationCreateRequest",
+        "type": "object"
+      },
+      "ConversationDataSourceBindingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SemanticBindingRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ConversationDataSourceBindingResponse",
         "type": "object"
       },
       "ConversationListResponse": {
@@ -442,6 +663,30 @@
         "additionalProperties": false,
         "description": "Conversation turns use the same strict Runtime contract.",
         "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "binding_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Version"
+          },
           "conversation_id": {
             "anyOf": [
               {
@@ -485,6 +730,30 @@
             "minLength": 1,
             "title": "Requested Output",
             "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
           }
         },
         "required": [
@@ -624,6 +893,134 @@
         ],
         "title": "CrossTabSpec",
         "type": "object"
+      },
+      "DataSourceCatalogResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/CatalogSnapshot"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "version",
+          "fingerprint",
+          "catalog"
+        ],
+        "title": "DataSourceCatalogResponse",
+        "type": "object"
+      },
+      "DataSourceKind": {
+        "enum": [
+          "postgres",
+          "sqlite",
+          "xlsx",
+          "csv"
+        ],
+        "title": "DataSourceKind",
+        "type": "string"
+      },
+      "DataSourceListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataSourceResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DataSourceListResponse",
+        "type": "object"
+      },
+      "DataSourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_snapshot_version": {
+            "title": "Active Snapshot Version",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataSourceKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Options",
+            "type": "object"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataSourceStatus"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "name",
+          "kind",
+          "status",
+          "active_snapshot_version",
+          "options",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DataSourceResponse",
+        "type": "object"
+      },
+      "DataSourceStatus": {
+        "enum": [
+          "registered",
+          "ready",
+          "error",
+          "disabled"
+        ],
+        "title": "DataSourceStatus",
+        "type": "string"
       },
       "DerivedCalculation": {
         "additionalProperties": false,
@@ -1111,6 +1508,30 @@
         "additionalProperties": false,
         "description": "The HTTP agent request is exactly the public Runtime request.",
         "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "binding_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Version"
+          },
           "conversation_id": {
             "anyOf": [
               {
@@ -1154,6 +1575,30 @@
             "minLength": 1,
             "title": "Requested Output",
             "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
           }
         },
         "required": [
@@ -1212,6 +1657,63 @@
           }
         },
         "title": "PlanContext",
+        "type": "object"
+      },
+      "PostgresDataSourceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_ref": {
+            "minLength": 1,
+            "title": "Credential Ref",
+            "type": "string"
+          },
+          "database": {
+            "minLength": 1,
+            "title": "Database",
+            "type": "string"
+          },
+          "host": {
+            "minLength": 1,
+            "title": "Host",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "default": 5432,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "ssl_mode": {
+            "default": "require",
+            "minLength": 1,
+            "title": "Ssl Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "credential_ref",
+          "host",
+          "database"
+        ],
+        "title": "PostgresDataSourceRequest",
         "type": "object"
       },
       "ProposalSummary": {
@@ -1396,6 +1898,170 @@
           "model_versions"
         ],
         "title": "RuntimeVersionPins",
+        "type": "object"
+      },
+      "SemanticBindingCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain_id",
+          "mappings"
+        ],
+        "title": "SemanticBindingCreateRequest",
+        "type": "object"
+      },
+      "SemanticBindingListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticBindingRecord"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SemanticBindingListResponse",
+        "type": "object"
+      },
+      "SemanticBindingRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SemanticBindingStatus",
+            "default": "draft"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "binding_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "domain_id",
+          "version",
+          "mappings"
+        ],
+        "title": "SemanticBindingRecord",
+        "type": "object"
+      },
+      "SemanticBindingStatus": {
+        "enum": [
+          "draft",
+          "active",
+          "retired"
+        ],
+        "title": "SemanticBindingStatus",
+        "type": "string"
+      },
+      "SemanticFieldMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "logical_ref": {
+            "minLength": 1,
+            "title": "Logical Ref",
+            "type": "string"
+          },
+          "physical_column": {
+            "minLength": 1,
+            "title": "Physical Column",
+            "type": "string"
+          },
+          "physical_relation": {
+            "minLength": 1,
+            "title": "Physical Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_ref",
+          "physical_relation",
+          "physical_column"
+        ],
+        "title": "SemanticFieldMapping",
         "type": "object"
       },
       "SeriesAxis": {
@@ -2001,6 +2667,50 @@
         "summary": "Update Conversation"
       }
     },
+    "/api/conversations/{conversation_id}/data-source-binding": {
+      "get": {
+        "operationId": "get_conversation_data_source_binding_api_conversations__conversation_id__data_source_binding_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDataSourceBindingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Conversation Data Source Binding"
+      }
+    },
     "/api/conversations/{conversation_id}/messages": {
       "get": {
         "operationId": "list_conversation_messages_api_conversations__conversation_id__messages_get",
@@ -2118,6 +2828,351 @@
           }
         ],
         "summary": "Send Conversation Message"
+      }
+    },
+    "/api/data-sources": {
+      "get": {
+        "operationId": "list_data_sources_api_data_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Data Sources"
+      }
+    },
+    "/api/data-sources/files": {
+      "post": {
+        "operationId": "upload_file_data_source_api_data_sources_files_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_data_source_api_data_sources_files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Upload File Data Source"
+      }
+    },
+    "/api/data-sources/postgres": {
+      "post": {
+        "operationId": "register_postgres_data_source_api_data_sources_postgres_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostgresDataSourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Register Postgres Data Source"
+      }
+    },
+    "/api/data-sources/sqlite": {
+      "post": {
+        "operationId": "upload_sqlite_data_source_api_data_sources_sqlite_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_sqlite_data_source_api_data_sources_sqlite_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Upload Sqlite Data Source"
+      }
+    },
+    "/api/data-sources/{source_id}/bindings": {
+      "get": {
+        "operationId": "list_data_source_bindings_api_data_sources__source_id__bindings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticBindingListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Data Source Bindings"
+      },
+      "post": {
+        "operationId": "create_data_source_binding_api_data_sources__source_id__bindings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticBindingCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticBindingRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Data Source Binding"
+      }
+    },
+    "/api/data-sources/{source_id}/bindings/{binding_id}/activate": {
+      "post": {
+        "operationId": "activate_data_source_binding_api_data_sources__source_id__bindings__binding_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "title": "Binding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticBindingRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Activate Data Source Binding"
+      }
+    },
+    "/api/data-sources/{source_id}/catalog": {
+      "get": {
+        "operationId": "get_data_source_catalog_api_data_sources__source_id__catalog_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Data Source Catalog"
       }
     },
     "/api/nl2sql": {

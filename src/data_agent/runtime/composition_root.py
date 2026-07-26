@@ -69,14 +69,16 @@ class _ConfiguredModelClient:
 
 
 def _default_model_client_factory(environment: Mapping[str, str]) -> ModelClient:
-    from data_agent.adapters.llm import create_llm
+    from data_agent.adapters.llm import (
+        create_llm_from_config,
+        resolve_llm_config,
+    )
 
-    provider = environment.get("LLM_PROVIDER", "configured")
-    model_name = environment.get("DEFAULT_MODEL_NAME", "default")
+    config = resolve_llm_config(environment)
     return _ConfiguredModelClient(
-        create_llm(),
-        model_id=f"{provider}.planner",
-        version=model_name,
+        create_llm_from_config(config),
+        model_id=f"{config.provider}.planner",
+        version=config.model_name,
     )
 
 

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from data_agent.runtime.binding import BindingCompiler
+from data_agent.runtime.binding import BindingCompiler, SqlDialect
 from data_agent.runtime.composition import ResolvedRuntimeBundle
 from data_agent.runtime.packs import DomainPack, EnterpriseDataBinding
+from data_agent.tools.connectors import DataSourceConnector
 
 from ..registry import ToolRegistry
 from .answer import AnswerRenderProvider
@@ -29,11 +30,24 @@ def build_builtin_registry(
     domain_pack: DomainPack,
     enterprise_binding: EnterpriseDataBinding,
     bundle: ResolvedRuntimeBundle,
-    connector: object,
+    connector: DataSourceConnector,
+    *,
+    dialect: SqlDialect = "postgres",
 ) -> ToolRegistry:
     if bundle.tool_registry_version != "1.0.0":
         raise ValueError("resolved bundle requests an unsupported Tool Registry version")
-    compiler = BindingCompiler(domain_pack, enterprise_binding, bundle)
+    capabilities = getattr(connector, "capabilities", None)
+    if callable(capabilities):
+        if capabilities().dialect != dialect:
+            raise ValueError("connector dialect does not match the binding compiler")
+    elif dialect != "postgres":
+        raise ValueError("non-PostgreSQL connectors must declare capabilities")
+    compiler = BindingCompiler(
+        domain_pack,
+        enterprise_binding,
+        bundle,
+        dialect=dialect,
+    )
     evidence_signer = EvidenceSigner()
     providers = (
         SemanticSearchProvider(domain_pack),

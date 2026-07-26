@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   BookOpen,
   ChevronDown,
+  Database,
   Loader2,
   LogOut,
   MessageSquare,
@@ -28,13 +29,17 @@ import {
   useState,
 } from "react";
 import { ApiClient, ApiError } from "./api";
+import { DataSourcePanel } from "./DataSourcePanel";
 import type {
   AgentMode,
   ApiConversationMessage,
   ChatMessage,
+  ChartSpec,
   Conversation,
   ConversationMessageResponse,
+  DataSource,
   DataRow,
+  SemanticBinding,
   StoredSession,
 } from "./types";
 import {
@@ -76,6 +81,10 @@ export function App() {
   const [renamingConversationId, setRenamingConversationId] = useState("");
   const [renameDraft, setRenameDraft] = useState("");
   const [conversationActionId, setConversationActionId] = useState("");
+  const [dataSources, setDataSources] = useState<DataSource[]>([]);
+  const [activeDataBinding, setActiveDataBinding] =
+    useState<SemanticBinding | null>(null);
+  const [dataSourcePanelOpen, setDataSourcePanelOpen] = useState(false);
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const skipRenameBlurRef = useRef(false);
   const renameSavingRef = useRef(false);
@@ -95,6 +104,8 @@ export function App() {
     setConversations([]);
     setActiveConversationId("");
     setMessages([]);
+    setDataSources([]);
+    setActiveDataBinding(null);
   }, [commitSession]);
 
   const api = useMemo(
@@ -113,10 +124,25 @@ export function App() {
     return payload.items;
   }, [api]);
 
+  const loadDataSources = useCallback(async () => {
+    const payload = await api.listDataSources();
+    setDataSources(payload.items);
+    return payload.items;
+  }, [api]);
+
   const loadMessages = useCallback(
     async (conversationId: string) => {
       const payload = await api.listMessages(conversationId);
       setMessages(payload.items.map(toChatMessage));
+    },
+    [api],
+  );
+
+  const loadConversationBinding = useCallback(
+    async (conversationId: string) => {
+      const payload = await api.getConversationDataSourceBinding(conversationId);
+      setActiveDataBinding(payload.binding);
+      return payload.binding;
     },
     [api],
   );
@@ -128,10 +154,16 @@ export function App() {
       const [health] = await Promise.all([api.health(), sessionRef.current ? api.me() : null]);
       setHealthOk(Boolean(health.ok));
       if (sessionRef.current) {
-        const items = await loadConversations();
+        const [items] = await Promise.all([
+          loadConversations(),
+          loadDataSources(),
+        ]);
         if (items[0]) {
           setActiveConversationId(items[0].conversation_id);
-          await loadMessages(items[0].conversation_id);
+          await Promise.all([
+            loadMessages(items[0].conversation_id),
+            loadConversationBinding(items[0].conversation_id),
+          ]);
         }
       }
     } catch (err) {
@@ -139,7 +171,14 @@ export function App() {
     } finally {
       setBooting(false);
     }
-  }, [api, clearSession, loadConversations, loadMessages]);
+  }, [
+    api,
+    clearSession,
+    loadConversationBinding,
+    loadConversations,
+    loadDataSources,
+    loadMessages,
+  ]);
 
   useEffect(() => {
     void bootstrap();
@@ -185,12 +224,16 @@ export function App() {
       const [health, conversationList] = await Promise.all([
         api.health(),
         api.listConversations(),
+        loadDataSources(),
       ]);
       setHealthOk(Boolean(health.ok));
       setConversations(conversationList.items);
       if (conversationList.items[0]) {
         setActiveConversationId(conversationList.items[0].conversation_id);
-        await loadMessages(conversationList.items[0].conversation_id);
+        await Promise.all([
+          loadMessages(conversationList.items[0].conversation_id),
+          loadConversationBinding(conversationList.items[0].conversation_id),
+        ]);
       }
     } catch (err) {
       handleAuthOrError(err, clearSession, setError);
@@ -203,7 +246,10 @@ export function App() {
     setActiveConversationId(conversationId);
     setError("");
     try {
-      await loadMessages(conversationId);
+      await Promise.all([
+        loadMessages(conversationId),
+        loadConversationBinding(conversationId),
+      ]);
     } catch (err) {
       handleAuthOrError(err, clearSession, setError);
     }
@@ -356,7 +402,7 @@ export function App() {
 
       const response = await api.sendMessage(
         conversationId,
-        createSendMessagePayload(question, mode),
+        createSendMessagePayload(question, mode, activeDataBinding),
       );
       setMessages((items) =>
         items.map((item) =>
@@ -442,6 +488,26 @@ export function App() {
           <button className="sidebar-nav-item" type="button">
             <BookOpen size={17} />
             <span>文件库</span>
+          </button>
+          <button
+            className="sidebar-nav-item"
+            type="button"
+            onClick={() => setDataSourcePanelOpen(true)}
+          >
+            <Database size={17} />
+            <span>数据源</span>
+            {(activeDataBinding || dataSources.length > 0) && (
+              <small
+                className="sidebar-count"
+                title={
+                  activeDataBinding
+                    ? `当前：${activeDataBinding.source_id} v${activeDataBinding.source_snapshot_version}`
+                    : undefined
+                }
+              >
+                {activeDataBinding ? "已选" : dataSources.length}
+              </small>
+            )}
           </button>
         </nav>
 
@@ -654,6 +720,16 @@ export function App() {
           </form>
         </div>
       </main>
+      {dataSourcePanelOpen && (
+        <DataSourcePanel
+          api={api}
+          sources={dataSources}
+          selectedBinding={activeDataBinding}
+          onRefresh={loadDataSources}
+          onBindingSelect={setActiveDataBinding}
+          onClose={() => setDataSourcePanelOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -755,6 +831,9 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
                 <pre>{viewModel.sql}</pre>
               </details>
             )}
+            {viewModel.chart && (
+              <SafeBarChart chart={viewModel.chart} rows={viewModel.rows} />
+            )}
             {viewModel.showTable && (
               <div className="assistant-grid">
                 <div className="mini-card">
@@ -786,6 +865,64 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
       </div>
     </div>
   );
+}
+
+function SafeBarChart({
+  chart,
+  rows,
+}: {
+  chart: ChartSpec;
+  rows: DataRow[];
+}) {
+  const points = rows
+    .map((row) => ({
+      label: String(row[chart.x_field] ?? ""),
+      value: finiteNumber(row[chart.y_field]),
+    }))
+    .filter(
+      (point): point is { label: string; value: number } =>
+        point.value !== null,
+    )
+    .slice(0, 30);
+  const maximum = Math.max(...points.map((point) => Math.abs(point.value)), 0);
+  if (!points.length || maximum === 0) {
+    return null;
+  }
+  return (
+    <figure className="mini-card safe-chart">
+      <figcaption>
+        <strong>{chart.title}</strong>
+        <span>{chart.y_field}</span>
+      </figcaption>
+      <div className="safe-chart-bars">
+        {points.map((point, index) => (
+          <div
+            className="safe-chart-row"
+            key={`${point.label}-${index}`}
+            title={`${point.label}: ${point.value}`}
+          >
+            <span>{point.label}</span>
+            <div>
+              <i
+                style={{
+                  width: `${Math.max(2, (Math.abs(point.value) / maximum) * 100)}%`,
+                }}
+              />
+            </div>
+            <strong>{point.value}</strong>
+          </div>
+        ))}
+      </div>
+    </figure>
+  );
+}
+
+function finiteNumber(value: DataRow[string]): number | null {
+  if (typeof value !== "number" && typeof value !== "string") {
+    return null;
+  }
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function RowsTable({ rows }: { rows: DataRow[] }) {
@@ -898,6 +1035,7 @@ export function responseToAssistantMessage(
       answer: response.answer,
       message_type: response.message_type,
       rows: response.rows,
+      chart: response.chart,
       ok: response.ok,
       error: response.error,
       trace: response.trace,

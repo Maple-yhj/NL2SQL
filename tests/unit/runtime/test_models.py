@@ -67,6 +67,56 @@ class RuntimePublicModelTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             models.AgentRequest(question="valid", mode="unsafe")
 
+    def test_datasource_pins_are_atomic(self) -> None:
+        models = self._runtime_models()
+        request = models.AgentRequest(
+            question="show rows",
+            enterprise_id="user-dataset",
+            domain_id="dataset.orders",
+            source_id="orders",
+            source_version=1,
+            binding_id="orders-binding-1",
+            binding_version=2,
+        )
+        self.assertEqual(request.source_version, 1)
+
+        with self.assertRaises(ValidationError):
+            models.AgentRequest(
+                question="show rows",
+                source_id="orders",
+                source_version=1,
+            )
+
+    def test_chart_can_only_reference_numeric_returned_columns(self) -> None:
+        models = self._runtime_models()
+        response = models.AgentResponse(
+            ok=True,
+            question="sales by city",
+            rows=(
+                models.AgentRow(root={"city": "Shanghai", "sales": 12.5}),
+            ),
+            chart=models.ChartSpec(
+                title="Sales by city",
+                x_field="city",
+                y_field="sales",
+            ),
+        )
+        self.assertEqual(response.chart.chart_type, "bar")
+
+        with self.assertRaises(ValidationError):
+            models.AgentResponse(
+                ok=True,
+                question="unsafe chart",
+                rows=(
+                    models.AgentRow(root={"city": "Shanghai", "sales": 12.5}),
+                ),
+                chart=models.ChartSpec(
+                    title="Unsafe",
+                    x_field="city",
+                    y_field="missing",
+                ),
+            )
+
     def test_runtime_package_reexports_the_public_task_one_contract(self) -> None:
         runtime = importlib.import_module("data_agent.runtime")
         expected_exports = {

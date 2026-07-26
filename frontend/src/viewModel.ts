@@ -1,5 +1,6 @@
 import type {
   AgentError,
+  ChartSpec,
   ChatMessage,
   DataRow,
   JsonValue,
@@ -12,6 +13,7 @@ import type {
 export interface AssistantViewModel {
   answer: string;
   rows: DataRow[];
+  chart: ChartSpec | null;
   trace: TraceEntry[];
   logicalPlan: LogicalQueryPlan | null;
   sql: string;
@@ -30,13 +32,15 @@ export function createAssistantViewModel(message: ChatMessage): AssistantViewMod
   const trace = Array.isArray(metadata.trace) ? metadata.trace : [];
   const messageType = resolveMessageType(metadata.message_type, metadata.error, rows);
   const isThinking = messageType === "thinking";
-  const showTable = messageType === "table" && rows.length > 0;
+  const showTable =
+    (messageType === "table" || messageType === "chart") && rows.length > 0;
   const rawAnswer = metadata.answer || message.content || metadata.error?.message || "";
   const answer = isThinking ? "" : formatAnswer(rawAnswer, showTable, rows);
 
   return {
     answer,
     rows,
+    chart: metadata.chart ?? null,
     trace,
     logicalPlan: metadata.logical_plan ?? null,
     sql: metadata.sql ?? "",

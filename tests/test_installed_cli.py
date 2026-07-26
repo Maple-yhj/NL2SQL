@@ -5,6 +5,7 @@ import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import unittest
 import uuid
@@ -83,8 +84,26 @@ class InstalledCliSmokeTests(unittest.TestCase):
             cwd=cls.outside,
             env=cls.env,
         )
-        cls.python = cls.venv / "Scripts" / "python.exe"
-        cls.command = cls.venv / "Scripts" / "data-agent.exe"
+        scripts_dir = cls.venv / ("Scripts" if os.name == "nt" else "bin")
+        cls.python = scripts_dir / ("python.exe" if os.name == "nt" else "python")
+        cls.command = scripts_dir / (
+            "data-agent.exe" if os.name == "nt" else "data-agent"
+        )
+        child_site = _run(
+            [
+                str(cls.python),
+                "-c",
+                "import site; print(site.getsitepackages()[0])",
+            ],
+            cwd=cls.outside,
+            env=cls.env,
+        )
+        if child_site.returncode == 0:
+            dependency_path = Path(child_site.stdout.strip()) / "parent-runtime.pth"
+            dependency_path.write_text(
+                sysconfig.get_paths()["purelib"],
+                encoding="utf-8",
+            )
         cls.install = (
             _run(
                 [
@@ -166,7 +185,8 @@ class InstalledCliSmokeTests(unittest.TestCase):
         )
         self.assertEqual(imported.returncode, 0, imported.stderr)
         self.assertNotIn(str(self.source), imported.stdout)
-        self.assertIn("share\\data-agent", imported.stdout)
+        self.assertIn(str(self.venv), imported.stdout)
+        self.assertIn(str(Path("share") / "data-agent"), imported.stdout)
 
         help_result = _run([str(self.command), "--help"], cwd=self.outside, env=self.env)
         self.assertEqual(help_result.returncode, 0, help_result.stderr)

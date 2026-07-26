@@ -174,6 +174,55 @@ class ApiRuntimeContractTests(unittest.TestCase):
         self.assertEqual(principal.user_id, "user-from-token")
         self.assertEqual(principal.roles, ("analyst",))
 
+    def test_pinned_datasource_message_routes_to_dataset_query_service(self):
+        composition = _RecordingComposition()
+        composition.runtime.get_conversation = mock.AsyncMock(  # type: ignore[attr-defined]
+            return_value=object()
+        )
+        data_query = mock.AsyncMock()
+        data_query.run.return_value = AgentResponse(
+            ok=True,
+            question="show rows",
+            contextualized_question="show rows",
+            conversation_id="conv-dataset",
+            tenant_id="tenant-from-token",
+            answer="dataset done",
+        )
+        app = create_app(
+            runtime_factory=mock.AsyncMock(return_value=composition),
+            data_source_query_service=data_query,
+        )
+
+        with mock.patch.dict(
+            "os.environ",
+            {"JWT_SECRET_KEY": TEST_JWT_SECRET},
+        ), TestClient(app) as client:
+            response = client.post(
+                "/api/conversations/conv-dataset/messages",
+                headers=_auth_headers(),
+                json={
+                    "question": "show rows",
+                    "enterprise_id": "user-dataset",
+                    "domain_id": "dataset.orders",
+                    "source_id": "orders",
+                    "source_version": 1,
+                    "binding_id": "orders-binding",
+                    "binding_version": 1,
+                    "mode": "execute",
+                    "requested_output": "answer",
+                    "include_trace": False,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["answer"], "dataset done")
+        self.assertEqual(composition.runtime.calls, [])
+        data_query.run.assert_awaited_once()
+        routed_request, routed_principal = data_query.run.await_args.args
+        self.assertEqual(routed_request.source_id, "orders")
+        self.assertEqual(routed_request.conversation_id, "conv-dataset")
+        self.assertEqual(routed_principal.tenant_id, "tenant-from-token")
+
     def test_strict_http_body_cannot_override_authenticated_principal(self):
         composition = _RecordingComposition()
         app = create_app(runtime_factory=mock.AsyncMock(return_value=composition))
