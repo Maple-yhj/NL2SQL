@@ -17,9 +17,9 @@ RuntimeFactory = Callable[[], Awaitable[Any]]
 async def _default_runtime_factory() -> Any:
     # Keep module import inert: bundle loading, model creation, and DB pools begin
     # only after FastAPI enters its lifespan.
-    from data_agent.runtime.composition_root import build_olist_runtime
+    from data_agent.runtime.composition_root import build_runtime
 
-    return await build_olist_runtime()
+    return await build_runtime()
 
 
 def create_app(
@@ -34,10 +34,16 @@ def create_app(
     async def lifespan(application: FastAPI):
         from api.datasource_service import DataSourceService
         from api.dataset_query_service import DataSourceQueryService
+        from api.run_streams import RunCoordinator, RunEventStore
 
         composition = await factory()
         application.state.runtime_composition = composition
         application.state.runtime = composition.runtime
+        application.state.memory_manager = getattr(
+            getattr(composition, "dependencies", None),
+            "memory",
+            None,
+        )
         resolved_data_sources = (
             data_source_service or DataSourceService()
         )
@@ -53,6 +59,13 @@ def create_app(
                 DataSourceQueryService(resolved_data_sources, model_client)
                 if model_client is not None
                 else None
+            )
+        )
+        application.state.run_coordinator = RunCoordinator(
+            RunEventStore(
+                resolved_data_sources.state_root
+                / "control"
+                / "run-events.sqlite3"
             )
         )
         try:

@@ -72,6 +72,39 @@ class RuntimeCompositionRootTests(unittest.IsolatedAsyncioTestCase):
         await composition.close()
         self.assertEqual(factory.pool.close_calls, 1)
 
+    async def test_generic_builder_accepts_explicit_verified_bundle_paths(
+        self,
+    ) -> None:
+        from data_agent.runtime.bundle_store import BundlePaths
+        from data_agent.runtime.composition_root import build_runtime
+
+        factory = _PoolFactory()
+        composition = await build_runtime(
+            bundle=BundlePaths(
+                domain_root=ROOT / "packs" / "domains" / "commerce",
+                enterprise_root=ROOT / "packs" / "enterprises" / "olist",
+                deployment_profile=(
+                    ROOT / "packs" / "deployments" / "olist-local.yaml"
+                ),
+                pack_lock=(
+                    ROOT / "packs" / "enterprises" / "olist" / "pack.lock"
+                ),
+                schema_catalog=ROOT / "schema_catalog.json",
+                bundle_manifest=(
+                    ROOT / "generated" / "bundles" / "olist-local.json"
+                ),
+            ),
+            pool_factory=factory,
+            model_client_factory=lambda: _Model(),
+            environment={"DATABASE_URL": "postgresql://runtime-only"},
+        )
+
+        self.assertEqual(
+            composition.snapshot.enterprise_binding.metadata.name,
+            "olist",
+        )
+        await composition.close()
+
     async def test_missing_secret_fails_before_pool_creation(self) -> None:
         from data_agent.runtime.composition_root import build_olist_runtime
 

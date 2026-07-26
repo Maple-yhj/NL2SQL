@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import unittest
 from contextlib import contextmanager
@@ -10,6 +11,7 @@ from data_agent.runtime import paths
 
 
 PROJECT_ROOT_ENV = paths.PROJECT_ROOT_ENV
+BUNDLE_PATHS_ENV = paths.BUNDLE_PATHS_ENV
 resolve_project_root = paths.resolve_project_root
 
 
@@ -102,6 +104,51 @@ class RuntimePathTests(unittest.TestCase):
         with temporary_root() as parent:
             source_only = make_root(parent, "source-only", runtime=False)
             self.assertEqual(paths.resolve_source_root(source_only), source_only.resolve())
+
+    def test_external_bundle_descriptor_resolves_relative_non_olist_paths(
+        self,
+    ) -> None:
+        with temporary_root() as parent:
+            domain_root = parent / "acme" / "domain"
+            enterprise_root = parent / "acme" / "enterprise"
+            domain_root.mkdir(parents=True)
+            enterprise_root.mkdir(parents=True)
+            file_paths = {
+                "deployment_profile": parent / "acme" / "deployment.yaml",
+                "pack_lock": enterprise_root / "pack.lock",
+                "schema_catalog": parent / "acme" / "catalog.json",
+                "bundle_manifest": parent / "acme" / "bundle.json",
+            }
+            for path in file_paths.values():
+                path.write_text("fixture\n", encoding="utf-8")
+            descriptor = parent / "bundle-paths.json"
+            descriptor.write_text(
+                json.dumps(
+                    {
+                        "domain_root": "acme/domain",
+                        "enterprise_root": "acme/enterprise",
+                        "deployment_profile": "acme/deployment.yaml",
+                        "pack_lock": "acme/enterprise/pack.lock",
+                        "schema_catalog": "acme/catalog.json",
+                        "bundle_manifest": "acme/bundle.json",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            resolved = paths.resolve_bundle_paths(
+                environment={BUNDLE_PATHS_ENV: str(descriptor)}
+            )
+
+        self.assertEqual(resolved.domain_root, domain_root.resolve())
+        self.assertEqual(
+            resolved.enterprise_root,
+            enterprise_root.resolve(),
+        )
+        self.assertEqual(
+            resolved.bundle_manifest,
+            file_paths["bundle_manifest"].resolve(),
+        )
 
 
 if __name__ == "__main__":

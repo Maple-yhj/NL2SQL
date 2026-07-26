@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
+import tempfile
 import unittest
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from unittest import mock
 
 from fastapi.testclient import TestClient
@@ -10,7 +13,14 @@ from pydantic import ValidationError
 
 from api.app import create_app
 from api.auth import AuthPrincipal, AuthSettings, create_access_token
+from api.datasource_service import DataSourceService
 from api.schemas import Nl2SqlRequest
+from data_agent.memory import (
+    MemoryCandidate,
+    NullMemoryManager,
+    UserMemoryContent,
+    UserMemoryOwner,
+)
 from data_agent.runtime import (
     AgentEvent,
     AgentEventType,
@@ -29,13 +39,14 @@ def _auth_headers(
     *,
     tenant_id: str = "tenant-from-token",
     user_id: str = "user-from-token",
+    roles: list[str] | None = None,
 ) -> dict[str, str]:
     token = create_access_token(
         AuthPrincipal(
             tenant_id=tenant_id,
             user_id=user_id,
             username="analyst",
-            roles=["analyst"],
+            roles=roles or ["analyst"],
             token_version=1,
             token_id="test-token-id",
         ),
@@ -238,6 +249,123 @@ class ApiRuntimeContractTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 422)
         self.assertEqual(composition.runtime.calls, [])
+
+    def test_streaming_response_is_persisted_for_scoped_replay(self):
+        composition = _RecordingComposition()
+        with tempfile.TemporaryDirectory() as state_root:
+            app = create_app(
+                runtime_factory=mock.AsyncMock(return_value=composition),
+                data_source_service=DataSourceService(state_root=state_root),
+            )
+
+            with mock.patch.dict(
+                "os.environ",
+                {"JWT_SECRET_KEY": TEST_JWT_SECRET},
+            ), TestClient(app) as client:
+                response = client.post(
+                    "/api/nl2sql/stream",
+                    headers=_auth_headers(),
+                    json={"question": "show gmv"},
+                )
+                replay = client.get(
+                    "/api/runs/run-1/events",
+                    headers=_auth_headers(),
+                )
+                exhausted_replay = client.get(
+                    "/api/runs/run-1/events?after_sequence=0",
+                    headers=_auth_headers(),
+                )
+                other_user = client.get(
+                    "/api/runs/run-1/events",
+                    headers=_auth_headers(user_id="other-user"),
+                )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(
+            response.headers["content-type"].startswith("text/event-stream")
+        )
+        self.assertIn("event: run_completed", response.text)
+        self.assertIn('"run_id":"run-1"', response.text)
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(len(replay.json()["items"]), 1)
+        self.assertEqual(replay.json()["items"][0]["run_id"], "run-1")
+        self.assertEqual(exhausted_replay.status_code, 200)
+        self.assertEqual(exhausted_replay.json()["items"], [])
+        self.assertEqual(other_user.status_code, 404)
+
+    def test_memory_proposals_are_listed_and_decided_with_owner_authority(
+        self,
+    ):
+        memory = NullMemoryManager()
+        own_proposal = asyncio.run(
+            memory.propose(
+                MemoryCandidate(
+                    owner=UserMemoryOwner(
+                        tenant_id="tenant-from-token",
+                        user_id="user-from-token",
+                    ),
+                    content=UserMemoryContent(
+                        preference_key="report_style",
+                        preference_value="concise",
+                    ),
+                    source="explicit_user_instruction",
+                )
+            )
+        )
+        asyncio.run(
+            memory.propose(
+                MemoryCandidate(
+                    owner=UserMemoryOwner(
+                        tenant_id="tenant-from-token",
+                        user_id="other-user",
+                    ),
+                    content=UserMemoryContent(
+                        preference_key="report_style",
+                        preference_value="detailed",
+                    ),
+                    source="explicit_user_instruction",
+                )
+            )
+        )
+        composition = _RecordingComposition()
+        composition.dependencies = SimpleNamespace(memory=memory)
+        app = create_app(runtime_factory=mock.AsyncMock(return_value=composition))
+
+        with mock.patch.dict(
+            "os.environ",
+            {"JWT_SECRET_KEY": TEST_JWT_SECRET},
+        ), TestClient(app) as client:
+            listed = client.get(
+                "/api/memory/proposals",
+                headers=_auth_headers(),
+            )
+            unauthorized = client.post(
+                f"/api/memory/proposals/{own_proposal}/decision",
+                headers=_auth_headers(user_id="other-user"),
+                json={"decision": "approve"},
+            )
+            decided = client.post(
+                f"/api/memory/proposals/{own_proposal}/decision",
+                headers=_auth_headers(),
+                json={"decision": "approve", "reason": "confirmed"},
+            )
+            committed = client.get(
+                "/api/memory/proposals?status=committed",
+                headers=_auth_headers(),
+            )
+
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertEqual(
+            [item["proposal_id"] for item in listed.json()["items"]],
+            [own_proposal],
+        )
+        self.assertEqual(unauthorized.status_code, 404)
+        self.assertEqual(decided.status_code, 200, decided.text)
+        self.assertEqual(decided.json()["status"], "committed")
+        self.assertEqual(
+            [item["proposal_id"] for item in committed.json()["items"]],
+            [own_proposal],
+        )
 
     def test_unhandled_runtime_exception_returns_only_typed_safe_error(self):
         composition = _RecordingComposition()

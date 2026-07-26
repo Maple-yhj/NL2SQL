@@ -57,9 +57,9 @@ class StudioState(TypedDict, total=False):
 
 
 async def _default_runtime_factory() -> Any:
-    from data_agent.runtime.composition_root import build_olist_runtime
+    from data_agent.runtime.composition_root import build_runtime
 
-    return await build_olist_runtime()
+    return await build_runtime()
 
 
 def build_studio_graph(runtime_factory: RuntimeFactory | None = None):

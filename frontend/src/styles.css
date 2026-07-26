@@ -736,6 +736,14 @@ td {
   background: #2a2a2a;
 }
 
+.send-button.cancel-run {
+  background: #b42318;
+}
+
+.send-button.cancel-run:hover:not(:disabled) {
+  background: #8f1d14;
+}
+
 .btn {
   width: auto;
   min-width: 96px;

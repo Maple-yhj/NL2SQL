@@ -23,9 +23,9 @@ RuntimeFactory = Callable[[], Awaitable[Any]]
 
 
 async def _default_runtime_factory() -> Any:
-    from data_agent.runtime.composition_root import build_olist_runtime
+    from data_agent.runtime.composition_root import build_runtime
 
-    return await build_olist_runtime()
+    return await build_runtime()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -129,10 +129,11 @@ async def _ask(arguments: argparse.Namespace, factory: RuntimeFactory) -> int:
 
 
 def _validate_config(project_root: Path | None) -> int:
-    from data_agent.runtime.paths import bundle_paths, resolve_project_root
+    from data_agent.runtime.paths import resolve_bundle_paths
 
-    root = resolve_project_root(project_root)
-    snapshot = BundleStore().load_and_activate(bundle_paths(root))
+    snapshot = BundleStore().load_and_activate(
+        resolve_bundle_paths(project_root)
+    )
     print(
         json.dumps(
             {

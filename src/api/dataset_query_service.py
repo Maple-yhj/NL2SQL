@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
 import re
+from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -23,6 +25,13 @@ from data_agent.datasources import (
 from data_agent.runtime.binding import PreparedQuery, QueryParameter
 from data_agent.runtime.dependencies import ModelClient
 from data_agent.runtime.errors import AgentError, ErrorCode
+from data_agent.runtime.events import (
+    AgentEvent,
+    AgentEventType,
+    RunCompletedPayload,
+    RunFailedPayload,
+    RunStartedPayload,
+)
 from data_agent.runtime.models import (
     AgentMode,
     AgentRequest,
@@ -622,6 +631,62 @@ class DataSourceQueryService:
             chart=chart,
             answer=self._answer(result, chart=chart),
             trace=tuple(traces) if request.include_trace else (),
+        )
+
+    async def stream(
+        self,
+        request: AgentRequest,
+        principal: PrincipalContext,
+    ) -> AsyncIterator[AgentEvent]:
+        run_id = "dataset-run-" + uuid4().hex
+        yield AgentEvent(
+            type=AgentEventType.RUN_STARTED,
+            run_id=run_id,
+            sequence=0,
+            data=RunStartedPayload(
+                mode=request.mode,
+                enterprise_id=request.enterprise_id,
+                domain_id=request.domain_id,
+            ),
+        )
+        try:
+            response = await self.run(request, principal)
+        except asyncio.CancelledError:
+            response = self._failure(
+                request,
+                principal,
+                ErrorCode.CANCELLED,
+                "用户数据源查询已取消。",
+                "execute_dataset_query",
+            )
+        except Exception:
+            response = self._failure(
+                request,
+                principal,
+                ErrorCode.INTERNAL_ERROR,
+                "用户数据源查询安全失败。",
+                "execute_dataset_query",
+            )
+        if response.ok:
+            yield AgentEvent(
+                type=AgentEventType.RUN_COMPLETED,
+                run_id=run_id,
+                sequence=1,
+                data=RunCompletedPayload(),
+                response=response,
+            )
+            return
+        error_code = (
+            response.error.code
+            if response.error is not None
+            else ErrorCode.INTERNAL_ERROR
+        )
+        yield AgentEvent(
+            type=AgentEventType.RUN_FAILED,
+            run_id=run_id,
+            sequence=1,
+            data=RunFailedPayload(error_code=error_code),
+            response=response,
         )
 
     @staticmethod

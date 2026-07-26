@@ -295,6 +295,38 @@ class NullMemoryManager:
             }
         )
 
+    async def list_proposals(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        roles: tuple[str, ...],
+        statuses: tuple[ProposalStatus, ...],
+        limit: int,
+    ) -> tuple[MemoryProposal, ...]:
+        if limit < 1:
+            raise ValueError("proposal list limit must be positive")
+        allowed_statuses = set(statuses)
+        if not allowed_statuses:
+            return ()
+        is_admin = _is_admin(roles)
+        proposals = [
+            proposal
+            for proposal in self._proposals.values()
+            if proposal.status in allowed_statuses
+            and _proposal_visible_to(
+                proposal,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                is_admin=is_admin,
+            )
+        ]
+        proposals.sort(
+            key=lambda item: (item.updated_at, item.proposal_id),
+            reverse=True,
+        )
+        return tuple(proposals[:limit])
+
     async def invalidate(self, selector: MemorySelector) -> int:
         count = 0
         now = self._now()
@@ -819,6 +851,23 @@ def _query_owns_record(query: MemoryQuery, record: MemoryRecord) -> bool:
     ) != query.domain_id:
         return False
     return True
+
+
+def _proposal_visible_to(
+    proposal: MemoryProposal,
+    *,
+    tenant_id: str,
+    user_id: str,
+    is_admin: bool,
+) -> bool:
+    owner = proposal.candidate.owner
+    if owner.tenant_id != tenant_id:
+        return False
+    if is_admin:
+        return True
+    if owner.scope in {MemoryScope.EPISODIC, MemoryScope.ENTERPRISE}:
+        return False
+    return getattr(owner, "user_id", None) == user_id
 
 
 def _versions_match(record: MemoryRecord, query: MemoryQuery) -> bool:

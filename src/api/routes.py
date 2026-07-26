@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
@@ -16,7 +18,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.auth import (
     AuthPrincipal,
@@ -43,15 +45,30 @@ from api.schemas import (
     LoginRequest,
     LogoutRequest,
     LogoutResponse,
+    MemoryProposalDecisionRequest,
+    MemoryProposalDecisionResponse,
+    MemoryProposalListResponse,
     Nl2SqlRequest,
     PostgresDataSourceRequest,
     RefreshRequest,
+    RunCancelResponse,
+    RunEventListResponse,
     SemanticBindingCreateRequest,
     SemanticBindingListResponse,
     TokenResponse,
 )
 from api.datasource_service import DataSourceService
 from api.dataset_query_service import DataSourceQueryService
+from api.run_streams import RunCoordinator
+from data_agent.memory import (
+    ApprovalContext,
+    ApprovalDecision,
+    MemoryApprovalError,
+    MemoryConflictError,
+    MemoryManager,
+    MemoryStateError,
+    ProposalStatus,
+)
 from data_agent.datasources import (
     DataSourceDefinition,
     DataSourceRegistryError,
@@ -61,6 +78,7 @@ from data_agent.datasources import (
     SemanticBindingRecord,
 )
 from data_agent.runtime import (
+    AgentEvent,
     AgentRequest,
     AgentResponse,
     DataAgentRuntime,
@@ -68,6 +86,11 @@ from data_agent.runtime import (
     ProductRuntime,
 )
 from data_agent.runtime.errors import AgentError, ErrorCode
+from data_agent.runtime.events import (
+    AgentEventType,
+    RunFailedPayload,
+    RunStartedPayload,
+)
 
 
 router = APIRouter()
@@ -204,6 +227,20 @@ def get_data_source_query_service(
     request: Request,
 ) -> DataSourceQueryService | None:
     return getattr(request.app.state, "data_source_query_service", None)
+
+
+def get_run_coordinator(request: Request) -> RunCoordinator:
+    coordinator = getattr(request.app.state, "run_coordinator", None)
+    if coordinator is None:
+        raise RuntimeError("Run coordinator is unavailable outside app lifespan")
+    return coordinator
+
+
+def get_memory_manager(request: Request) -> MemoryManager:
+    manager = getattr(request.app.state, "memory_manager", None)
+    if manager is None:
+        raise RuntimeError("Memory manager is unavailable outside app lifespan")
+    return manager
 
 
 @router.get("/api/data-sources", response_model=DataSourceListResponse)
@@ -410,6 +447,151 @@ async def nl2sql(
             content=response.model_dump(mode="json"),
         )
     return response
+
+
+@router.post(
+    "/api/nl2sql/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Typed runtime event stream",
+            "content": {
+                "text/event-stream": {"schema": {"type": "string"}}
+            },
+        }
+    },
+)
+async def stream_nl2sql(
+    request: Nl2SqlRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    runtime: ProductRuntime = Depends(get_runtime),
+    data_query: DataSourceQueryService | None = Depends(
+        get_data_source_query_service
+    ),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
+):
+    runtime_principal = _runtime_principal(principal)
+    events = _request_event_stream(
+        request,
+        runtime_principal,
+        runtime=runtime,
+        data_query=data_query,
+    )
+    return _sse_response(coordinator.observe(runtime_principal, events))
+
+
+@router.post(
+    "/api/runs/{run_id}/cancel",
+    response_model=RunCancelResponse,
+)
+async def cancel_run(
+    run_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
+):
+    resolved_run_id = run_id.strip()
+    cancelled = await coordinator.cancel(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        run_id=resolved_run_id,
+    )
+    if not cancelled:
+        raise HTTPException(status_code=404, detail="Active run not found")
+    return RunCancelResponse(run_id=resolved_run_id, cancelled=True)
+
+
+@router.get(
+    "/api/runs/{run_id}/events",
+    response_model=RunEventListResponse,
+)
+async def replay_run_events(
+    run_id: str,
+    after_sequence: int = Query(default=-1, ge=-1),
+    limit: int = Query(default=200, ge=1, le=1000),
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
+):
+    items = await coordinator.replay(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        run_id=run_id.strip(),
+        after_sequence=after_sequence,
+        limit=limit,
+    )
+    if not items and not await coordinator.contains(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        run_id=run_id.strip(),
+    ):
+        raise HTTPException(status_code=404, detail="Run events not found")
+    return RunEventListResponse(items=list(items))
+
+
+@router.get(
+    "/api/memory/proposals",
+    response_model=MemoryProposalListResponse,
+)
+async def list_memory_proposals(
+    proposal_status: ProposalStatus = Query(
+        default=ProposalStatus.PENDING_APPROVAL,
+        alias="status",
+    ),
+    limit: int = Query(default=50, ge=1, le=200),
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    memory: MemoryManager = Depends(get_memory_manager),
+):
+    items = await memory.list_proposals(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        roles=tuple(principal.roles),
+        statuses=(proposal_status,),
+        limit=limit,
+    )
+    return MemoryProposalListResponse(items=list(items))
+
+
+@router.post(
+    "/api/memory/proposals/{proposal_id}/decision",
+    response_model=MemoryProposalDecisionResponse,
+)
+async def decide_memory_proposal(
+    proposal_id: str,
+    request: MemoryProposalDecisionRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    memory: MemoryManager = Depends(get_memory_manager),
+):
+    resolved_proposal_id = proposal_id.strip()
+    if not resolved_proposal_id:
+        raise HTTPException(status_code=422, detail="proposal_id must not be blank")
+    approval = ApprovalContext(
+        tenant_id=principal.tenant_id,
+        approver_user_id=principal.user_id,
+        roles=tuple(principal.roles),
+        decision=request.decision,
+        decided_at=datetime.now(UTC),
+        reason=request.reason,
+    )
+    try:
+        await memory.commit(resolved_proposal_id, approval)
+    except MemoryApprovalError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Memory proposal not found",
+        ) from exc
+    except (MemoryConflictError, MemoryStateError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Memory proposal cannot accept this decision",
+        ) from exc
+    resulting_status = (
+        ProposalStatus.COMMITTED
+        if request.decision == ApprovalDecision.APPROVE
+        else ProposalStatus.REJECTED
+    )
+    return MemoryProposalDecisionResponse(
+        proposal_id=resolved_proposal_id,
+        status=resulting_status,
+    )
 
 
 @router.post("/api/conversations", response_model=ConversationResponse)
@@ -621,6 +803,59 @@ async def send_conversation_message(
     return response
 
 
+@router.post(
+    "/api/conversations/{conversation_id}/messages/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Typed runtime event stream",
+            "content": {
+                "text/event-stream": {"schema": {"type": "string"}}
+            },
+        }
+    },
+)
+async def stream_conversation_message(
+    conversation_id: str,
+    request: ConversationMessageRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    runtime: ProductRuntime = Depends(get_runtime),
+    data_query: DataSourceQueryService | None = Depends(
+        get_data_source_query_service
+    ),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
+):
+    path_conversation_id = conversation_id.strip()
+    if request.conversation_id not in (None, path_conversation_id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="conversation_id must match the route",
+        )
+    runtime_principal = _runtime_principal(principal)
+    payload = request.model_dump(mode="python")
+    payload["conversation_id"] = path_conversation_id
+    agent_request = AgentRequest.model_validate(payload)
+    lookup_domain = (
+        "commerce"
+        if agent_request.source_id is not None
+        else agent_request.domain_id
+    )
+    conversation = await runtime.get_conversation(
+        principal=runtime_principal,
+        domain_id=lookup_domain,
+        conversation_id=path_conversation_id,
+    )
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    events = _request_event_stream(
+        agent_request,
+        runtime_principal,
+        runtime=runtime,
+        data_query=data_query,
+    )
+    return _sse_response(coordinator.observe(runtime_principal, events))
+
+
 def _unavailable_dataset_response(
     request: AgentRequest,
     principal: PrincipalContext,
@@ -636,6 +871,73 @@ def _unavailable_dataset_response(
             code=ErrorCode.CONFIG_INVALID,
             message="用户数据源查询服务尚未配置模型。",
         ),
+    )
+
+
+def _request_event_stream(
+    request: AgentRequest,
+    principal: PrincipalContext,
+    *,
+    runtime: ProductRuntime,
+    data_query: DataSourceQueryService | None,
+) -> AsyncIterator[AgentEvent]:
+    if request.source_id is None:
+        return runtime.run(request, principal)
+    if data_query is not None:
+        return data_query.stream(request, principal)
+    return _single_response_events(
+        request,
+        _unavailable_dataset_response(request, principal),
+    )
+
+
+async def _single_response_events(
+    request: AgentRequest,
+    response: AgentResponse,
+) -> AsyncIterator[AgentEvent]:
+    run_id = "api-run-" + uuid4().hex
+    yield AgentEvent(
+        type=AgentEventType.RUN_STARTED,
+        run_id=run_id,
+        sequence=0,
+        data=RunStartedPayload(
+            mode=request.mode,
+            enterprise_id=request.enterprise_id,
+            domain_id=request.domain_id,
+        ),
+    )
+    error_code = (
+        response.error.code
+        if response.error is not None
+        else ErrorCode.INTERNAL_ERROR
+    )
+    yield AgentEvent(
+        type=AgentEventType.RUN_FAILED,
+        run_id=run_id,
+        sequence=1,
+        data=RunFailedPayload(error_code=error_code),
+        response=response,
+    )
+
+
+def _sse_response(
+    events: AsyncIterator[AgentEvent],
+) -> StreamingResponse:
+    async def encode() -> AsyncIterator[str]:
+        async for event in events:
+            yield (
+                f"id: {event.sequence}\n"
+                f"event: {event.type.value}\n"
+                f"data: {event.model_dump_json()}\n\n"
+            )
+
+    return StreamingResponse(
+        encode(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

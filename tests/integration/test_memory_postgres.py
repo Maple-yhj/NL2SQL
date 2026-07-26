@@ -43,6 +43,7 @@ from data_agent.memory.models import (
     MemoryScope,
     MessageRole,
     MessageWrite,
+    ProposalStatus,
     SafeMessagePayload,
     SubjectScope,
     UserMemoryContent,
@@ -181,6 +182,14 @@ _SQL_RULES: dict[str, _SqlRule] = {
         "fetchrow", "SELECT", "data_agent_memory_proposals", _indices(2),
         required_predicates=("proposal_id = $1", "tenant_id = $2"),
         for_update=True,
+    ),
+    "memory:list_proposals": _SqlRule(
+        "fetch", "SELECT", "data_agent_memory_proposals", _indices(5),
+        required_predicates=(
+            "tenant_id = $1",
+            "status = any",
+            "user_id = $4",
+        ),
     ),
     "memory:insert_record": _SqlRule(
         "fetchrow", "INSERT", "data_agent_memory_records", _indices(22),
@@ -511,6 +520,7 @@ class _Connection:
                 "candidate_json": candidate_json,
                 "deduplication_key": deduplication_key,
                 "status": status,
+                "proposed_by": None,
                 "proposed_at": proposed_at,
                 "updated_at": proposed_at,
                 "approver_user_id": None,
@@ -519,6 +529,7 @@ class _Connection:
                 "approval_reason": None,
                 "decided_at": None,
                 "committed_memory_id": None,
+                "conflict_with": [],
             }
             db.proposals[proposal_id] = row
             db.proposal_by_digest[digest_key] = proposal_id
@@ -595,6 +606,23 @@ class _Connection:
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         marker = self._record(sql, args, "fetch")
         db = self.database
+        if marker == "memory:list_proposals":
+            tenant_id, statuses, is_admin, user_id, limit = args
+            rows = [
+                copy.deepcopy(row)
+                for row in db.proposals.values()
+                if row["tenant_id"] == tenant_id
+                and row["status"] in statuses
+                and (is_admin or row["user_id"] == user_id)
+            ]
+            rows.sort(
+                key=lambda row: (
+                    row["updated_at"],
+                    row["proposal_id"],
+                ),
+                reverse=True,
+            )
+            return rows[:limit]
         if marker == "memory:recall":
             (
                 tenant_id,
@@ -1389,6 +1417,42 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
         sql = "\n".join(item[0] for item in self.database.sql_calls)
         self.assertIn("FOR UPDATE", sql.upper())
         self.assertIn("ON CONFLICT", sql.upper())
+
+    async def test_proposal_listing_is_tenant_user_and_admin_scoped(self) -> None:
+        own = await self.manager.propose(candidate())
+        other = await self.manager.propose(candidate(user_id="user-b"))
+
+        analyst_items = await self.manager.list_proposals(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            roles=("analyst",),
+            statuses=(ProposalStatus.PENDING_APPROVAL,),
+            limit=10,
+        )
+        admin_items = await self.manager.list_proposals(
+            tenant_id="tenant-a",
+            user_id="admin-a",
+            roles=("memory_admin",),
+            statuses=(ProposalStatus.PENDING_APPROVAL,),
+            limit=10,
+        )
+        other_tenant = await self.manager.list_proposals(
+            tenant_id="tenant-b",
+            user_id="user-a",
+            roles=("memory_admin",),
+            statuses=(ProposalStatus.PENDING_APPROVAL,),
+            limit=10,
+        )
+
+        self.assertEqual(
+            {item.proposal_id for item in analyst_items},
+            {own},
+        )
+        self.assertEqual(
+            {item.proposal_id for item in admin_items},
+            {own, other},
+        )
+        self.assertEqual(other_tenant, ())
 
     async def test_cross_owner_turn_and_messages_are_not_disclosed(self) -> None:
         conversation = await self._conversation()

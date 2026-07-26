@@ -110,6 +110,10 @@ class DataSourceService:
     def connectors(self) -> ConnectorRegistry:
         return self._connectors
 
+    @property
+    def state_root(self) -> Path:
+        return self._state_root
+
     @staticmethod
     def _source_id(value: str | None) -> str:
         source_id = (value or "").strip() or f"source-{uuid4().hex[:16]}"

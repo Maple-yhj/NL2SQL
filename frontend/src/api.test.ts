@@ -132,6 +132,63 @@ describe("ApiClient", () => {
     expect(activateInit.method).toBe("POST");
   });
 
+  it("consumes typed SSE events and can cancel the active run", async () => {
+    const failure = agentFailure();
+    const started = {
+      type: "run_started",
+      run_id: "run 1",
+      sequence: 0,
+      data: {
+        kind: "run_started",
+        mode: "execute",
+        enterprise_id: "olist",
+        domain_id: "commerce",
+      },
+      response: null,
+    };
+    const terminal = {
+      type: "run_failed",
+      run_id: "run 1",
+      sequence: 1,
+      data: { kind: "run_failed", error_code: "CANCELLED" },
+      response: failure,
+    };
+    const stream = [
+      `id: 0\nevent: run_started\ndata: ${JSON.stringify(started)}\n\n`,
+      `id: 1\nevent: run_failed\ndata: ${JSON.stringify(terminal)}\n\n`,
+    ].join("");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+        }),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ run_id: "run 1", cancelled: true }),
+      } as Response);
+    const events: string[] = [];
+    const api = createApi();
+
+    const response = await api.streamMessage(
+      "conv 1",
+      payload(),
+      (event) => events.push(event.type),
+    );
+    const cancelled = await api.cancelRun("run 1");
+
+    expect(response).toEqual(failure);
+    expect(events).toEqual(["run_started", "run_failed"]);
+    expect(cancelled).toEqual({ run_id: "run 1", cancelled: true });
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/conversations/conv%201/messages/stream",
+    );
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/runs/run%201/cancel");
+  });
+
   it.each([422, 403, 500])(
     "returns a complete typed AgentResponse for HTTP %i Runtime failures",
     async (status) => {

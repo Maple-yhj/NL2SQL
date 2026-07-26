@@ -20,7 +20,9 @@ from ..manager import (
     _batch_artifact_references,
     _deduplication_key,
     _ensure_batch_owner_closure,
+    _is_admin,
     _owner_key,
+    _proposal_visible_to,
     _same_approval_decision,
     _stable_digest,
 )
@@ -44,6 +46,7 @@ from ..models import (
     MemoryContent,
     MemoryEvidence,
     MemoryOwner,
+    MemoryProposal,
     MemoryQuery,
     MemoryRecord,
     MemoryScope,
@@ -446,6 +449,84 @@ class PostgresMemoryManager:
         async with self._pool.acquire() as connection:
             async with connection.transaction():
                 return await self._propose_on_connection(connection, candidate, now)
+
+    async def list_proposals(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        roles: tuple[str, ...],
+        statuses: tuple[ProposalStatus, ...],
+        limit: int,
+    ) -> tuple[MemoryProposal, ...]:
+        if limit < 1:
+            raise ValueError("proposal list limit must be positive")
+        if not statuses:
+            return ()
+        is_admin = _is_admin(roles)
+        async with self._pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                /* memory:list_proposals */
+                SELECT proposal_id, owner_key, tenant_id, candidate_json,
+                       deduplication_key, status, proposed_at, proposed_by,
+                       approver_user_id, approver_roles, approval_decision,
+                       approval_reason, decided_at, conflict_with,
+                       committed_memory_id, updated_at
+                FROM data_agent_memory_proposals
+                WHERE tenant_id = $1
+                  AND status = ANY($2::text[])
+                  AND ($3 OR user_id = $4)
+                ORDER BY updated_at DESC, proposal_id DESC
+                LIMIT $5
+                """,
+                tenant_id,
+                tuple(status.value for status in statuses),
+                is_admin,
+                user_id,
+                limit,
+            )
+        proposals: list[MemoryProposal] = []
+        for row in rows:
+            candidate = _candidate_from_json(row["candidate_json"])
+            proposal = MemoryProposal(
+                proposal_id=str(row["proposal_id"]),
+                owner_key=str(row["owner_key"]),
+                candidate=candidate,
+                deduplication_key=str(row["deduplication_key"]),
+                status=ProposalStatus(str(row["status"])),
+                proposed_at=row["proposed_at"],
+                proposed_by=(
+                    str(row["proposed_by"])
+                    if row.get("proposed_by") is not None
+                    else None
+                ),
+                approval=_approval_from_row(row),
+                conflict_with=tuple(
+                    str(value)
+                    for value in (_json_value(row.get("conflict_with")) or ())
+                ),
+                committed_memory_id=(
+                    str(row["committed_memory_id"])
+                    if row.get("committed_memory_id") is not None
+                    else None
+                ),
+                updated_at=row["updated_at"],
+            )
+            if (
+                proposal.owner_key != _owner_key(candidate.owner)
+                or candidate.owner.tenant_id != str(row["tenant_id"])
+            ):
+                raise ValueError("persisted memory proposal owner is inconsistent")
+            if not _proposal_visible_to(
+                proposal,
+                tenant_id=tenant_id,
+                user_id=user_id,
+                is_admin=is_admin,
+            ):
+                raise PermissionError("memory proposal visibility check failed")
+            proposals.append(proposal)
+        return tuple(proposals)
 
     async def _propose_on_connection(
         self,

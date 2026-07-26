@@ -114,6 +114,17 @@ new product contract only:
 The terminal `AgentResponse` contains the logical plan, compiled SQL, bounded
 rows, answer, safe trace, pending memory proposals, and immutable version pins.
 
+For incremental delivery, use `POST /api/nl2sql/stream` or
+`POST /api/conversations/{id}/messages/stream`. Both return typed SSE events.
+Active runs can be cancelled through `POST /api/runs/{run_id}/cancel`, and
+persisted events can be resumed with `GET /api/runs/{run_id}/events`. Run
+control and replay are always scoped to the authenticated tenant and user.
+
+Pending memory changes are listed with `GET /api/memory/proposals` and decided
+through `POST /api/memory/proposals/{proposal_id}/decision`. User-owned memory
+is visible only to its owner; enterprise and episodic memory require a memory
+administrator.
+
 ## User-selected datasources
 
 The web datasource panel accepts CSV, XLSX, and SQLite uploads, discovers their
@@ -142,6 +153,27 @@ Datasource-backed requests pin all four authority fields together:
 The model sees logical field references only. Physical identifiers are added
 later by the deterministic compiler, and stale or cross-conversation pins are
 rejected before planning.
+
+## External verified deployments
+
+The default package still starts with the included OList bundle. A different
+Commerce enterprise deployment can set `DATA_AGENT_BUNDLE_PATHS_FILE` to a
+strict JSON descriptor with these keys:
+
+```json
+{
+  "domain_root": "domain",
+  "enterprise_root": "enterprise",
+  "deployment_profile": "deployment.yaml",
+  "pack_lock": "enterprise/pack.lock",
+  "schema_catalog": "schema-catalog.json",
+  "bundle_manifest": "bundle.json"
+}
+```
+
+Relative paths are resolved from the descriptor directory. All six inputs must
+exist and still pass the normal bundle digest, source attestation, profile, and
+schema checks before a model client or database pool is created.
 
 ## Pack and contract generation
 

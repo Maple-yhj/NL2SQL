@@ -129,6 +129,20 @@ export interface AgentResponse {
   version_pins: RuntimeVersionPins | null;
 }
 
+export type AgentEventType =
+  | "run_started"
+  | "progress"
+  | "run_completed"
+  | "run_failed";
+
+export interface AgentEvent {
+  type: AgentEventType;
+  run_id: string;
+  sequence: number;
+  data: Record<string, JsonValue>;
+  response: AgentResponse | null;
+}
+
 export interface ChartSpec {
   chart_type: "bar";
   title: string;

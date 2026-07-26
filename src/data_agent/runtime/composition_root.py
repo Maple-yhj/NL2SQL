@@ -1,4 +1,4 @@
-"""Async OList/Commerce composition root with inert imports and one DB pool."""
+"""Async governed Commerce composition root with inert imports and one DB pool."""
 
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ from data_agent.tools import CredentialLease, ToolInvoker
 from data_agent.tools.connectors.postgres import PostgresConnector
 from data_agent.tools.providers import build_builtin_registry
 
-from .bundle_store import BundleSnapshot, BundleStore
+from .bundle_store import BundlePaths, BundleSnapshot, BundleStore
 from .composition import stable_digest
 from .context import ContextAssembler
 from .context_resolver import RuntimeContextResolver
 from .dependencies import ModelClient, RuntimeDependencies
 from .planner import ModelLogicalPlanner
-from .paths import bundle_paths, resolve_project_root
+from .paths import resolve_bundle_paths, validate_bundle_paths
 from .service import DefaultDataAgentRuntime
 
 
@@ -131,8 +131,9 @@ class RuntimeComposition:
         await self.runtime.close()
 
 
-async def build_olist_runtime(
+async def build_runtime(
     *,
+    bundle: BundlePaths | None = None,
     project_root: str | Path | None = None,
     pool_factory: PoolFactory | None = None,
     model_client_factory: ModelClientFactory | None = None,
@@ -140,13 +141,19 @@ async def build_olist_runtime(
 ) -> RuntimeComposition:
     """Load verified packs first, then create one pool and one runtime graph."""
 
-    root = resolve_project_root(project_root, environment=environment)
+    if bundle is not None and project_root is not None:
+        raise ValueError("bundle and project_root are mutually exclusive")
+    selected_paths = (
+        validate_bundle_paths(bundle)
+        if bundle is not None
+        else resolve_bundle_paths(project_root, environment=environment)
+    )
     store = BundleStore()
-    snapshot = store.load_and_activate(bundle_paths(root))
+    snapshot = store.load_and_activate(selected_paths)
     env = dict(os.environ if environment is None else environment)
     sources = snapshot.enterprise_binding.spec.sources
     if len(sources) != 1:
-        raise ValueError("OList runtime requires exactly one governed datasource")
+        raise ValueError("runtime requires exactly one governed datasource")
     source_name, source = next(iter(sources.items()))
     secret_name = snapshot.deployment_profile.spec.datasource_secrets.get(
         source.connection_ref
@@ -235,6 +242,23 @@ async def build_olist_runtime(
         raise
 
 
+async def build_olist_runtime(
+    *,
+    project_root: str | Path | None = None,
+    pool_factory: PoolFactory | None = None,
+    model_client_factory: ModelClientFactory | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> RuntimeComposition:
+    """Backwards-compatible alias for the bundled OList deployment."""
+
+    return await build_runtime(
+        project_root=project_root,
+        pool_factory=pool_factory,
+        model_client_factory=model_client_factory,
+        environment=environment,
+    )
+
+
 async def _close_resource(resource: Any) -> None:
     close = getattr(resource, "close", None)
     if close is None:
@@ -247,5 +271,6 @@ async def _close_resource(resource: Any) -> None:
 __all__ = [
     "EnvironmentCredentialBroker",
     "RuntimeComposition",
+    "build_runtime",
     "build_olist_runtime",
 ]

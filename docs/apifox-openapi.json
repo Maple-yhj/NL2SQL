@@ -26,6 +26,78 @@
         "title": "AgentError",
         "type": "object"
       },
+      "AgentEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "discriminator": {
+              "mapping": {
+                "progress": "#/components/schemas/RunProgressPayload",
+                "run_completed": "#/components/schemas/RunCompletedPayload",
+                "run_failed": "#/components/schemas/RunFailedPayload",
+                "run_started": "#/components/schemas/RunStartedPayload"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RunStartedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunProgressPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunCompletedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunFailedPayload"
+              }
+            ],
+            "title": "Data"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 0.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AgentEventType"
+          }
+        },
+        "required": [
+          "type",
+          "run_id",
+          "sequence",
+          "data"
+        ],
+        "title": "AgentEvent",
+        "type": "object"
+      },
+      "AgentEventType": {
+        "enum": [
+          "run_started",
+          "progress",
+          "run_completed",
+          "run_failed"
+        ],
+        "title": "AgentEventType",
+        "type": "string"
+      },
       "AgentMode": {
         "enum": [
           "plan",
@@ -238,6 +310,135 @@
         ],
         "title": "AnalysisType",
         "type": "string"
+      },
+      "ApprovalContext": {
+        "additionalProperties": false,
+        "properties": {
+          "approver_user_id": {
+            "minLength": 1,
+            "title": "Approver User Id",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "roles": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "approver_user_id",
+          "decision",
+          "decided_at"
+        ],
+        "title": "ApprovalContext",
+        "type": "object"
+      },
+      "ApprovalDecision": {
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "title": "ApprovalDecision",
+        "type": "string"
+      },
+      "ArtifactReference": {
+        "additionalProperties": false,
+        "description": "A pointer to a complete artifact; the artifact body never lives in memory.",
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id",
+          "run_id",
+          "kind",
+          "digest"
+        ],
+        "title": "ArtifactReference",
+        "type": "object"
       },
       "AuthUserResponse": {
         "additionalProperties": false,
@@ -553,6 +754,83 @@
           "items"
         ],
         "title": "ConversationListResponse",
+        "type": "object"
+      },
+      "ConversationMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "scope": {
+            "const": "conversation",
+            "default": "conversation",
+            "title": "Scope",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "topics": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "ConversationMemoryContent",
+        "type": "object"
+      },
+      "ConversationMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "conversation",
+            "default": "conversation",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id"
+        ],
+        "title": "ConversationMemoryOwner",
         "type": "object"
       },
       "ConversationMessage": {
@@ -1060,6 +1338,136 @@
         "title": "DerivedCalculation",
         "type": "object"
       },
+      "EnterpriseMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "scope": {
+            "const": "enterprise",
+            "default": "enterprise",
+            "title": "Scope",
+            "type": "string"
+          },
+          "statement": {
+            "minLength": 1,
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "statement"
+        ],
+        "title": "EnterpriseMemoryContent",
+        "type": "object"
+      },
+      "EnterpriseMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "enterprise",
+            "default": "enterprise",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "domain_id"
+        ],
+        "title": "EnterpriseMemoryOwner",
+        "type": "object"
+      },
+      "EpisodicMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "event": {
+            "minLength": 1,
+            "title": "Event",
+            "type": "string"
+          },
+          "lesson": {
+            "minLength": 1,
+            "title": "Lesson",
+            "type": "string"
+          },
+          "outcome": {
+            "minLength": 1,
+            "title": "Outcome",
+            "type": "string"
+          },
+          "scope": {
+            "const": "episodic",
+            "default": "episodic",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "lesson",
+          "outcome"
+        ],
+        "title": "EpisodicMemoryContent",
+        "type": "object"
+      },
+      "EpisodicMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "episodic",
+            "default": "episodic",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "domain_id"
+        ],
+        "title": "EpisodicMemoryOwner",
+        "type": "object"
+      },
       "ErrorCode": {
         "enum": [
           "INVALID_REQUEST",
@@ -1504,6 +1912,356 @@
         "title": "LogoutResponse",
         "type": "object"
       },
+      "MemoryCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "discriminator": {
+              "mapping": {
+                "conversation": "#/components/schemas/ConversationMemoryContent",
+                "enterprise": "#/components/schemas/EnterpriseMemoryContent",
+                "episodic": "#/components/schemas/EpisodicMemoryContent",
+                "user": "#/components/schemas/UserMemoryContent",
+                "working": "#/components/schemas/WorkingMemoryContent"
+              },
+              "propertyName": "scope"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkingMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/ConversationMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/UserMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/EpisodicMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/EnterpriseMemoryContent"
+              }
+            ],
+            "title": "Content"
+          },
+          "deduplication_key": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deduplication Key"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "owner": {
+            "discriminator": {
+              "mapping": {
+                "conversation": "#/components/schemas/ConversationMemoryOwner",
+                "enterprise": "#/components/schemas/EnterpriseMemoryOwner",
+                "episodic": "#/components/schemas/EpisodicMemoryOwner",
+                "user": "#/components/schemas/UserMemoryOwner",
+                "working": "#/components/schemas/WorkingMemoryOwner"
+              },
+              "propertyName": "scope"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkingMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/ConversationMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/UserMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/EpisodicMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/EnterpriseMemoryOwner"
+              }
+            ],
+            "title": "Owner"
+          },
+          "sensitivity": {
+            "$ref": "#/components/schemas/Sensitivity",
+            "default": "internal"
+          },
+          "source": {
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "trust_level": {
+            "$ref": "#/components/schemas/TrustLevel",
+            "default": "medium"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/MemoryVersionPins"
+          }
+        },
+        "required": [
+          "owner",
+          "content",
+          "source"
+        ],
+        "title": "MemoryCandidate",
+        "type": "object"
+      },
+      "MemoryEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "MemoryEvidence",
+        "type": "object"
+      },
+      "MemoryProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/MemoryCandidate"
+          },
+          "committed_memory_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed Memory Id"
+          },
+          "conflict_with": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Conflict With",
+            "type": "array"
+          },
+          "deduplication_key": {
+            "minLength": 1,
+            "title": "Deduplication Key",
+            "type": "string"
+          },
+          "owner_key": {
+            "minLength": 1,
+            "title": "Owner Key",
+            "type": "string"
+          },
+          "proposal_id": {
+            "minLength": 1,
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposed_at": {
+            "format": "date-time",
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "proposed_by": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus",
+            "default": "pending_approval"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "owner_key",
+          "candidate",
+          "deduplication_key",
+          "proposed_at",
+          "updated_at"
+        ],
+        "title": "MemoryProposal",
+        "type": "object"
+      },
+      "MemoryProposalDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "MemoryProposalDecisionRequest",
+        "type": "object"
+      },
+      "MemoryProposalDecisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "status"
+        ],
+        "title": "MemoryProposalDecisionResponse",
+        "type": "object"
+      },
+      "MemoryProposalListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryProposal"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryProposalListResponse",
+        "type": "object"
+      },
+      "MemoryVersionPins": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Version"
+          },
+          "domain_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Version"
+          },
+          "schema_fingerprint": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Fingerprint"
+          }
+        },
+        "title": "MemoryVersionPins",
+        "type": "object"
+      },
       "Nl2SqlRequest": {
         "additionalProperties": false,
         "description": "The HTTP agent request is exactly the public Runtime request.",
@@ -1716,6 +2474,20 @@
         "title": "PostgresDataSourceRequest",
         "type": "object"
       },
+      "ProposalStatus": {
+        "enum": [
+          "proposed",
+          "pending_approval",
+          "approved",
+          "rejected",
+          "conflict",
+          "policy_rejected",
+          "committed",
+          "invalidated"
+        ],
+        "title": "ProposalStatus",
+        "type": "string"
+      },
       "ProposalSummary": {
         "additionalProperties": false,
         "properties": {
@@ -1800,6 +2572,130 @@
         ],
         "title": "ResultShape",
         "type": "string"
+      },
+      "RunCancelResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "cancelled"
+        ],
+        "title": "RunCancelResponse",
+        "type": "object"
+      },
+      "RunCompletedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "run_completed",
+            "default": "run_completed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "RunCompletedPayload",
+        "type": "object"
+      },
+      "RunEventListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RunEventListResponse",
+        "type": "object"
+      },
+      "RunFailedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "kind": {
+            "const": "run_failed",
+            "default": "run_failed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code"
+        ],
+        "title": "RunFailedPayload",
+        "type": "object"
+      },
+      "RunProgressPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "progress",
+            "default": "progress",
+            "title": "Kind",
+            "type": "string"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/RuntimeVersionPins"
+          },
+          "stage": {
+            "const": "versions_pinned",
+            "default": "versions_pinned",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "title": "RunProgressPayload",
+        "type": "object"
+      },
+      "RunStartedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "enterprise_id": {
+            "minLength": 1,
+            "title": "Enterprise Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "run_started",
+            "default": "run_started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentMode"
+          }
+        },
+        "required": [
+          "mode",
+          "enterprise_id",
+          "domain_id"
+        ],
+        "title": "RunStartedPayload",
+        "type": "object"
       },
       "RuntimeVersionPins": {
         "additionalProperties": false,
@@ -2064,6 +2960,15 @@
         "title": "SemanticFieldMapping",
         "type": "object"
       },
+      "Sensitivity": {
+        "enum": [
+          "public",
+          "internal",
+          "restricted"
+        ],
+        "title": "Sensitivity",
+        "type": "string"
+      },
       "SeriesAxis": {
         "additionalProperties": false,
         "properties": {
@@ -2190,6 +3095,70 @@
         "title": "TokenResponse",
         "type": "object"
       },
+      "TrustLevel": {
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "verified"
+        ],
+        "title": "TrustLevel",
+        "type": "string"
+      },
+      "UserMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "preference_key": {
+            "minLength": 1,
+            "title": "Preference Key",
+            "type": "string"
+          },
+          "preference_value": {
+            "minLength": 1,
+            "title": "Preference Value",
+            "type": "string"
+          },
+          "scope": {
+            "const": "user",
+            "default": "user",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preference_key",
+          "preference_value"
+        ],
+        "title": "UserMemoryContent",
+        "type": "object"
+      },
+      "UserMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "const": "user",
+            "default": "user",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id"
+        ],
+        "title": "UserMemoryOwner",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -2284,6 +3253,80 @@
           "outputGrain"
         ],
         "title": "WindowSpec",
+        "type": "object"
+      },
+      "WorkingMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "scope": {
+            "const": "working",
+            "default": "working",
+            "title": "Scope",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "WorkingMemoryContent",
+        "type": "object"
+      },
+      "WorkingMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "working",
+            "default": "working",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id",
+          "run_id"
+        ],
+        "title": "WorkingMemoryOwner",
         "type": "object"
       }
     },
@@ -2830,6 +3873,60 @@
         "summary": "Send Conversation Message"
       }
     },
+    "/api/conversations/{conversation_id}/messages/stream": {
+      "post": {
+        "operationId": "stream_conversation_message_api_conversations__conversation_id__messages_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Typed runtime event stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Stream Conversation Message"
+      }
+    },
     "/api/data-sources": {
       "get": {
         "operationId": "list_data_sources_api_data_sources_get",
@@ -3175,6 +4272,116 @@
         "summary": "Get Data Source Catalog"
       }
     },
+    "/api/memory/proposals": {
+      "get": {
+        "operationId": "list_memory_proposals_api_memory_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ProposalStatus",
+              "default": "pending_approval"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryProposalListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Memory Proposals"
+      }
+    },
+    "/api/memory/proposals/{proposal_id}/decision": {
+      "post": {
+        "operationId": "decide_memory_proposal_api_memory_proposals__proposal_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryProposalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryProposalDecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Decide Memory Proposal"
+      }
+    },
     "/api/nl2sql": {
       "post": {
         "operationId": "nl2sql_api_nl2sql_post",
@@ -3216,6 +4423,160 @@
           }
         ],
         "summary": "Nl2Sql"
+      }
+    },
+    "/api/nl2sql/stream": {
+      "post": {
+        "operationId": "stream_nl2sql_api_nl2sql_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Nl2SqlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Typed runtime event stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Stream Nl2Sql"
+      }
+    },
+    "/api/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCancelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cancel Run"
+      }
+    },
+    "/api/runs/{run_id}/events": {
+      "get": {
+        "operationId": "replay_run_events_api_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_sequence",
+            "required": false,
+            "schema": {
+              "default": -1,
+              "minimum": -1,
+              "title": "After Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEventListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Replay Run Events"
       }
     },
     "/health": {

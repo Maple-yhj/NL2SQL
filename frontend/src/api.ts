@@ -1,5 +1,7 @@
 import type {
   ApiConversationMessage,
+  AgentEvent,
+  AgentResponse,
   AuthUser,
   Conversation,
   ConversationUpdatePayload,
@@ -111,6 +113,52 @@ export class ApiClient {
     );
   }
 
+  async streamMessage(
+    conversationId: string,
+    payload: SendMessagePayload,
+    onEvent: (event: AgentEvent) => void,
+  ): Promise<ConversationMessageResponse> {
+    const response = await this.fetchResponse(
+      `/api/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    if (!response.ok) {
+      const body = await readJsonBody(response);
+      throw new ApiError(
+        response.status,
+        readErrorMessage(body, response.statusText),
+      );
+    }
+    if (
+      !response.headers.get("content-type")?.toLowerCase().includes(
+        "text/event-stream",
+      ) ||
+      response.body === null
+    ) {
+      throw new ApiError(502, "Runtime did not return an event stream");
+    }
+    return readAgentEventStream(response.body, onEvent);
+  }
+
+  cancelRun(runId: string): Promise<{ run_id: string; cancelled: boolean }> {
+    return this.request<{ run_id: string; cancelled: boolean }>(
+      `/api/runs/${encodeURIComponent(runId)}/cancel`,
+      { method: "POST" },
+    );
+  }
+
+  listRunEvents(
+    runId: string,
+    afterSequence = -1,
+  ): Promise<{ items: AgentEvent[] }> {
+    return this.request<{ items: AgentEvent[] }>(
+      `/api/runs/${encodeURIComponent(runId)}/events?after_sequence=${afterSequence}`,
+    );
+  }
+
   listDataSources(): Promise<{ items: DataSource[] }> {
     return this.request<{ items: DataSource[] }>("/api/data-sources");
   }
@@ -195,6 +243,30 @@ export class ApiClient {
     retryOnUnauthorized = true,
     acceptedErrorResponse?: (body: unknown) => body is T,
   ): Promise<T> {
+    const response = await this.fetchResponse(
+      path,
+      init,
+      authenticated,
+      retryOnUnauthorized,
+    );
+
+    if (!response.ok) {
+      const body = await readJsonBody(response);
+      if (acceptedErrorResponse?.(body)) {
+        return body;
+      }
+      throw new ApiError(response.status, readErrorMessage(body, response.statusText));
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  private async fetchResponse(
+    path: string,
+    init: RequestInit = {},
+    authenticated = true,
+    retryOnUnauthorized = true,
+  ): Promise<Response> {
     const headers = new Headers(init.headers);
     if (
       init.body &&
@@ -212,18 +284,9 @@ export class ApiClient {
     const response = await fetch(path, { ...init, headers });
     if (response.status === 401 && authenticated && retryOnUnauthorized) {
       await this.refreshSession();
-      return this.request<T>(path, init, authenticated, false, acceptedErrorResponse);
+      return this.fetchResponse(path, init, authenticated, false);
     }
-
-    if (!response.ok) {
-      const body = await readJsonBody(response);
-      if (acceptedErrorResponse?.(body)) {
-        return body;
-      }
-      throw new ApiError(response.status, readErrorMessage(body, response.statusText));
-    }
-
-    return response.json() as Promise<T>;
+    return response;
   }
 
   private async refreshSession(): Promise<void> {
@@ -240,6 +303,88 @@ export class ApiClient {
 
     this.options.setSession(refreshed);
   }
+}
+
+async function readAgentEventStream(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (event: AgentEvent) => void,
+): Promise<AgentResponse> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let terminal: AgentResponse | null = null;
+
+  function consumeFrame(frame: string): void {
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (!data) {
+      return;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data);
+    } catch {
+      throw new ApiError(502, "Runtime emitted malformed event JSON");
+    }
+    if (!isAgentEvent(parsed)) {
+      throw new ApiError(502, "Runtime emitted an invalid event");
+    }
+    onEvent(parsed);
+    if (parsed.response !== null) {
+      if (terminal !== null) {
+        throw new ApiError(502, "Runtime emitted multiple terminal responses");
+      }
+      terminal = parsed.response;
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() ?? "";
+    for (const frame of frames) {
+      consumeFrame(frame);
+    }
+    if (done) {
+      if (buffer.trim()) {
+        consumeFrame(buffer);
+      }
+      break;
+    }
+  }
+  if (terminal === null) {
+    throw new ApiError(502, "Runtime stream ended without a terminal response");
+  }
+  return terminal;
+}
+
+function isAgentEvent(value: unknown): value is AgentEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const types = new Set([
+    "run_started",
+    "progress",
+    "run_completed",
+    "run_failed",
+  ]);
+  const response = value.response;
+  return (
+    typeof value.type === "string" &&
+    types.has(value.type) &&
+    typeof value.run_id === "string" &&
+    value.run_id.trim().length > 0 &&
+    Number.isInteger(value.sequence) &&
+    Number(value.sequence) >= 0 &&
+    isRecord(value.data) &&
+    (response === null || isAgentResponse(response)) &&
+    ((value.type === "run_completed" || value.type === "run_failed") ===
+      (response !== null))
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

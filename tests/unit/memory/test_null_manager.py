@@ -112,6 +112,56 @@ class NullMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             ProposalStatus.COMMITTED,
         )
 
+    async def test_proposal_listing_enforces_owner_and_admin_visibility(self) -> None:
+        own = await self.manager.propose(user_candidate())
+        other = await self.manager.propose(
+            user_candidate("detailed").model_copy(
+                update={
+                    "owner": UserMemoryOwner(
+                        tenant_id="tenant-a",
+                        user_id="user-b",
+                    )
+                }
+            )
+        )
+        enterprise = await self.manager.propose(
+            MemoryCandidate(
+                owner=EnterpriseMemoryOwner(
+                    tenant_id="tenant-a",
+                    domain_id="commerce",
+                ),
+                content=EnterpriseMemoryContent(
+                    category="metric_rule",
+                    statement="GMV excludes cancelled orders.",
+                ),
+                source="curated_review",
+            )
+        )
+
+        analyst_items = await self.manager.list_proposals(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            roles=("analyst",),
+            statuses=(ProposalStatus.PENDING_APPROVAL,),
+            limit=10,
+        )
+        admin_items = await self.manager.list_proposals(
+            tenant_id="tenant-a",
+            user_id="admin-a",
+            roles=("memory_admin",),
+            statuses=(ProposalStatus.PENDING_APPROVAL,),
+            limit=10,
+        )
+
+        self.assertEqual(
+            {item.proposal_id for item in analyst_items},
+            {own},
+        )
+        self.assertEqual(
+            {item.proposal_id for item in admin_items},
+            {own, other, enterprise},
+        )
+
     async def test_enterprise_memory_requires_admin_approval(self) -> None:
         candidate = MemoryCandidate(
             owner=EnterpriseMemoryOwner(

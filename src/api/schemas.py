@@ -12,6 +12,8 @@ from data_agent.runtime.models import (
     ConversationMessage,
     ConversationSummary,
 )
+from data_agent.runtime.events import AgentEvent
+from data_agent.memory import ApprovalDecision, MemoryProposal, ProposalStatus
 from data_agent.datasources import (
     DataSourceKind,
     DataSourceStatus,
@@ -209,6 +211,37 @@ class ConversationDataSourceBindingResponse(StrictApiModel):
     binding: SemanticBindingRecord | None = None
 
 
+class RunCancelResponse(StrictApiModel):
+    run_id: str
+    cancelled: bool
+
+
+class RunEventListResponse(StrictApiModel):
+    items: list[AgentEvent]
+
+
+class MemoryProposalListResponse(StrictApiModel):
+    items: list[MemoryProposal]
+
+
+class MemoryProposalDecisionRequest(StrictApiModel):
+    decision: ApprovalDecision
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_decision_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
+class MemoryProposalDecisionResponse(StrictApiModel):
+    proposal_id: str
+    status: ProposalStatus
+
+
 __all__ = [
     "AccessTokenResponse",
     "AuthUserResponse",
@@ -227,9 +260,14 @@ __all__ = [
     "LoginRequest",
     "LogoutRequest",
     "LogoutResponse",
+    "MemoryProposalDecisionRequest",
+    "MemoryProposalDecisionResponse",
+    "MemoryProposalListResponse",
     "Nl2SqlRequest",
     "Nl2SqlResponse",
     "RefreshRequest",
+    "RunCancelResponse",
+    "RunEventListResponse",
     "PostgresDataSourceRequest",
     "SemanticBindingCreateRequest",
     "SemanticBindingListResponse",

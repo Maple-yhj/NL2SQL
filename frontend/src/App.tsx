@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   Send,
+  Square,
   SquarePen,
   Table2,
   Trash2,
@@ -71,6 +72,7 @@ export function App() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<AgentMode>("execute");
   const [loading, setLoading] = useState(false);
+  const [activeRunId, setActiveRunId] = useState("");
   const [booting, setBooting] = useState(Boolean(session));
   const [error, setError] = useState("");
   const [accountOpen, setAccountOpen] = useState(false);
@@ -106,6 +108,7 @@ export function App() {
     setMessages([]);
     setDataSources([]);
     setActiveDataBinding(null);
+    setActiveRunId("");
   }, [commitSession]);
 
   const api = useMemo(
@@ -400,9 +403,14 @@ export function App() {
         setConversations((items) => [conversation, ...items]);
       }
 
-      const response = await api.sendMessage(
+      const response = await api.streamMessage(
         conversationId,
         createSendMessagePayload(question, mode, activeDataBinding),
+        (event) => {
+          if (event.type === "run_started") {
+            setActiveRunId(event.run_id);
+          }
+        },
       );
       setMessages((items) =>
         items.map((item) =>
@@ -436,7 +444,22 @@ export function App() {
         ),
       );
     } finally {
+      setActiveRunId("");
       setLoading(false);
+    }
+  }
+
+  async function handleCancelRun() {
+    if (!activeRunId) {
+      return;
+    }
+    try {
+      await api.cancelRun(activeRunId);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return;
+      }
+      handleAuthOrError(err, clearSession, setError);
     }
   }
 
@@ -714,8 +737,15 @@ export function App() {
               placeholder="有问题，尽管问"
               disabled={loading}
             />
-            <button className="send-button" type="submit" disabled={loading || !input.trim()}>
-              {loading ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
+            <button
+              className={`send-button ${loading ? "cancel-run" : ""}`}
+              type={loading ? "button" : "submit"}
+              disabled={loading ? !activeRunId : !input.trim()}
+              onClick={loading ? () => void handleCancelRun() : undefined}
+              aria-label={loading ? "Cancel active run" : "Send message"}
+              title={loading ? "Cancel active run" : "Send message"}
+            >
+              {loading ? <Square size={14} fill="currentColor" /> : <Send size={18} />}
             </button>
           </form>
         </div>

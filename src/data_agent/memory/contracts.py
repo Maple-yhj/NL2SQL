@@ -14,10 +14,12 @@ from .models import (
     MemoryBudget,
     MemoryBundle,
     MemoryCandidate,
+    MemoryProposal,
     MemoryQuery,
     MemorySelector,
     MessageRecord,
     ProposalId,
+    ProposalStatus,
     SubjectScope,
 )
 
@@ -37,6 +39,16 @@ class MemoryManager(Protocol):
         proposal_id: str,
         approval: ApprovalContext,
     ) -> None: ...
+
+    async def list_proposals(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        roles: tuple[str, ...],
+        statuses: tuple[ProposalStatus, ...],
+        limit: int,
+    ) -> tuple[MemoryProposal, ...]: ...
 
     async def invalidate(self, selector: MemorySelector) -> int: ...
 
