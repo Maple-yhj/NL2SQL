@@ -152,6 +152,7 @@ class RuntimeScriptTests(unittest.TestCase):
             "SourceAttestation",
             "VerifiedBundleCandidate",
             "build_olist_runtime",
+            "build_upload_runtime",
         }
         self.assertLessEqual(expected, set(runtime.__all__))
 

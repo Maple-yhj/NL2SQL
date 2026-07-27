@@ -373,6 +373,11 @@ export function App() {
     if (!question || loading) {
       return;
     }
+    if (!activeDataBinding) {
+      setError("请先上传数据集，确认语义绑定并选择该数据源。");
+      setDataSourcePanelOpen(true);
+      return;
+    }
 
     setInput("");
     setLoading(true);
@@ -405,7 +410,7 @@ export function App() {
 
       const response = await api.streamMessage(
         conversationId,
-        createSendMessagePayload(question, mode, activeDataBinding),
+        createSendMessagePayload(question, activeDataBinding, mode),
         (event) => {
           if (event.type === "run_started") {
             setActiveRunId(event.run_id);
@@ -699,7 +704,9 @@ export function App() {
                 )}
                 {!messages.length && (
                   <div className="empty-thread">
-                    <span>你好，{session.user.username}。</span>
+                    <span>
+                      你好，{session.user.username}。请先上传并选择数据集。
+                    </span>
                   </div>
                 )}
                 <div ref={threadEndRef} className="thread-end" />

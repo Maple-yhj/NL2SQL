@@ -157,6 +157,8 @@ class DataAgentRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             async for event in runtime.run(
                 AgentRequest(
                     question="Show GMV by seller",
+                    enterprise_id="olist",
+                    domain_id="commerce",
                     conversation_id=conversation.conversation_id,
                     mode=mode,
                 ),

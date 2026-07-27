@@ -23,9 +23,9 @@ RuntimeFactory = Callable[[], Awaitable[Any]]
 
 
 async def _default_runtime_factory() -> Any:
-    from data_agent.runtime.composition_root import build_runtime
+    from data_agent.runtime.composition_root import build_upload_runtime
 
-    return await build_runtime()
+    return await build_upload_runtime()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,8 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     ask = commands.add_parser("ask", help="Run one governed Data Agent question")
     ask.add_argument("question", help="Natural-language analytics question")
-    ask.add_argument("--enterprise-id", default="olist")
-    ask.add_argument("--domain-id", default="commerce")
+    ask.add_argument("--enterprise-id", default="user-dataset")
+    ask.add_argument("--domain-id", default="dataset")
     ask.add_argument("--conversation-id")
     ask.add_argument("--mode", choices=tuple(mode.value for mode in AgentMode), default="execute")
     ask.add_argument("--requested-output", default="answer")

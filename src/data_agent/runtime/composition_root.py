@@ -1,4 +1,4 @@
-"""Async governed Commerce composition root with inert imports and one DB pool."""
+"""Composition roots for the upload-only product and opt-in pack runtimes."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from .dependencies import ModelClient, RuntimeDependencies
 from .planner import ModelLogicalPlanner
 from .paths import resolve_bundle_paths, validate_bundle_paths
 from .service import DefaultDataAgentRuntime
+from .upload_runtime import UploadDatasetRuntime, UploadRuntimeComposition
 
 
 PoolFactory = Callable[..., Awaitable[Any]]
@@ -129,6 +130,37 @@ class RuntimeComposition:
 
     async def close(self) -> None:
         await self.runtime.close()
+
+
+async def build_upload_runtime(
+    *,
+    state_root: str | Path | None = None,
+    model_client_factory: ModelClientFactory | None = None,
+    environment: Mapping[str, str] | None = None,
+) -> UploadRuntimeComposition:
+    """Build the default product without activating any bundled datasource."""
+
+    env = dict(os.environ if environment is None else environment)
+    configured_root = state_root or env.get("DATA_AGENT_STATE_DIR")
+    control_root = Path(configured_root or "var/data-agent").expanduser()
+    factory = model_client_factory or (
+        lambda: _default_model_client_factory(env)
+    )
+    model_client = factory()
+    if inspect.isawaitable(model_client):
+        model_client = await model_client
+    if not isinstance(model_client.model_id, str) or not isinstance(
+        model_client.version, str
+    ):
+        await _close_resource(model_client)
+        raise TypeError("model client must expose stable id and version pins")
+    runtime = UploadDatasetRuntime(
+        control_root / "control" / "conversations.sqlite3"
+    )
+    return UploadRuntimeComposition(
+        runtime=runtime,
+        model_client=model_client,
+    )
 
 
 async def build_runtime(
@@ -271,6 +303,7 @@ async def _close_resource(resource: Any) -> None:
 __all__ = [
     "EnvironmentCredentialBroker",
     "RuntimeComposition",
+    "build_upload_runtime",
     "build_runtime",
     "build_olist_runtime",
 ]

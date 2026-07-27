@@ -7,10 +7,11 @@ Read these files first:
 1. `src/data_agent/runtime/contracts.py` — public `DataAgentRuntime.run()`.
 2. `src/data_agent/runtime/models.py` and `events.py` — request, response,
    principal, modes, trace, version pins, and terminal-event invariants.
-3. `src/data_agent/runtime/service.py` — the only application-service
-   lifecycle used by product adapters.
-4. `src/data_agent/runtime/composition_root.py` — production dependency
-   composition for OList.
+3. `src/data_agent/runtime/upload_runtime.py` — the default upload-only
+   conversation boundary.
+4. `src/data_agent/runtime/service.py` — the optional governed-pack runtime.
+5. `src/data_agent/runtime/composition_root.py` — the default upload-only
+   composition plus explicit pack/OList compatibility composition.
 
 Product adapters are `src/data_agent/cli.py`, `src/api/`, `main.py`, and
 `src/data_agent/execution/langgraph_adapter.py`. They must not construct a
@@ -20,9 +21,10 @@ Skill, Tool, Memory provider, or database connector directly.
 
 ### 1. Runtime
 
-`src/data_agent/runtime/` loads and pins a resolved bundle, assembles governed
-context, enforces deadline/budget, drives the graph, persists a safe turn, and
-emits exactly one terminal event.
+The default runtime persists identity-scoped conversations and rejects
+questions without an activated user datasource. The optional pack runtime
+loads and pins a resolved bundle, enforces deadline/budget, drives the graph,
+persists a safe turn, and emits exactly one terminal event.
 
 ### 2. Skill System
 

@@ -2,18 +2,18 @@
 
 ## 当前状态
 
-项目已完成 `plan.md` 中第 0–7 阶段，当前分支为 `Agent`，最新功能提交为
-`5ccdf08`。系统已从固定 OList NL2SQL 演进为具备治理能力的多数据源分析
-Agent，同时保留 OList Commerce 作为默认部署。
+项目已完成 `plan.md` 中第 0–8 阶段。当前分支为
+`Agent`，最新提交为 `3027cb2`。系统默认不部署任何业务数据，用户必须自行
+上传或注册数据源并激活语义绑定；OList 仅保留为显式兼容和离线回归资产。
 
 ## 核心架构
 
-- CLI、FastAPI、Web 前端和 LangGraph Studio 统一调用公共
-  `DataAgentRuntime`。
-- 请求经结构化 Planner、Logical Query Plan、策略校验、方言编译和只读执行，
-  不允许模型直接生成并执行物理 SQL。
-- Domain Pack 管理语义、指标、词汇和策略；Enterprise Binding 管理物理表、
-  字段、关联、访问范围及凭据引用。
+- 默认上传运行时负责按 tenant/user 隔离的会话，以及无数据源时的安全失败；
+  API 数据集查询服务负责用户数据源的规划与执行。
+- 用户请求经结构化 Planner、Query IR、语义绑定、方言编译和只读执行，不允许
+  模型直接生成并执行物理 SQL。
+- 可选 Domain Pack/Enterprise Binding 运行时继续用于显式兼容部署，不参与
+  默认应用启动。
 - GPT/OpenAI、Qwen、Gemini、Claude、GLM、DeepSeek 及 OpenAI-compatible
   Provider 共用统一模型接口和结构化输出契约。
 
@@ -27,14 +27,19 @@ Agent，同时保留 OList Commerce 作为默认部署。
 - SSE 流式事件、按租户/用户隔离的运行取消、SQLite 持久化事件回放。
 - 记忆提案查询和批准/拒绝 API；用户记忆按所有者隔离，企业和事件记忆要求
   管理员权限。
-- 前端已接入数据源选择、语义绑定、SSE 消费和运行取消。
+- 前端已接入数据源上传/注册、语义绑定、SSE 消费和运行取消；没有激活绑定时
+  会打开数据源面板并阻止发送问题。
+- API、CLI、Studio 和公共请求契约默认使用 `user-dataset` / `dataset`，不会
+  回退到 OList。
 - 可通过 `DATA_AGENT_BUNDLE_PATHS_FILE` 加载其他已验证的 Commerce 企业
-  bundle；默认 OList 入口保持兼容。
+  bundle；OList 只能通过显式兼容构建器启动。
 
 ## 控制面与安全边界
 
-- 认证、会话、记忆和默认业务数据使用 PostgreSQL；用户数据源注册、绑定、
-  文件快照和运行事件位于独立控制面状态目录。
+- 认证使用 `AUTH_DATABASE_URL` 指向的 PostgreSQL；用户数据源注册、绑定、
+  文件快照、会话和运行事件位于独立控制面状态目录。
+- 默认启动不读取业务 `DATABASE_URL`，也不加载 OList bundle 或创建其数据库
+  连接。
 - PostgreSQL 密码不进入注册数据，只保存 `credential_ref`，运行时从部署环境
   解析。
 - 查询强制只读、关系白名单、行数和时间预算、版本校验及安全错误输出。
@@ -42,8 +47,8 @@ Agent，同时保留 OList Commerce 作为默认部署。
 
 ## 验证状态
 
-- 后端：430 项测试及 609 个子测试通过。
-- 前端：46 项测试通过，TypeScript 和 Vite 生产构建通过。
+- 后端：435 项测试通过。
+- 前端：45 项测试通过，TypeScript 和 Vite 生产构建通过。
 - OpenAPI/Apifox 契约、前端 AgentResponse schema、wheel 构建和离线 OList
   黄金用例均纳入发布门禁。
 

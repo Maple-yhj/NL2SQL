@@ -58,6 +58,9 @@ def _auth_headers(
 class _RecordingRuntime:
     def __init__(self) -> None:
         self.calls: list[tuple[AgentRequest, PrincipalContext]] = []
+        self.recorded_turns: list[
+            tuple[AgentRequest, PrincipalContext, AgentResponse]
+        ] = []
 
     async def run(
         self,
@@ -86,6 +89,15 @@ class _RecordingRuntime:
             data=RunCompletedPayload(),
             response=response,
         )
+
+    async def record_conversation_turn(
+        self,
+        *,
+        request: AgentRequest,
+        principal: PrincipalContext,
+        response: AgentResponse,
+    ) -> None:
+        self.recorded_turns.append((request, principal, response))
 
 
 class _ExplodingRuntime(_RecordingRuntime):
@@ -233,6 +245,13 @@ class ApiRuntimeContractTests(unittest.TestCase):
         self.assertEqual(routed_request.source_id, "orders")
         self.assertEqual(routed_request.conversation_id, "conv-dataset")
         self.assertEqual(routed_principal.tenant_id, "tenant-from-token")
+        self.assertEqual(len(composition.runtime.recorded_turns), 1)
+        recorded_request, recorded_principal, recorded_response = (
+            composition.runtime.recorded_turns[0]
+        )
+        self.assertEqual(recorded_request, routed_request)
+        self.assertEqual(recorded_principal, routed_principal)
+        self.assertEqual(recorded_response.answer, "dataset done")
 
     def test_strict_http_body_cannot_override_authenticated_principal(self):
         composition = _RecordingComposition()

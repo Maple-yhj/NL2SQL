@@ -708,7 +708,7 @@
         "additionalProperties": false,
         "properties": {
           "domain_id": {
-            "default": "commerce",
+            "default": "dataset",
             "minLength": 1,
             "title": "Domain Id",
             "type": "string"
@@ -939,7 +939,7 @@
       },
       "ConversationMessageRequest": {
         "additionalProperties": false,
-        "description": "Conversation turns use the same strict Runtime contract.",
+        "description": "Conversation turns default to the user-dataset runtime scope.",
         "properties": {
           "binding_id": {
             "anyOf": [
@@ -978,13 +978,13 @@
             "title": "Conversation Id"
           },
           "domain_id": {
-            "default": "commerce",
+            "default": "dataset",
             "minLength": 1,
             "title": "Domain Id",
             "type": "string"
           },
           "enterprise_id": {
-            "default": "olist",
+            "default": "user-dataset",
             "minLength": 1,
             "title": "Enterprise Id",
             "type": "string"
@@ -2264,7 +2264,7 @@
       },
       "Nl2SqlRequest": {
         "additionalProperties": false,
-        "description": "The HTTP agent request is exactly the public Runtime request.",
+        "description": "HTTP defaults target only user-provided datasets.",
         "properties": {
           "binding_id": {
             "anyOf": [
@@ -2303,13 +2303,13 @@
             "title": "Conversation Id"
           },
           "domain_id": {
-            "default": "commerce",
+            "default": "dataset",
             "minLength": 1,
             "title": "Domain Id",
             "type": "string"
           },
           "enterprise_id": {
-            "default": "olist",
+            "default": "user-dataset",
             "minLength": 1,
             "title": "Enterprise Id",
             "type": "string"
@@ -3492,7 +3492,7 @@
             "name": "domain_id",
             "required": false,
             "schema": {
-              "default": "commerce",
+              "default": "dataset",
               "minLength": 1,
               "title": "Domain Id",
               "type": "string"
@@ -3610,7 +3610,7 @@
             "name": "domain_id",
             "required": false,
             "schema": {
-              "default": "commerce",
+              "default": "dataset",
               "minLength": 1,
               "title": "Domain Id",
               "type": "string"
@@ -3663,7 +3663,7 @@
             "name": "domain_id",
             "required": false,
             "schema": {
-              "default": "commerce",
+              "default": "dataset",
               "minLength": 1,
               "title": "Domain Id",
               "type": "string"
@@ -3772,7 +3772,7 @@
             "name": "domain_id",
             "required": false,
             "schema": {
-              "default": "commerce",
+              "default": "dataset",
               "minLength": 1,
               "title": "Domain Id",
               "type": "string"

@@ -578,7 +578,12 @@ class OListGoldenRuntimeE2ETests(unittest.IsolatedAsyncioTestCase):
                 events = [
                     event
                     async for event in fixture.runtime.run(
-                        AgentRequest(question=case.question, include_trace=True),
+                        AgentRequest(
+                            question=case.question,
+                            enterprise_id="olist",
+                            domain_id="commerce",
+                            include_trace=True,
+                        ),
                         principal,
                     )
                 ]

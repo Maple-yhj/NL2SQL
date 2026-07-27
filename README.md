@@ -1,37 +1,30 @@
 # Data Agent
 
-Data Agent is a governed, configuration-driven analytics runtime. The first
-release combines the reusable `commerce` domain with the `olist` enterprise
-binding. Enterprise differences live in database/table bindings; Commerce
-metrics and analysis behavior remain enterprise-neutral.
+Data Agent is a governed analytics application driven entirely by data that
+the user uploads or registers. The default API, web application, CLI, and
+Studio runtime contain no preloaded business dataset and never fall back to
+OList.
+
+Users can upload CSV, XLSX, or SQLite files, or register a PostgreSQL source.
+After catalog discovery they confirm a semantic binding, activate it, and only
+then can start an analysis.
 
 ## Architecture
 
-All product adapters (CLI, FastAPI, frontend, and LangGraph Studio) call the
-same public `data_agent.runtime.DataAgentRuntime`. The implementation is split
-into six layers:
+All product adapters call the same public `DataAgentRuntime`. The default
+product is split into four layers:
 
-1. **Data Agent Runtime** — request lifecycle, identity, budgets, terminal
-   events, version pins, and safe errors.
-2. **Skill System** — Commerce vocabulary, typed `LogicalQueryPlan`, and plan
-   validation; it contains no OList table or column names.
-3. **Execution Graph** — one bounded graph for context, planning, binding,
-   compile, execute, evidence validation, and answer rendering.
-4. **Tool Registry** — six governed tools with typed contracts, policy checks,
-   trace, and the PostgreSQL connector.
-5. **Memory** — conversation history, approved recall, checkpoints, and
-   pending proposals; memory cannot override packs or policy.
-6. **Enterprise Data Binding** — OList sources, nine physical relations,
-   field/relationship mapping, relation allowlist, and seller ownership rules.
+1. **Upload runtime** — identity-scoped conversations and a fail-closed
+   boundary when no datasource has been selected.
+2. **Datasource control plane** — immutable file snapshots, PostgreSQL
+   registrations, catalog versions, semantic bindings, and conversation pins.
+3. **Dataset query service** — structured Planner output, deterministic Query
+   IR compilation, read-only execution, evidence validation, and safe charts.
+4. **Run control** — typed SSE, cancellation, replay, and safe terminal errors.
 
-The resolved deployment is compiled from:
-
-- `packs/domains/commerce/` — entities, metrics, vocabulary, policies, and the
-  canonical 48 eval cases;
-- `packs/enterprises/olist/` — PostgreSQL relation/field binding and access
-  policy;
-- `packs/deployments/olist-local.yaml` — selects both packs and runtime limits;
-- `schema_catalog.json` — attested physical schema metadata.
+The Commerce/OList pack runtime remains in the repository only as an explicit
+compatibility path and deterministic regression fixture. It is not loaded by
+normal application startup.
 
 ## Setup
 
@@ -44,9 +37,9 @@ python -m pip install -e .
 Copy-Item .env.example .env
 ```
 
-Set `DATABASE_URL`, one model provider/key, and `JWT_SECRET_KEY`. The default
-runtime uses the same PostgreSQL database for OList data, Data Agent memory,
-and auth unless `AUTH_DATABASE_URL` is explicitly set.
+Set `AUTH_DATABASE_URL`, one model provider/key, and `JWT_SECRET_KEY`.
+`AUTH_DATABASE_URL` stores authentication only; uploaded data and control-plane
+metadata live under `DATA_AGENT_STATE_DIR`.
 
 The planner is provider-neutral. Set `LLM_PROVIDER` and an explicit
 `DEFAULT_MODEL_NAME`, then configure the matching credential:
@@ -69,47 +62,41 @@ deployments, set the workspace-specific `QWEN_BASE_URL` issued for the selected
 Alibaba Cloud region.
 
 ```powershell
-psql $env:DATABASE_URL -f db/data_agent_memory.sql
-psql $env:DATABASE_URL -f db/auth.sql
-python scripts/import_olist_dataset.py --zip-path D:\data\olist.zip --reset
+psql $env:AUTH_DATABASE_URL -f db/auth.sql
+uvicorn api.app:app --reload
 ```
 
 Auth seed commands require credentials supplied through their documented
 arguments/environment; this repository does not publish a default password.
 
-## CLI and three modes
+## Analysis modes
 
-```powershell
-data-agent validate-config
-data-agent ask "Show monthly GMV for 2018" --mode plan --role admin
-data-agent ask "Show monthly GMV for 2018" --mode preview --role admin
-data-agent ask "Show monthly GMV for 2018" --mode execute --role admin --include-trace
-```
-
-- `plan` returns the governed logical plan and compiled SQL without database
-  credentials.
-- `preview` runs cost checks and a bounded preview.
-- `execute` runs the bounded read-only query and renders verified evidence.
-
-Seller principals receive a parameterized `seller_id` ownership predicate;
-configured admin roles receive policy bypass. Explicit questions such as “my
-sales” remain typed `tenant_context` filters, distinct from policy scope.
+The user-selected datasource path supports `plan`, `preview`, and `execute`.
+All three require one active semantic binding. `plan` returns a structured plan
+and compiled read-only SQL; `preview` and `execute` additionally use bounded
+query execution.
 
 ## HTTP contract
 
-Start the API with `uvicorn api.app:app --reload`. A question request uses the
-new product contract only:
+Question requests must include the four immutable pins from an active binding:
 
 ```json
 {
-  "question": "Show monthly GMV for 2018",
-  "enterprise_id": "olist",
-  "domain_id": "commerce",
+  "question": "Show monthly revenue",
+  "enterprise_id": "user-dataset",
+  "domain_id": "dataset.orders",
+  "source_id": "orders",
+  "source_version": 1,
+  "binding_id": "orders-binding-1",
+  "binding_version": 1,
   "mode": "execute",
   "requested_output": "answer",
   "include_trace": true
 }
 ```
+
+A request without these pins receives a typed validation failure asking the
+user to upload and activate a dataset. It does not query a bundled fallback.
 
 The terminal `AgentResponse` contains the logical plan, compiled SQL, bounded
 rows, answer, safe trace, pending memory proposals, and immutable version pins.
@@ -154,11 +141,12 @@ The model sees logical field references only. Physical identifiers are added
 later by the deterministic compiler, and stale or cross-conversation pins are
 rejected before planning.
 
-## External verified deployments
+## Optional governed-pack runtime
 
-The default package still starts with the included OList bundle. A different
-Commerce enterprise deployment can set `DATA_AGENT_BUNDLE_PATHS_FILE` to a
-strict JSON descriptor with these keys:
+The legacy Commerce pack runtime is opt-in for compatibility and offline
+regression testing. Call `build_runtime`/`build_olist_runtime` explicitly; the
+default application factory never calls them. A custom verified deployment can
+set `DATA_AGENT_BUNDLE_PATHS_FILE` to a strict JSON descriptor:
 
 ```json
 {
@@ -185,10 +173,10 @@ python scripts/export_apifox_openapi.py
 python scripts/export_frontend_agent_response_schema.py
 ```
 
-Generated outputs are `generated/bundles/olist-local.json`,
-`generated/semantic/commerce.json`, `docs/apifox-openapi.json`, and the
-frontend files under `frontend/src/generated/`. Freshness tests fail if a
-source pack or public schema changes without regeneration.
+The first two commands maintain the optional OList compatibility fixture.
+Public contract outputs are `docs/apifox-openapi.json` and the frontend files
+under `frontend/src/generated/`. Freshness tests fail when a public schema
+changes without regeneration.
 
 ## Tests and builds
 
@@ -200,8 +188,6 @@ npm --prefix frontend run build
 python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 ```
 
-The offline golden gate executes all 48 Commerce/OList cases through one
-`DefaultDataAgentRuntime`, using a deterministic ModelClient, Memory, and
-Connector. Each case checks logical and physical plans, policy, SQL, scoped
-fixture results, answer evidence, trace, and version pins. Live model/database
-checks are separate release checks and are not required in CI.
+The offline OList golden gate is an explicit compatibility test and never
+imports or deploys OList during normal startup. Live model/database checks are
+separate release checks and are not required in CI.

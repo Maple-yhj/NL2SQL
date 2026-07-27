@@ -206,7 +206,7 @@ class ApiConversationTests(unittest.TestCase):
         response = self.client.post(
             "/api/conversations",
             headers=auth_headers(user_id=user_id),
-            json={"title": "GMV analysis", "domain_id": "commerce"},
+            json={"title": "Dataset analysis", "domain_id": "dataset"},
         )
         self.assertEqual(response.status_code, 200)
         return response.json()
@@ -232,26 +232,26 @@ class ApiConversationTests(unittest.TestCase):
         created = self._create()
         self.assertEqual(created["tenant_id"], "demo")
         self.assertEqual(created["user_id"], "user-1")
-        self.assertEqual(created["domain_id"], "commerce")
+        self.assertEqual(created["domain_id"], "dataset")
 
         listed = self.client.get(
             "/api/conversations",
             headers=auth_headers(),
-            params={"domain_id": "commerce", "limit": 20},
+            params={"domain_id": "dataset", "limit": 20},
         )
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json()["items"], [created])
         fetched = self.client.get(
             f"/api/conversations/{created['conversation_id']}",
             headers=auth_headers(),
-            params={"domain_id": "commerce"},
+            params={"domain_id": "dataset"},
         )
         self.assertEqual(fetched.json(), created)
 
         updated = self.client.patch(
             f"/api/conversations/{created['conversation_id']}",
             headers=auth_headers(),
-            params={"domain_id": "commerce"},
+            params={"domain_id": "dataset"},
             json={"title": "Final GMV", "archived": True},
         )
         self.assertEqual(updated.status_code, 200)
@@ -274,7 +274,7 @@ class ApiConversationTests(unittest.TestCase):
         history = self.client.get(
             f"/api/conversations/{conversation_id}/messages",
             headers=auth_headers(),
-            params={"domain_id": "commerce", "limit": 50},
+            params={"domain_id": "dataset", "limit": 50},
         )
         self.assertEqual(history.status_code, 200)
         self.assertEqual([item["role"] for item in history.json()["items"]], ["user", "assistant"])
@@ -284,8 +284,8 @@ class ApiConversationTests(unittest.TestCase):
             headers=auth_headers(),
             json={
                 "question": " show gmv ",
-                "domain_id": "commerce",
-                "enterprise_id": "olist",
+                "domain_id": "dataset",
+                "enterprise_id": "user-dataset",
                 "mode": "preview",
                 "requested_output": "answer",
                 "include_trace": False,
@@ -303,7 +303,7 @@ class ApiConversationTests(unittest.TestCase):
         response = self.client.get(
             f"/api/conversations/{created['conversation_id']}",
             headers=auth_headers(user_id="user-2"),
-            params={"domain_id": "commerce"},
+            params={"domain_id": "dataset"},
         )
         self.assertEqual(response.status_code, 404)
 

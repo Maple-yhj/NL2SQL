@@ -24,8 +24,8 @@ class RuntimePublicModelTests(unittest.TestCase):
 
         request = models.AgentRequest(question="  monthly GMV  ")
         self.assertEqual(request.question, "monthly GMV")
-        self.assertEqual(request.enterprise_id, "olist")
-        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.enterprise_id, "user-dataset")
+        self.assertEqual(request.domain_id, "dataset")
         self.assertEqual(request.mode, "execute")
         self.assertEqual(request.requested_output, "answer")
         self.assertFalse(request.include_trace)

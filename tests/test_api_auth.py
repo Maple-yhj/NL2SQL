@@ -259,21 +259,21 @@ class ApiAuthSchemaTests(unittest.TestCase):
         request = Nl2SqlRequest(question=" show gmv ")
 
         self.assertEqual(request.question, "show gmv")
-        self.assertEqual(request.enterprise_id, "olist")
-        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.enterprise_id, "user-dataset")
+        self.assertEqual(request.domain_id, "dataset")
         self.assertEqual(request.mode.value, "execute")
         self.assertFalse(request.include_trace)
 
     def test_nl2sql_request_strips_governed_scope(self):
         request = Nl2SqlRequest(
             question=" show gmv ",
-            enterprise_id=" olist ",
-            domain_id=" commerce ",
+            enterprise_id=" user-dataset ",
+            domain_id=" dataset.orders ",
         )
 
         self.assertEqual(request.question, "show gmv")
-        self.assertEqual(request.enterprise_id, "olist")
-        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.enterprise_id, "user-dataset")
+        self.assertEqual(request.domain_id, "dataset.orders")
 
     def test_nl2sql_request_rejects_blank_question(self):
         with self.assertRaises(ValidationError):
@@ -287,15 +287,15 @@ class ApiAuthSchemaTests(unittest.TestCase):
         request = ConversationCreateRequest(title=" Demo ")
 
         self.assertEqual(request.title, "Demo")
-        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.domain_id, "dataset")
 
     def test_conversation_create_strips_domain_and_title(self):
         request = ConversationCreateRequest(
-            domain_id=" commerce ",
+            domain_id=" dataset ",
             title=" Demo ",
         )
 
-        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.domain_id, "dataset")
         self.assertEqual(request.title, "Demo")
 
     def test_conversation_create_rejects_identity_fields(self):
@@ -317,17 +317,19 @@ class ApiAuthSchemaTests(unittest.TestCase):
 
         self.assertEqual(request.question, "show gmv")
         self.assertEqual(request.mode.value, "execute")
+        self.assertEqual(request.enterprise_id, "user-dataset")
+        self.assertEqual(request.domain_id, "dataset")
 
     def test_conversation_message_strips_scope_fields(self):
         request = ConversationMessageRequest(
             question=" show gmv ",
-            enterprise_id=" olist ",
-            domain_id=" commerce ",
+            enterprise_id=" user-dataset ",
+            domain_id=" dataset.orders ",
         )
 
         self.assertEqual(request.question, "show gmv")
-        self.assertEqual(request.enterprise_id, "olist")
-        self.assertEqual(request.domain_id, "commerce")
+        self.assertEqual(request.enterprise_id, "user-dataset")
+        self.assertEqual(request.domain_id, "dataset.orders")
 
     def test_conversation_message_rejects_blank_question(self):
         with self.assertRaises(ValidationError):

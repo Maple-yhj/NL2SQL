@@ -109,6 +109,8 @@ class DataAgentCliTests(unittest.TestCase):
                 self.assertEqual(response.answer, f"{mode} complete")
                 request, principal = runtime.calls[-1]
                 self.assertEqual(request.mode.value, mode)
+                self.assertEqual(request.enterprise_id, "user-dataset")
+                self.assertEqual(request.domain_id, "dataset")
                 self.assertTrue(request.include_trace)
                 self.assertEqual(principal.tenant_id, "tenant-cli")
                 self.assertEqual(principal.user_id, "user-cli")

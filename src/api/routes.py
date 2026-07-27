@@ -84,6 +84,7 @@ from data_agent.runtime import (
     DataAgentRuntime,
     PrincipalContext,
     ProductRuntime,
+    USER_DATASET_DOMAIN_ID,
 )
 from data_agent.runtime.errors import AgentError, ErrorCode
 from data_agent.runtime.events import (
@@ -432,6 +433,12 @@ async def nl2sql(
                 )
             else:
                 response = await data_query.run(request, runtime_principal)
+            await _record_conversation_turn(
+                runtime,
+                request,
+                runtime_principal,
+                response,
+            )
         else:
             response = await _collect_terminal_response(
                 runtime,
@@ -612,7 +619,7 @@ async def create_conversation(
 
 @router.get("/api/conversations", response_model=ConversationListResponse)
 async def list_conversations(
-    domain_id: str = Query(default="commerce", min_length=1),
+    domain_id: str = Query(default=USER_DATASET_DOMAIN_ID, min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
     include_archived: bool = False,
     principal: AuthPrincipal = Depends(get_bearer_principal),
@@ -653,7 +660,7 @@ async def get_conversation_data_source_binding(
 )
 async def get_conversation(
     conversation_id: str,
-    domain_id: str = Query(default="commerce", min_length=1),
+    domain_id: str = Query(default=USER_DATASET_DOMAIN_ID, min_length=1),
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
 ):
@@ -677,7 +684,7 @@ async def get_conversation(
 async def update_conversation(
     conversation_id: str,
     request: ConversationUpdateRequest,
-    domain_id: str = Query(default="commerce", min_length=1),
+    domain_id: str = Query(default=USER_DATASET_DOMAIN_ID, min_length=1),
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
 ):
@@ -702,7 +709,7 @@ async def update_conversation(
 )
 async def list_conversation_messages(
     conversation_id: str,
-    domain_id: str = Query(default="commerce", min_length=1),
+    domain_id: str = Query(default=USER_DATASET_DOMAIN_ID, min_length=1),
     limit: int = Query(default=50, ge=1, le=200),
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
@@ -756,7 +763,7 @@ async def send_conversation_message(
         if agent_request.source_id is not None:
             conversation = await runtime.get_conversation(
                 principal=runtime_principal,
-                domain_id="commerce",
+                domain_id=USER_DATASET_DOMAIN_ID,
                 conversation_id=path_conversation_id,
             )
             if conversation is None:
@@ -774,10 +781,16 @@ async def send_conversation_message(
                     agent_request,
                     runtime_principal,
                 )
+            await _record_conversation_turn(
+                runtime,
+                agent_request,
+                runtime_principal,
+                response,
+            )
         else:
             conversation = await runtime.get_conversation(
                 principal=runtime_principal,
-                domain_id=request.domain_id,
+                domain_id=USER_DATASET_DOMAIN_ID,
                 conversation_id=path_conversation_id,
             )
             if conversation is None:
@@ -835,11 +848,7 @@ async def stream_conversation_message(
     payload = request.model_dump(mode="python")
     payload["conversation_id"] = path_conversation_id
     agent_request = AgentRequest.model_validate(payload)
-    lookup_domain = (
-        "commerce"
-        if agent_request.source_id is not None
-        else agent_request.domain_id
-    )
+    lookup_domain = USER_DATASET_DOMAIN_ID
     conversation = await runtime.get_conversation(
         principal=runtime_principal,
         domain_id=lookup_domain,
@@ -883,11 +892,54 @@ def _request_event_stream(
 ) -> AsyncIterator[AgentEvent]:
     if request.source_id is None:
         return runtime.run(request, principal)
-    if data_query is not None:
-        return data_query.stream(request, principal)
-    return _single_response_events(
+    events = (
+        data_query.stream(request, principal)
+        if data_query is not None
+        else _single_response_events(
+            request,
+            _unavailable_dataset_response(request, principal),
+        )
+    )
+    return _record_terminal_stream(
+        runtime,
         request,
-        _unavailable_dataset_response(request, principal),
+        principal,
+        events,
+    )
+
+
+async def _record_terminal_stream(
+    runtime: ProductRuntime,
+    request: AgentRequest,
+    principal: PrincipalContext,
+    events: AsyncIterator[AgentEvent],
+) -> AsyncIterator[AgentEvent]:
+    async for event in events:
+        if event.response is not None:
+            await _record_conversation_turn(
+                runtime,
+                request,
+                principal,
+                event.response,
+            )
+        yield event
+
+
+async def _record_conversation_turn(
+    runtime: ProductRuntime,
+    request: AgentRequest,
+    principal: PrincipalContext,
+    response: AgentResponse,
+) -> None:
+    if request.conversation_id is None:
+        return
+    recorder = getattr(runtime, "record_conversation_turn", None)
+    if not callable(recorder):
+        return
+    await recorder(
+        request=request,
+        principal=principal,
+        response=response,
     )
 
 

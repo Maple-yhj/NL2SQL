@@ -376,6 +376,8 @@ class RuntimeServiceTests(unittest.IsolatedAsyncioTestCase):
     def _request(self, mode=AgentMode.EXECUTE, *, include_trace=False):
         return AgentRequest(
             question="Show GMV by seller",
+            enterprise_id="olist",
+            domain_id="commerce",
             mode=mode,
             conversation_id=self.conversation_id,
             include_trace=include_trace,

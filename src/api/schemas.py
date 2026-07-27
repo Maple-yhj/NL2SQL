@@ -89,7 +89,15 @@ class LogoutResponse(StrictApiModel):
 
 
 class Nl2SqlRequest(AgentRequest):
-    """The HTTP agent request is exactly the public Runtime request."""
+    """HTTP defaults target only user-provided datasets."""
+
+    enterprise_id: str = Field(default="user-dataset", min_length=1)
+    domain_id: str = Field(default="dataset", min_length=1)
+
+    @field_validator("enterprise_id", "domain_id")
+    @classmethod
+    def strip_dataset_scope(cls, value: str) -> str:
+        return _strip_required_text(value)
 
 
 Nl2SqlResponse = AgentResponse
@@ -97,7 +105,7 @@ Nl2SqlResponse = AgentResponse
 
 class ConversationCreateRequest(StrictApiModel):
     title: str = ""
-    domain_id: str = Field(default="commerce", min_length=1)
+    domain_id: str = Field(default="dataset", min_length=1)
 
     @field_validator("title")
     @classmethod
@@ -121,7 +129,15 @@ class ConversationUpdateRequest(StrictApiModel):
 
 
 class ConversationMessageRequest(AgentRequest):
-    """Conversation turns use the same strict Runtime contract."""
+    """Conversation turns default to the user-dataset runtime scope."""
+
+    enterprise_id: str = Field(default="user-dataset", min_length=1)
+    domain_id: str = Field(default="dataset", min_length=1)
+
+    @field_validator("enterprise_id", "domain_id")
+    @classmethod
+    def strip_dataset_scope(cls, value: str) -> str:
+        return _strip_required_text(value)
 
 
 ConversationResponse = ConversationSummary

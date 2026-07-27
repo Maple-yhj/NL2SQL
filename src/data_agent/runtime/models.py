@@ -72,8 +72,8 @@ class AgentMode(StrEnum):
 
 class AgentRequest(ContractModel):
     question: NonBlankText
-    enterprise_id: NonBlankText = "olist"
-    domain_id: NonBlankText = "commerce"
+    enterprise_id: NonBlankText = "user-dataset"
+    domain_id: NonBlankText = "dataset"
     conversation_id: NonBlankText | None = None
     source_id: NonBlankText | None = None
     source_version: int | None = Field(default=None, ge=1)

@@ -15,11 +15,11 @@ RuntimeFactory = Callable[[], Awaitable[Any]]
 
 
 async def _default_runtime_factory() -> Any:
-    # Keep module import inert: bundle loading, model creation, and DB pools begin
+    # Keep module import inert: model creation and local control-plane state begin
     # only after FastAPI enters its lifespan.
-    from data_agent.runtime.composition_root import build_runtime
+    from data_agent.runtime.composition_root import build_upload_runtime
 
-    return await build_runtime()
+    return await build_upload_runtime()
 
 
 def create_app(
