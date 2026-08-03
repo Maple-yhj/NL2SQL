@@ -105,6 +105,62 @@ class SQLiteDataSourceRegistry:
 
         return await self._read(operation)
 
+    async def delete(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> DataSourceDefinition:
+        def operation(connection: sqlite3.Connection) -> DataSourceDefinition:
+            row = connection.execute(
+                """
+                SELECT payload
+                FROM data_sources
+                WHERE tenant_id = ? AND source_id = ?
+                """,
+                (tenant_id, source_id),
+            ).fetchone()
+            if row is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "datasource was not found",
+                )
+            source = DataSourceDefinition.model_validate_json(row[0])
+            pin_rows = connection.execute(
+                """
+                SELECT user_id, conversation_id, payload
+                FROM conversation_datasource_pins
+                WHERE tenant_id = ?
+                """,
+                (tenant_id,),
+            ).fetchall()
+            for user_id, conversation_id, payload in pin_rows:
+                pin = ConversationDataSourcePin.model_validate_json(payload)
+                if pin.source_id != source_id:
+                    continue
+                connection.execute(
+                    """
+                    DELETE FROM conversation_datasource_pins
+                    WHERE tenant_id = ? AND user_id = ? AND conversation_id = ?
+                    """,
+                    (tenant_id, user_id, conversation_id),
+                )
+            connection.execute(
+                "DELETE FROM semantic_bindings WHERE tenant_id = ? AND source_id = ?",
+                (tenant_id, source_id),
+            )
+            connection.execute(
+                "DELETE FROM data_source_snapshots WHERE tenant_id = ? AND source_id = ?",
+                (tenant_id, source_id),
+            )
+            connection.execute(
+                "DELETE FROM data_sources WHERE tenant_id = ? AND source_id = ?",
+                (tenant_id, source_id),
+            )
+            return source
+
+        return await self._write(operation)
+
     async def publish_snapshot(
         self,
         snapshot: DataSourceSnapshot,
@@ -324,11 +380,25 @@ class SQLiteDataSourceRegistry:
                 or mapping.physical_column
                 not in catalog[mapping.physical_relation]
             )
-            if invalid:
+            invalid_relationships = tuple(
+                relationship.relationship_id
+                for relationship in binding.relationships
+                if relationship.left_relation not in catalog
+                or relationship.left_column
+                not in catalog.get(relationship.left_relation, set())
+                or relationship.right_relation not in catalog
+                or relationship.right_column
+                not in catalog.get(relationship.right_relation, set())
+            )
+            if invalid or invalid_relationships:
+                details = [
+                    *invalid,
+                    *(f"relationship:{item}" for item in invalid_relationships),
+                ]
                 raise DataSourceRegistryError(
                     DataSourceRegistryErrorCode.INVALID_BINDING,
                     "semantic binding references unknown physical fields: "
-                    + ", ".join(invalid),
+                    + ", ".join(details),
                 )
             now = datetime.now(UTC)
             active_rows = connection.execute(

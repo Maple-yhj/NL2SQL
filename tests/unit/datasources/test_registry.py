@@ -176,6 +176,64 @@ class DataSourceRegistryTests(unittest.IsolatedAsyncioTestCase):
             DataSourceRegistryErrorCode.INVALID_BINDING,
         )
 
+    async def test_delete_cascades_snapshot_binding_and_conversation_pin(self) -> None:
+        await self.registry.publish_snapshot(_snapshot())
+        binding = SemanticBindingRecord(
+            binding_id="orders-binding-v1",
+            tenant_id="tenant-a",
+            source_id="orders",
+            source_snapshot_version=1,
+            domain_id="dataset.orders",
+            version=1,
+            mappings=(
+                SemanticFieldMapping(
+                    logical_ref="dataset.Order.amount",
+                    physical_relation="main.orders",
+                    physical_column="amount",
+                ),
+            ),
+        )
+        await self.registry.save_binding(binding)
+        pin = ConversationDataSourcePin(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            conversation_id="conversation-a",
+            domain_id=binding.domain_id,
+            source_id=binding.source_id,
+            source_version=1,
+            binding_id=binding.binding_id,
+            binding_version=1,
+        )
+        await self.registry.pin_conversation(pin)
+
+        deleted = await self.registry.delete(
+            tenant_id="tenant-a",
+            source_id="orders",
+        )
+
+        self.assertEqual(deleted.source_id, "orders")
+        self.assertEqual(await self.registry.list(tenant_id="tenant-a"), ())
+        self.assertEqual(
+            await self.registry.list_bindings(
+                tenant_id="tenant-a",
+                source_id="orders",
+            ),
+            (),
+        )
+        self.assertIsNone(
+            await self.registry.get_conversation_pin(
+                tenant_id="tenant-a",
+                user_id="user-a",
+                conversation_id="conversation-a",
+            )
+        )
+        with self.assertRaises(DataSourceRegistryError):
+            await self.registry.get_snapshot(
+                tenant_id="tenant-a",
+                source_id="orders",
+                version=1,
+            )
+
 
 class SQLiteDataSourceRegistryTests(unittest.IsolatedAsyncioTestCase):
     async def test_state_and_active_binding_survive_registry_restart(self) -> None:
@@ -259,6 +317,31 @@ class SQLiteDataSourceRegistryTests(unittest.IsolatedAsyncioTestCase):
                 DataSourceRegistryErrorCode.VERSION_CONFLICT,
             )
 
+            deleted = await restarted.delete(
+                tenant_id="tenant-a",
+                source_id="orders",
+            )
+            self.assertEqual(deleted.source_id, "orders")
+            after_delete = SQLiteDataSourceRegistry(database_path)
+            self.assertEqual(
+                await after_delete.list(tenant_id="tenant-a"),
+                (),
+            )
+            self.assertEqual(
+                await after_delete.list_bindings(
+                    tenant_id="tenant-a",
+                    source_id="orders",
+                ),
+                (),
+            )
+            self.assertIsNone(
+                await after_delete.get_conversation_pin(
+                    tenant_id="tenant-a",
+                    user_id="user-a",
+                    conversation_id="conversation-a",
+                )
+            )
+
 
 class _SQLiteConnectorStub:
     @staticmethod
@@ -286,6 +369,19 @@ class ConnectorRegistryTests(unittest.TestCase):
             ),
             connector,
         )
+        self.assertEqual(
+            registry.remove(
+                tenant_id=definition.tenant_id,
+                source_id=definition.source_id,
+            ),
+            1,
+        )
+        with self.assertRaises(DataSourceRegistryError):
+            registry.get(
+                tenant_id=definition.tenant_id,
+                source_id=definition.source_id,
+                source_version=1,
+            )
 
         with self.assertRaises(DataSourceRegistryError) as captured:
             ConnectorRegistry().register(

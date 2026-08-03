@@ -73,6 +73,24 @@ describe("ApiClient", () => {
     expect((init.headers as Headers).get("Authorization")).toBe("Bearer access-token");
   });
 
+  it("deletes a datasource with an encoded identifier", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ source_id: "orders 2026", deleted: true }),
+    } as Response);
+    const api = createApi();
+
+    await expect(api.deleteDataSource("orders 2026")).resolves.toEqual({
+      source_id: "orders 2026",
+      deleted: true,
+    });
+
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/data-sources/orders%202026");
+    expect(init.method).toBe("DELETE");
+  });
+
   it("creates and activates a semantic binding with encoded source identifiers", async () => {
     const draft = {
       binding_id: "orders-binding-1",
@@ -189,6 +207,56 @@ describe("ApiClient", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("/api/runs/run%201/cancel");
   });
 
+  it("accepts the snake-case logical plan emitted by the live SSE runtime", async () => {
+    const success = {
+      ...agentFailure(),
+      ok: true,
+      answer: "电子产品金额最高，为 1920。",
+      error: null,
+      message_type: "text",
+      chart: null,
+      rows: [{ category: "电子产品", total_amount: 1920 }],
+      logical_plan: snakeCaseKeys(agentFailure().logical_plan),
+    } as AgentResponse;
+    const started = {
+      type: "run_started",
+      run_id: "dataset-run-1",
+      sequence: 0,
+      data: {
+        kind: "run_started",
+        mode: "execute",
+        enterprise_id: "user-dataset",
+        domain_id: "dataset.sales",
+      },
+      response: null,
+    };
+    const terminal = {
+      type: "run_completed",
+      run_id: "dataset-run-1",
+      sequence: 1,
+      data: { kind: "run_completed" },
+      response: success,
+    };
+    const stream = [
+      `id: 0\nevent: run_started\ndata: ${JSON.stringify(started)}\n\n`,
+      `id: 1\nevent: run_completed\ndata: ${JSON.stringify(terminal)}\n\n`,
+    ].join("");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream; charset=utf-8" },
+      }),
+    );
+    const events: string[] = [];
+
+    await expect(
+      createApi().streamMessage("conv-1", payload(), (event) =>
+        events.push(event.type),
+      ),
+    ).resolves.toEqual(success);
+    expect(events).toEqual(["run_started", "run_completed"]);
+  });
+
   it.each([422, 403, 500])(
     "returns a complete typed AgentResponse for HTTP %i Runtime failures",
     async (status) => {
@@ -224,6 +292,7 @@ describe("ApiClient", () => {
       metadata: {
         contextualized_question: failure.contextualized_question,
         logical_plan: failure.logical_plan,
+        dataset_query_plan: failure.dataset_query_plan,
         answer: failure.answer,
         message_type: failure.message_type,
         rows: failure.rows,
@@ -450,6 +519,21 @@ describe("ApiClient", () => {
 
 function agentFailure(): AgentResponse {
   return structuredClone(agentResponseFixture) as AgentResponse;
+}
+
+function snakeCaseKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(snakeCaseKeys);
+  }
+  if (typeof value !== "object" || value === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
+      snakeCaseKeys(nested),
+    ]),
+  );
 }
 
 function createApi(): ApiClient {

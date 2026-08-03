@@ -60,6 +60,13 @@ class DataSourceRegistry(Protocol):
         tenant_id: str,
     ) -> tuple[DataSourceDefinition, ...]: ...
 
+    async def delete(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> DataSourceDefinition: ...
+
     async def publish_snapshot(
         self,
         snapshot: DataSourceSnapshot,
@@ -160,6 +167,45 @@ class InMemoryDataSourceRegistry:
                 )
                 if candidate_tenant == tenant_id
             )
+
+    async def delete(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> DataSourceDefinition:
+        key = (tenant_id, source_id)
+        async with self._lock:
+            source = self._sources.get(key)
+            if source is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "datasource was not found",
+                )
+            self._sources.pop(key)
+            self._snapshots = {
+                candidate_key: snapshot
+                for candidate_key, snapshot in self._snapshots.items()
+                if candidate_key[:2] != key
+            }
+            binding_ids = {
+                binding.binding_id
+                for binding in self._bindings.values()
+                if binding.tenant_id == tenant_id
+                and binding.source_id == source_id
+            }
+            self._bindings = {
+                candidate_key: binding
+                for candidate_key, binding in self._bindings.items()
+                if binding.binding_id not in binding_ids
+                or binding.tenant_id != tenant_id
+            }
+            self._conversation_pins = {
+                candidate_key: pin
+                for candidate_key, pin in self._conversation_pins.items()
+                if pin.tenant_id != tenant_id or pin.source_id != source_id
+            }
+            return source
 
     async def publish_snapshot(
         self,
@@ -293,11 +339,25 @@ class InMemoryDataSourceRegistry:
                 or mapping.physical_column
                 not in catalog[mapping.physical_relation]
             )
-            if invalid:
+            invalid_relationships = tuple(
+                relationship.relationship_id
+                for relationship in binding.relationships
+                if relationship.left_relation not in catalog
+                or relationship.left_column
+                not in catalog.get(relationship.left_relation, set())
+                or relationship.right_relation not in catalog
+                or relationship.right_column
+                not in catalog.get(relationship.right_relation, set())
+            )
+            if invalid or invalid_relationships:
+                details = [
+                    *invalid,
+                    *(f"relationship:{item}" for item in invalid_relationships),
+                ]
                 raise DataSourceRegistryError(
                     DataSourceRegistryErrorCode.INVALID_BINDING,
                     "semantic binding references unknown physical fields: "
-                    + ", ".join(invalid),
+                    + ", ".join(details),
                 )
             now = datetime.now(UTC)
             for candidate_key, candidate in tuple(self._bindings.items()):
@@ -408,6 +468,16 @@ class ConnectorRegistry:
                 "connector was not found for this datasource version",
             )
         return connector
+
+    def remove(self, *, tenant_id: str, source_id: str) -> int:
+        keys = tuple(
+            key
+            for key in self._connectors
+            if key[0] == tenant_id and key[1] == source_id
+        )
+        for key in keys:
+            self._connectors.pop(key, None)
+        return len(keys)
 
 
 __all__ = [

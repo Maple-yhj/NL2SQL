@@ -3,6 +3,7 @@
   "chart": null,
   "contextualized_question": "show governed gmv",
   "conversation_id": "conv-1",
+  "dataset_query_plan": null,
   "error": {
     "code": "INTERNAL_ERROR",
     "message": "The governed run failed safely.",

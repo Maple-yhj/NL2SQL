@@ -66,6 +66,18 @@ def _quote_identifier(value: str) -> str:
     return '"' + value.replace('"', '""') + '"'
 
 
+def _failure_reason(
+    error: BaseException,
+    *,
+    internal_path: Path | None = None,
+    display_name: str | None = None,
+) -> str:
+    reason = " ".join(str(error).strip().split()) or type(error).__name__
+    if internal_path is not None and display_name is not None:
+        reason = reason.replace(str(internal_path), display_name)
+    return reason[:800]
+
+
 def _safe_identifier(value: str, *, fallback: str) -> str:
     normalized = unicodedata.normalize("NFKD", value)
     ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
@@ -111,10 +123,15 @@ class FileSnapshotImporter:
         max_archive_uncompressed_bytes: int = 512 * 1024 * 1024,
         max_archive_ratio: int = 200,
         max_tables: int = 100,
-        max_rows_per_table: int = 1_000_000,
-        max_total_rows: int = 2_000_000,
+        max_rows_per_table: int = 2_000_000,
+        max_total_rows: int = 5_000_000,
         max_columns: int = 4_096,
     ) -> None:
+        if max_rows_per_table < 1 or max_total_rows < max_rows_per_table:
+            raise ValueError(
+                "row limits must be positive and the total limit must be "
+                "at least the per-table limit"
+            )
         self._staging_root = (
             Path(staging_root).expanduser().resolve(strict=True)
             if staging_root is not None
@@ -131,17 +148,18 @@ class FileSnapshotImporter:
         self._max_columns = max_columns
 
     def _validate_source(self, source: str | Path) -> Path:
+        display_name = Path(source).name or "upload"
         try:
             path = Path(source).expanduser().resolve(strict=True)
         except FileNotFoundError as exc:
             raise FileSnapshotError(
                 FileSnapshotErrorCode.FILE_NOT_FOUND,
-                "upload staging file was not found",
+                f"file {display_name!r} was not found",
             ) from exc
         if not path.is_file():
             raise FileSnapshotError(
                 FileSnapshotErrorCode.FILE_NOT_FOUND,
-                "upload staging path is not a regular file",
+                f"file {display_name!r} is not a regular file",
             )
         if (
             self._staging_root is not None
@@ -149,17 +167,23 @@ class FileSnapshotImporter:
         ):
             raise FileSnapshotError(
                 FileSnapshotErrorCode.FILE_NOT_FOUND,
-                "upload staging file is outside the authorized directory",
+                f"file {display_name!r} is outside the authorized upload directory",
             )
         if path.stat().st_size > self._max_file_bytes:
             raise FileSnapshotError(
                 FileSnapshotErrorCode.SIZE_LIMIT_EXCEEDED,
-                "upload exceeds the per-file size limit",
+                (
+                    f"file {display_name!r} is {path.stat().st_size:,} bytes; "
+                    f"the per-file limit is {self._max_file_bytes:,} bytes"
+                ),
             )
         if path.suffix.lower() not in {".csv", ".xlsx"}:
             raise FileSnapshotError(
                 FileSnapshotErrorCode.UNSUPPORTED_FORMAT,
-                "only CSV and XLSX uploads are supported",
+                (
+                    f"file {display_name!r} has unsupported format "
+                    f"{path.suffix or '(none)'}; only CSV and XLSX are supported"
+                ),
             )
         return path
 
@@ -315,9 +339,15 @@ class FileSnapshotImporter:
             )
         paths = tuple(self._validate_source(source) for source in sources)
         if len({path.name for path in paths}) != len(paths):
+            duplicates = sorted(
+                name
+                for name in {path.name for path in paths}
+                if sum(path.name == name for path in paths) > 1
+            )
             raise FileSnapshotError(
                 FileSnapshotErrorCode.IMPORT_FAILED,
-                "uploaded filenames must be unique within a datasource",
+                "uploaded filenames must be unique; duplicates: "
+                + ", ".join(duplicates),
             )
         fingerprint = self._digest_sources(paths)
         output_root = Path(output_directory).expanduser().resolve()
@@ -353,32 +383,55 @@ class FileSnapshotImporter:
             candidates: list[tuple[Path, str, Path]] = []
             for source in paths:
                 if source.suffix.lower() == ".csv":
-                    source.read_bytes()[: 64 * 1024].decode("utf-8-sig")
+                    try:
+                        source.read_bytes()[: 64 * 1024].decode("utf-8-sig")
+                    except UnicodeDecodeError as exc:
+                        raise FileSnapshotError(
+                            FileSnapshotErrorCode.IMPORT_FAILED,
+                            (
+                                f"file {source.name!r} is not valid UTF-8 CSV: "
+                                f"{exc.reason} at byte {exc.start}"
+                            ),
+                        ) from exc
                     candidates.append((source, source.stem, source))
                     continue
-                with tempfile.TemporaryDirectory(
-                    prefix="data-agent-xlsx-",
-                    dir=output_root,
-                ) as temporary:
-                    generated = tuple(
-                        self._xlsx_csv_files(
-                            source,
-                            temporary_directory=Path(temporary),
-                        )
-                    )
-                    for sheet_name, csv_path in generated:
-                        persistent = output_root / (
-                            f".{database_path.stem}-{len(temporary_paths)}.csv"
-                        )
-                        os.replace(csv_path, persistent)
-                        temporary_paths.append(persistent)
-                        candidates.append(
-                            (
+                try:
+                    with tempfile.TemporaryDirectory(
+                        prefix="data-agent-xlsx-",
+                        dir=output_root,
+                    ) as temporary:
+                        generated = tuple(
+                            self._xlsx_csv_files(
                                 source,
-                                f"{source.stem}_{sheet_name}",
-                                persistent,
+                                temporary_directory=Path(temporary),
                             )
                         )
+                        for sheet_name, csv_path in generated:
+                            persistent = output_root / (
+                                f".{database_path.stem}-{len(temporary_paths)}.csv"
+                            )
+                            os.replace(csv_path, persistent)
+                            temporary_paths.append(persistent)
+                            candidates.append(
+                                (
+                                    source,
+                                    f"{source.stem}_{sheet_name}",
+                                    persistent,
+                                )
+                            )
+                except FileSnapshotError as exc:
+                    raise FileSnapshotError(
+                        exc.code,
+                        f"file {source.name!r} could not be imported: {exc}",
+                    ) from exc
+                except (OSError, ValueError, zipfile.BadZipFile) as exc:
+                    raise FileSnapshotError(
+                        FileSnapshotErrorCode.IMPORT_FAILED,
+                        (
+                            f"file {source.name!r} could not be imported: "
+                            f"{_failure_reason(exc, internal_path=source, display_name=source.name)}"
+                        )
+                    ) from exc
 
             if not candidates or len(candidates) > self._max_tables:
                 raise FileSnapshotError(
@@ -397,35 +450,55 @@ class FileSnapshotImporter:
                 qualified = (
                     f"{_quote_identifier(schema)}.{_quote_identifier(table)}"
                 )
-                connection.execute(
-                    f"""
-                    CREATE TABLE {qualified} AS
-                    SELECT *
-                    FROM read_csv_auto(
-                        ?,
-                        header = true,
-                        sample_size = -1,
-                        strict_mode = true
-                    )
-                    LIMIT {self._max_rows_per_table + 1}
-                    """,
-                    [str(csv_path)],
-                )
-                row_count = int(
+                try:
                     connection.execute(
-                        f"SELECT COUNT(*) FROM {qualified}"
-                    ).fetchone()[0]
-                )
+                        f"""
+                        CREATE TABLE {qualified} AS
+                        SELECT *
+                        FROM read_csv_auto(
+                            ?,
+                            header = true,
+                            sample_size = -1,
+                            strict_mode = true
+                        )
+                        LIMIT {self._max_rows_per_table + 1}
+                        """,
+                        [str(csv_path)],
+                    )
+                    row_count = int(
+                        connection.execute(
+                            f"SELECT COUNT(*) FROM {qualified}"
+                        ).fetchone()[0]
+                    )
+                except duckdb.Error as exc:
+                    raise FileSnapshotError(
+                        FileSnapshotErrorCode.IMPORT_FAILED,
+                        (
+                            f"file {origin.name!r} could not be imported as "
+                            f"table {schema}.{table}: "
+                            f"{_failure_reason(exc, internal_path=csv_path, display_name=origin.name)}"
+                        ),
+                    ) from exc
                 if row_count > self._max_rows_per_table:
                     raise FileSnapshotError(
                         FileSnapshotErrorCode.SIZE_LIMIT_EXCEEDED,
-                        "table exceeds the row limit",
+                        (
+                            f"file {origin.name!r}, table {schema}.{table}, "
+                            f"has {row_count:,} rows; "
+                            "the per-table limit is "
+                            f"{self._max_rows_per_table:,}"
+                        ),
                     )
                 total_rows += row_count
                 if total_rows > self._max_total_rows:
                     raise FileSnapshotError(
                         FileSnapshotErrorCode.SIZE_LIMIT_EXCEEDED,
-                        "file datasource exceeds the total row limit",
+                        (
+                            f"after file {origin.name!r}, the datasource has "
+                            f"more than {total_rows:,} rows; "
+                            "the total row limit is "
+                            f"{self._max_total_rows:,}"
+                        ),
                     )
                 imported.append(
                     ImportedRelation(

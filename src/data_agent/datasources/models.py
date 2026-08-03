@@ -73,6 +73,11 @@ class SemanticBindingStatus(StrEnum):
     RETIRED = "retired"
 
 
+class SemanticJoinType(StrEnum):
+    INNER = "inner"
+    LEFT = "left"
+
+
 class DataSourceDefinition(DataSourceModel):
     source_id: StableIdentifier
     tenant_id: StableIdentifier
@@ -143,6 +148,21 @@ class SemanticFieldMapping(DataSourceModel):
     physical_column: NonBlankText
 
 
+class SemanticRelationship(DataSourceModel):
+    relationship_id: StableIdentifier
+    left_relation: NonBlankText
+    left_column: NonBlankText
+    right_relation: NonBlankText
+    right_column: NonBlankText
+    join_type: SemanticJoinType = SemanticJoinType.INNER
+
+    @model_validator(mode="after")
+    def validate_relationship(self) -> "SemanticRelationship":
+        if self.left_relation == self.right_relation:
+            raise ValueError("dataset relationships must connect two different relations")
+        return self
+
+
 class SemanticBindingRecord(DataSourceModel):
     binding_id: StableIdentifier
     tenant_id: StableIdentifier
@@ -152,6 +172,8 @@ class SemanticBindingRecord(DataSourceModel):
     version: int = Field(ge=1)
     status: SemanticBindingStatus = SemanticBindingStatus.DRAFT
     mappings: tuple[SemanticFieldMapping, ...] = Field(min_length=1)
+    primary_relation: NonBlankText | None = None
+    relationships: tuple[SemanticRelationship, ...] = ()
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
@@ -160,6 +182,56 @@ class SemanticBindingRecord(DataSourceModel):
         logical_refs = tuple(item.logical_ref for item in self.mappings)
         if len(logical_refs) != len(set(logical_refs)):
             raise ValueError("semantic binding logical references must be unique")
+        relationship_ids = tuple(
+            item.relationship_id for item in self.relationships
+        )
+        if len(relationship_ids) != len(set(relationship_ids)):
+            raise ValueError("semantic binding relationship identifiers must be unique")
+        mapped_relations = tuple(
+            dict.fromkeys(item.physical_relation for item in self.mappings)
+        )
+        mapped_relation_set = set(mapped_relations)
+        if self.primary_relation is not None:
+            if self.primary_relation not in mapped_relation_set:
+                raise ValueError("primary relation must have at least one field mapping")
+        elif len(mapped_relations) > 1:
+            raise ValueError("multi-relation bindings require a primary relation")
+        connected = {
+            self.primary_relation
+            if self.primary_relation is not None
+            else mapped_relations[0]
+        }
+        relationship_pairs: set[tuple[str, str, str, str]] = set()
+        for relationship in self.relationships:
+            if (
+                relationship.left_relation not in mapped_relation_set
+                or relationship.right_relation not in mapped_relation_set
+            ):
+                raise ValueError(
+                    "dataset relationships must reference mapped relations"
+                )
+            pair = (
+                relationship.left_relation,
+                relationship.left_column,
+                relationship.right_relation,
+                relationship.right_column,
+            )
+            if pair in relationship_pairs:
+                raise ValueError("semantic binding relationships must be unique")
+            relationship_pairs.add(pair)
+            if relationship.left_relation not in connected:
+                raise ValueError(
+                    "dataset relationships must extend from the connected dataset"
+                )
+            if relationship.right_relation in connected:
+                raise ValueError(
+                    "dataset relationships cannot introduce cycles or duplicate tables"
+                )
+            connected.add(relationship.right_relation)
+        if connected != mapped_relation_set:
+            raise ValueError(
+                "every mapped relation must be connected to the primary relation"
+            )
         if self.updated_at < self.created_at:
             raise ValueError("updated_at cannot precede created_at")
         return self
@@ -186,4 +258,6 @@ __all__ = [
     "SemanticBindingRecord",
     "SemanticBindingStatus",
     "SemanticFieldMapping",
+    "SemanticJoinType",
+    "SemanticRelationship",
 ]

@@ -168,6 +168,153 @@ class ApiDatasourceTests(unittest.TestCase):
         self.assertEqual(activated.status_code, 200, activated.text)
         self.assertEqual(activated.json()["status"], "active")
 
+        snapshot_root = (
+            Path(self.temporary_directory.name)
+            / "snapshots"
+            / "tenant-from-token"
+            / "orders-file"
+        )
+        self.assertTrue(snapshot_root.exists())
+        isolated_delete = self.client.delete(
+            "/api/data-sources/orders-file",
+            headers=_auth_headers(tenant_id="other-tenant"),
+        )
+        self.assertEqual(isolated_delete.status_code, 404)
+
+        deleted = self.client.delete(
+            "/api/data-sources/orders-file",
+            headers=self.headers,
+        )
+        self.assertEqual(deleted.status_code, 200, deleted.text)
+        self.assertEqual(
+            deleted.json(),
+            {"source_id": "orders-file", "deleted": True},
+        )
+        self.assertFalse(snapshot_root.exists())
+        self.assertEqual(
+            self.client.get(
+                "/api/data-sources",
+                headers=self.headers,
+            ).json(),
+            {"items": []},
+        )
+        self.assertEqual(
+            self.client.get(
+                "/api/data-sources/orders-file/catalog",
+                headers=self.headers,
+            ).status_code,
+            404,
+        )
+
+    def test_multi_file_binding_accepts_an_explicit_join_graph(self) -> None:
+        uploaded = self.client.post(
+            "/api/data-sources/files",
+            headers=self.headers,
+            data={
+                "name": "Regional sales",
+                "source_id": "regional-sales",
+            },
+            files=[
+                (
+                    "files",
+                    (
+                        "customers.csv",
+                        b"customer_id,region\nC-1,East\nC-2,South\n",
+                        "text/csv",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "orders.csv",
+                        b"order_id,customer_id,amount\nO-1,C-1,10\nO-2,C-2,20\n",
+                        "text/csv",
+                    ),
+                ),
+            ],
+        )
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+
+        binding = self.client.post(
+            "/api/data-sources/regional-sales/bindings",
+            headers=self.headers,
+            json={
+                "domain_id": "dataset.regional-sales",
+                "primary_relation": "public.customers",
+                "mappings": [
+                    {
+                        "logical_ref": "dataset.Customers.region",
+                        "physical_relation": "public.customers",
+                        "physical_column": "region",
+                    },
+                    {
+                        "logical_ref": "dataset.Orders.amount",
+                        "physical_relation": "public.orders",
+                        "physical_column": "amount",
+                    },
+                ],
+                "relationships": [
+                    {
+                        "relationship_id": "customers_orders",
+                        "left_relation": "public.customers",
+                        "left_column": "customer_id",
+                        "right_relation": "public.orders",
+                        "right_column": "customer_id",
+                        "join_type": "inner",
+                    }
+                ],
+            },
+        )
+        self.assertEqual(binding.status_code, 201, binding.text)
+        self.assertEqual(
+            binding.json()["primary_relation"],
+            "public.customers",
+        )
+        self.assertEqual(
+            binding.json()["relationships"][0]["relationship_id"],
+            "customers_orders",
+        )
+
+        activated = self.client.post(
+            (
+                "/api/data-sources/regional-sales/bindings/"
+                f"{binding.json()['binding_id']}/activate"
+            ),
+            headers=self.headers,
+        )
+        self.assertEqual(activated.status_code, 200, activated.text)
+        self.assertEqual(activated.json()["status"], "active")
+
+    def test_multi_file_upload_error_names_the_invalid_file_and_reason(self) -> None:
+        response = self.client.post(
+            "/api/data-sources/files",
+            headers=self.headers,
+            data={"name": "Invalid Olist", "source_id": "invalid-olist"},
+            files=[
+                (
+                    "files",
+                    (
+                        "olist_orders_dataset.csv",
+                        b"order_id\nO-1\n",
+                        "text/csv",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "olist_order_reviews_dataset.csv",
+                        b"review_id\nreview-1\xff\n",
+                        "text/csv",
+                    ),
+                ),
+            ],
+        )
+
+        self.assertEqual(response.status_code, 422, response.text)
+        detail = response.json()["detail"]
+        self.assertIn("olist_order_reviews_dataset.csv", detail)
+        self.assertIn("not valid UTF-8 CSV", detail)
+
     def test_postgres_registration_requires_secret_reference_not_password(self) -> None:
         response = self.client.post(
             "/api/data-sources/postgres",

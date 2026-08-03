@@ -27,10 +27,41 @@ const supportedKeywords = new Set([
 ]);
 
 export function isAgentResponse(value: unknown): value is AgentResponse {
+  const validationValue = normalizeAgentResponseForValidation(value);
   return (
     isJsonValue(value, new WeakSet()) &&
-    validateSchema(schemaDocument.schemas[schemaDocument.root], value) &&
-    validatePydanticRefinements(value as Record<string, unknown>)
+    validateSchema(
+      schemaDocument.schemas[schemaDocument.root],
+      validationValue,
+    ) &&
+    validatePydanticRefinements(
+      validationValue as Record<string, unknown>,
+    )
+  );
+}
+
+function normalizeAgentResponseForValidation(value: unknown): unknown {
+  if (!isRecord(value) || !isRecord(value.logical_plan)) {
+    return value;
+  }
+  return {
+    ...value,
+    logical_plan: camelizeJsonKeys(value.logical_plan),
+  };
+}
+
+function camelizeJsonKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(camelizeJsonKeys);
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([key, nested]) => [
+      key.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase()),
+      camelizeJsonKeys(nested),
+    ]),
   );
 }
 

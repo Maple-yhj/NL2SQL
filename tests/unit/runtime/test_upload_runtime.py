@@ -13,6 +13,7 @@ from data_agent.runtime import (
     USER_DATASET_DOMAIN_ID,
     UploadDatasetRuntime,
 )
+from data_agent.runtime.models import AgentRow, ChartSpec
 from data_agent.runtime.composition_root import build_upload_runtime
 from data_agent.runtime.errors import ErrorCode
 
@@ -96,6 +97,33 @@ class UploadDatasetRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 contextualized_question=request.question,
                 conversation_id=conversation.conversation_id,
                 tenant_id=self.principal.tenant_id,
+                dataset_query_plan={
+                    "status": "ready",
+                    "analysis_type": "aggregate",
+                    "select": [],
+                    "aggregations": [
+                        {
+                            "ref": "dataset.Orders.total",
+                            "operation": "sum",
+                            "alias": "total_amount",
+                        }
+                    ],
+                    "group_by": ["dataset.Orders.state"],
+                    "filters": [],
+                    "order_by": [],
+                    "limit": 10,
+                    "clarification_question": None,
+                },
+                sql="SELECT state, SUM(amount) AS total_amount FROM orders",
+                message_type="chart",
+                rows=(
+                    AgentRow(root={"state": "SP", "total_amount": 30}),
+                ),
+                chart=ChartSpec(
+                    title="Sales by state",
+                    x_field="state",
+                    y_field="total_amount",
+                ),
                 answer="A-1",
             ),
         )
@@ -127,6 +155,17 @@ class UploadDatasetRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [(item.role, item.content) for item in messages],
             [("user", "top orders"), ("assistant", "A-1")],
+        )
+        assistant = messages[1].metadata
+        self.assertEqual(assistant.sql, "SELECT state, SUM(amount) AS total_amount FROM orders")
+        self.assertEqual(
+            assistant.rows[0].root,
+            {"state": "SP", "total_amount": 30},
+        )
+        self.assertEqual(assistant.chart.x_field, "state")
+        self.assertEqual(
+            assistant.dataset_query_plan["analysis_type"],
+            "aggregate",
         )
         self.assertIsNone(stranger)
 

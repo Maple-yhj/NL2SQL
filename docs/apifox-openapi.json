@@ -153,6 +153,20 @@
             ],
             "title": "Conversation Id"
           },
+          "dataset_query_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Query Plan"
+          },
           "error": {
             "anyOf": [
               {
@@ -874,6 +888,16 @@
             ],
             "title": "Answer"
           },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "contextualized_question": {
             "anyOf": [
               {
@@ -885,6 +909,30 @@
             ],
             "title": "Contextualized Question"
           },
+          "dataset_query_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Query Plan"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "error_code": {
             "anyOf": [
               {
@@ -895,6 +943,16 @@
               }
             ],
             "title": "Error Code"
+          },
+          "logical_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalQueryPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "message_type": {
             "default": "text",
@@ -913,6 +971,14 @@
             ],
             "title": "Ok"
           },
+          "pending_memory_updates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProposalSummary"
+            },
+            "title": "Pending Memory Updates",
+            "type": "array"
+          },
           "row_count": {
             "anyOf": [
               {
@@ -925,6 +991,25 @@
             ],
             "title": "Row Count"
           },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql"
+          },
           "trace": {
             "default": [],
             "items": {
@@ -932,6 +1017,16 @@
             },
             "title": "Trace",
             "type": "array"
+          },
+          "version_pins": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeVersionPins"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "ConversationMessageMetadata",
@@ -1198,6 +1293,25 @@
           "catalog"
         ],
         "title": "DataSourceCatalogResponse",
+        "type": "object"
+      },
+      "DataSourceDeleteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "DataSourceDeleteResponse",
         "type": "object"
       },
       "DataSourceKind": {
@@ -2822,6 +2936,25 @@
             "minItems": 1,
             "title": "Mappings",
             "type": "array"
+          },
+          "primary_relation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Relation"
+          },
+          "relationships": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticRelationship"
+            },
+            "title": "Relationships",
+            "type": "array"
           }
         },
         "required": [
@@ -2876,6 +3009,26 @@
             },
             "minItems": 1,
             "title": "Mappings",
+            "type": "array"
+          },
+          "primary_relation": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Relation"
+          },
+          "relationships": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticRelationship"
+            },
+            "title": "Relationships",
             "type": "array"
           },
           "source_id": {
@@ -2958,6 +3111,59 @@
           "physical_column"
         ],
         "title": "SemanticFieldMapping",
+        "type": "object"
+      },
+      "SemanticJoinType": {
+        "enum": [
+          "inner",
+          "left"
+        ],
+        "title": "SemanticJoinType",
+        "type": "string"
+      },
+      "SemanticRelationship": {
+        "additionalProperties": false,
+        "properties": {
+          "join_type": {
+            "$ref": "#/components/schemas/SemanticJoinType",
+            "default": "inner"
+          },
+          "left_column": {
+            "minLength": 1,
+            "title": "Left Column",
+            "type": "string"
+          },
+          "left_relation": {
+            "minLength": 1,
+            "title": "Left Relation",
+            "type": "string"
+          },
+          "relationship_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Relationship Id",
+            "type": "string"
+          },
+          "right_column": {
+            "minLength": 1,
+            "title": "Right Column",
+            "type": "string"
+          },
+          "right_relation": {
+            "minLength": 1,
+            "title": "Right Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relationship_id",
+          "left_relation",
+          "left_column",
+          "right_relation",
+          "right_column"
+        ],
+        "title": "SemanticRelationship",
         "type": "object"
       },
       "Sensitivity": {
@@ -4077,6 +4283,50 @@
           }
         ],
         "summary": "Upload Sqlite Data Source"
+      }
+    },
+    "/api/data-sources/{source_id}": {
+      "delete": {
+        "operationId": "delete_data_source_api_data_sources__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete Data Source"
       }
     },
     "/api/data-sources/{source_id}/bindings": {

@@ -182,11 +182,19 @@ class ConversationSummary(PublicContractModel):
 class ConversationMessageMetadata(PublicContractModel):
     message_type: NonBlankText = "text"
     contextualized_question: str | None = None
+    logical_plan: LogicalQueryPlan | None = None
+    dataset_query_plan: dict[str, JsonValue] | None = None
+    sql: str | None = None
+    rows: tuple[AgentRow, ...] = ()
+    chart: ChartSpec | None = None
     answer: str | None = None
     ok: bool | None = None
+    error: AgentError | None = None
     error_code: str | None = None
     row_count: int | None = Field(default=None, ge=0)
     trace: tuple[AgentTraceEntry, ...] = ()
+    pending_memory_updates: tuple[ProposalSummary, ...] = ()
+    version_pins: RuntimeVersionPins | None = None
 
 
 class ConversationMessage(PublicContractModel):
@@ -204,6 +212,7 @@ class AgentResponse(PublicContractModel):
     conversation_id: str | None = None
     tenant_id: str | None = None
     logical_plan: LogicalQueryPlan | None = None
+    dataset_query_plan: dict[str, JsonValue] | None = None
     sql: str | None = None
     message_type: NonBlankText = "text"
     rows: tuple[AgentRow, ...] = ()

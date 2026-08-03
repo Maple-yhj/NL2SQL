@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,7 @@ from data_agent.datasources import (
     SemanticBindingRecord,
     SemanticBindingStatus,
     SemanticFieldMapping,
+    SemanticRelationship,
     SQLiteSnapshotImporter,
     SQLiteDataSourceRegistry,
 )
@@ -48,6 +50,17 @@ _SOURCE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
 _SAFE_FILENAME = re.compile(r"[^a-zA-Z0-9._-]+")
 PostgresPoolFactory = Callable[[str], Awaitable[Any]]
 SecretResolver = Callable[[str], str]
+
+
+@dataclass(frozen=True, slots=True)
+class DataSourceExecutionContext:
+    """Resolved, version-pinned authority required for one query execution."""
+
+    source: DataSourceDefinition
+    snapshot: DataSourceSnapshot
+    binding: SemanticBindingRecord
+    connector: DataSourceConnector
+    connection_ref: str
 
 
 async def _default_postgres_pool_factory(dsn: str) -> Any:
@@ -100,6 +113,7 @@ class DataSourceService:
         )
         self._secret_resolver = secret_resolver or _default_secret_resolver
         self._resources: list[Any] = []
+        self._source_resources: dict[tuple[str, str], list[Any]] = {}
         self._max_upload_bytes = max_upload_bytes
 
     @property
@@ -238,6 +252,7 @@ class DataSourceService:
 
     async def close(self) -> None:
         resources, self._resources = self._resources, []
+        self._source_resources = {}
         for resource in reversed(resources):
             close = getattr(resource, "close", None)
             if close is None:
@@ -245,6 +260,38 @@ class DataSourceService:
             value = close()
             if inspect.isawaitable(value):
                 await value
+
+    async def delete_source(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> DataSourceDefinition:
+        source = await self._registry.delete(
+            tenant_id=tenant_id,
+            source_id=source_id,
+        )
+        self._connectors.remove(tenant_id=tenant_id, source_id=source_id)
+        resources = self._source_resources.pop((tenant_id, source_id), [])
+        for resource in reversed(resources):
+            self._resources = [
+                candidate
+                for candidate in self._resources
+                if candidate is not resource
+            ]
+            await self._close_resource(resource)
+        if source.kind != DataSourceKind.POSTGRES:
+            snapshot_base = (self._state_root / "snapshots").resolve()
+            snapshot_root = (
+                snapshot_base
+                / self._path_component(tenant_id)
+                / self._path_component(source_id)
+            ).resolve()
+            if not snapshot_root.is_relative_to(snapshot_base):
+                raise ValueError("datasource snapshot path is outside the storage root")
+            if snapshot_root.exists():
+                shutil.rmtree(snapshot_root)
+        return source
 
     async def import_file_source(
         self,
@@ -453,6 +500,8 @@ class DataSourceService:
         binding_id: str | None,
         domain_id: str,
         mappings: tuple[SemanticFieldMapping, ...],
+        primary_relation: str | None = None,
+        relationships: tuple[SemanticRelationship, ...] = (),
     ) -> SemanticBindingRecord:
         snapshot = await self.get_snapshot(
             tenant_id=tenant_id,
@@ -476,6 +525,8 @@ class DataSourceService:
             domain_id=domain_id,
             version=version,
             mappings=mappings,
+            primary_relation=primary_relation,
+            relationships=relationships,
         )
         return await self._registry.save_binding(binding)
 
@@ -520,12 +571,7 @@ class DataSourceService:
         binding_id: str,
         binding_version: int,
         domain_id: str,
-    ) -> tuple[
-        DataSourceDefinition,
-        DataSourceSnapshot,
-        SemanticBindingRecord,
-        DataSourceConnector,
-    ]:
+    ) -> DataSourceExecutionContext:
         source = await self._registry.get(
             tenant_id=tenant_id,
             source_id=source_id,
@@ -572,7 +618,13 @@ class DataSourceService:
             source_id=source_id,
             source_version=source_version,
         )
-        return source, snapshot, binding, connector
+        return DataSourceExecutionContext(
+            source=source,
+            snapshot=snapshot,
+            binding=binding,
+            connector=connector,
+            connection_ref=self._execution_connection_ref(source),
+        )
 
     async def pin_conversation(
         self,
@@ -636,7 +688,9 @@ class DataSourceService:
         safe_name = _SAFE_FILENAME.sub("_", original).strip("._")
         suffix = Path(original).suffix.lower()
         if suffix not in allowed_suffixes:
-            raise ValueError("upload file type is not supported")
+            raise ValueError(
+                f"file {original!r} has unsupported type {suffix or '(none)'}"
+            )
         if not safe_name.lower().endswith(suffix):
             safe_name = (safe_name or "upload") + suffix
         path = destination / safe_name
@@ -648,14 +702,17 @@ class DataSourceService:
                 while chunk := await upload.read(1024 * 1024):
                     total += len(chunk)
                     if total > self._max_upload_bytes:
-                        raise ValueError("upload exceeds the file size limit")
+                        raise ValueError(
+                            f"file {original!r} exceeds the file size limit of "
+                            f"{self._max_upload_bytes:,} bytes"
+                        )
                     stream.write(chunk)
         except BaseException:
             path.unlink(missing_ok=True)
             raise
         if total == 0:
             path.unlink(missing_ok=True)
-            raise ValueError("upload is empty")
+            raise ValueError(f"file {original!r} is empty")
         return path
 
     def _restore_file_connector(
@@ -714,7 +771,7 @@ class DataSourceService:
             )
             updated = await self._registry.publish_snapshot(snapshot)
             self._register_postgres_connector(updated, snapshot, pool)
-            self._resources.append(pool)
+            self._track_resource(source, pool)
             return updated
         except BaseException:
             await self._close_resource(pool)
@@ -739,7 +796,7 @@ class DataSourceService:
                 pool,
                 register=False,
             )
-            self._resources.append(pool)
+            self._track_resource(source, pool)
             return connector
         except BaseException:
             await self._close_resource(pool)
@@ -779,6 +836,24 @@ class DataSourceService:
                 source_version=snapshot.version,
             )
         return connector
+
+    @staticmethod
+    def _execution_connection_ref(source: DataSourceDefinition) -> str:
+        """Return the connector authority reference without exposing its secret."""
+
+        if source.kind == DataSourceKind.POSTGRES:
+            if source.credential_ref is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.CONNECTOR_MISMATCH,
+                    "PostgreSQL datasource credential authority is unavailable",
+                )
+            return source.credential_ref
+        if source.location_ref is None:
+            raise DataSourceRegistryError(
+                DataSourceRegistryErrorCode.CONNECTOR_MISMATCH,
+                "file datasource snapshot authority is unavailable",
+            )
+        return source.location_ref
 
     @staticmethod
     async def _postgres_catalog(pool: Any) -> CatalogSnapshot:
@@ -849,5 +924,12 @@ class DataSourceService:
         if inspect.isawaitable(value):
             await value
 
+    def _track_resource(self, source: DataSourceDefinition, resource: Any) -> None:
+        self._resources.append(resource)
+        self._source_resources.setdefault(
+            (source.tenant_id, source.source_id),
+            [],
+        ).append(resource)
 
-__all__ = ["DataSourceService"]
+
+__all__ = ["DataSourceExecutionContext", "DataSourceService"]

@@ -314,11 +314,19 @@ class UploadDatasetRuntime:
             metadata=ConversationMessageMetadata(
                 message_type=response.message_type,
                 contextualized_question=response.contextualized_question,
+                logical_plan=response.logical_plan,
+                dataset_query_plan=response.dataset_query_plan,
+                sql=response.sql,
+                rows=response.rows,
+                chart=response.chart,
                 answer=response.answer,
                 ok=response.ok,
+                error=error,
                 error_code=error.code.value if error is not None else None,
                 row_count=len(response.rows),
                 trace=response.trace,
+                pending_memory_updates=response.pending_memory_updates,
+                version_pins=response.version_pins,
             ),
         )
 

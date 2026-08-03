@@ -232,6 +232,53 @@ class FileDatasourceIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ("month", "amount"),
         )
 
+    async def test_olist_geolocation_row_count_fits_default_multi_table_budget(
+        self,
+    ) -> None:
+        geolocation = self.staging / "olist_geolocation_dataset.csv"
+        geolocation.write_text(
+            "geolocation_zip_code_prefix\n" + "01001\n" * 1_000_163,
+            encoding="utf-8",
+        )
+        companion_tables = tuple(
+            self._write_csv(
+                filename,
+                [("record_id", "value"), ("row-1", 1), ("row-2", 2)],
+            )
+            for filename in (
+                "olist_customers_dataset.csv",
+                "olist_orders_dataset.csv",
+                "olist_order_items_dataset.csv",
+                "olist_order_payments_dataset.csv",
+                "olist_order_reviews_dataset.csv",
+                "olist_products_dataset.csv",
+                "olist_sellers_dataset.csv",
+                "product_category_name_translation.csv",
+            )
+        )
+
+        snapshot = FileSnapshotImporter(
+            staging_root=self.staging
+        ).import_files(
+            (geolocation, *companion_tables),
+            output_directory=self.snapshots,
+            source_id="olist-complete",
+            version=1,
+        )
+
+        rows_by_relation = {
+            item.relation: item.row_count for item in snapshot.relations
+        }
+        self.assertEqual(len(rows_by_relation), 9)
+        self.assertEqual(
+            rows_by_relation["public.olist_geolocation_dataset"],
+            1_000_163,
+        )
+        self.assertEqual(
+            rows_by_relation["public.olist_customers_dataset"],
+            2,
+        )
+
     async def test_rejects_legacy_excel_and_outside_staging_paths(self) -> None:
         legacy = self._write_csv("legacy.xls", [("a",), (1,)])
         importer = FileSnapshotImporter(staging_root=self.staging)
@@ -260,6 +307,67 @@ class FileDatasourceIntegrationTests(unittest.IsolatedAsyncioTestCase):
             outside_captured.exception.code,
             FileSnapshotErrorCode.FILE_NOT_FOUND,
         )
+
+    async def test_import_errors_identify_the_file_and_specific_reason(self) -> None:
+        invalid_encoding = self.staging / "olist_order_reviews_dataset.csv"
+        invalid_encoding.write_bytes(b"review_id\nreview-1\xff\n")
+        with self.assertRaises(FileSnapshotError) as encoding_captured:
+            FileSnapshotImporter(staging_root=self.staging).import_files(
+                (invalid_encoding,),
+                output_directory=self.snapshots,
+                source_id="invalid-encoding",
+                version=1,
+            )
+        self.assertIn(
+            "olist_order_reviews_dataset.csv",
+            str(encoding_captured.exception),
+        )
+        self.assertIn("not valid UTF-8 CSV", str(encoding_captured.exception))
+
+        oversized = self._write_csv(
+            "olist_geolocation_dataset.csv",
+            [("zip_code",), ("1",), ("2",), ("3",), ("4",)],
+        )
+        with self.assertRaises(FileSnapshotError) as row_captured:
+            FileSnapshotImporter(
+                staging_root=self.staging,
+                max_rows_per_table=3,
+                max_total_rows=6,
+            ).import_files(
+                (oversized,),
+                output_directory=self.snapshots,
+                source_id="row-limit",
+                version=1,
+            )
+        row_message = str(row_captured.exception)
+        self.assertIn("olist_geolocation_dataset.csv", row_message)
+        self.assertIn("public.olist_geolocation_dataset", row_message)
+        self.assertIn("has 4 rows", row_message)
+        self.assertIn("per-table limit is 3", row_message)
+
+        first = self._write_csv(
+            "olist_orders_dataset.csv",
+            [("order_id",), ("1",), ("2",), ("3",)],
+        )
+        second = self._write_csv(
+            "olist_order_items_dataset.csv",
+            [("item_id",), ("1",), ("2",)],
+        )
+        with self.assertRaises(FileSnapshotError) as total_captured:
+            FileSnapshotImporter(
+                staging_root=self.staging,
+                max_rows_per_table=3,
+                max_total_rows=4,
+            ).import_files(
+                (first, second),
+                output_directory=self.snapshots,
+                source_id="total-limit",
+                version=1,
+            )
+        total_message = str(total_captured.exception)
+        self.assertIn("olist_order_items_dataset.csv", total_message)
+        self.assertIn("datasource has more than 5 rows", total_message)
+        self.assertIn("total row limit is 4", total_message)
 
 
 if __name__ == "__main__":

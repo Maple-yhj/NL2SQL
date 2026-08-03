@@ -16,6 +16,8 @@ from .models import (
     SemanticBindingRecord,
     SemanticBindingStatus,
     SemanticFieldMapping,
+    SemanticJoinType,
+    SemanticRelationship,
 )
 from .registry import (
     ConnectorRegistry,
@@ -46,6 +48,8 @@ __all__ = [
     "SemanticBindingRecord",
     "SemanticBindingStatus",
     "SemanticFieldMapping",
+    "SemanticJoinType",
+    "SemanticRelationship",
     "SQLiteSnapshotImporter",
     "SQLiteSnapshotResult",
     "SQLiteDataSourceRegistry",

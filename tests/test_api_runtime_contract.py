@@ -26,6 +26,8 @@ from data_agent.runtime import (
     AgentEventType,
     AgentRequest,
     AgentResponse,
+    ConversationMessage,
+    ConversationMessageMetadata,
     PrincipalContext,
 )
 from data_agent.runtime.events import RunCompletedPayload
@@ -202,6 +204,33 @@ class ApiRuntimeContractTests(unittest.TestCase):
         composition.runtime.get_conversation = mock.AsyncMock(  # type: ignore[attr-defined]
             return_value=object()
         )
+        composition.runtime.list_conversation_messages = mock.AsyncMock(  # type: ignore[attr-defined]
+            return_value=(
+                ConversationMessage(
+                    role="user",
+                    content="sum amount by state",
+                ),
+                ConversationMessage(
+                    role="assistant",
+                    content="done",
+                    metadata=ConversationMessageMetadata(
+                        contextualized_question="sum amount by state",
+                        dataset_query_plan={
+                            "analysis_type": "aggregate",
+                            "aggregations": [
+                                {
+                                    "ref": "dataset.Orders.amount",
+                                    "operation": "sum",
+                                    "alias": "total_amount",
+                                }
+                            ],
+                            "group_by": ["dataset.Customers.state"],
+                            "limit": 10,
+                        },
+                    ),
+                ),
+            )
+        )
         data_query = mock.AsyncMock()
         data_query.run.return_value = AgentResponse(
             ok=True,
@@ -242,9 +271,16 @@ class ApiRuntimeContractTests(unittest.TestCase):
         self.assertEqual(composition.runtime.calls, [])
         data_query.run.assert_awaited_once()
         routed_request, routed_principal = data_query.run.await_args.args
+        routed_context = data_query.run.await_args.kwargs[
+            "conversation_context"
+        ]
         self.assertEqual(routed_request.source_id, "orders")
         self.assertEqual(routed_request.conversation_id, "conv-dataset")
         self.assertEqual(routed_principal.tenant_id, "tenant-from-token")
+        self.assertEqual(
+            routed_context.prior_plan.group_by,
+            ("dataset.Customers.state",),
+        )
         self.assertEqual(len(composition.runtime.recorded_turns), 1)
         recorded_request, recorded_principal, recorded_response = (
             composition.runtime.recorded_turns[0]

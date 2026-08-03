@@ -66,6 +66,19 @@ const schema = {
             }
           ]
         },
+        "dataset_query_plan": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "error": {
           "anyOf": [
             {
@@ -151,6 +164,7 @@ const schema = {
         "chart",
         "contextualized_question",
         "conversation_id",
+        "dataset_query_plan",
         "error",
         "logical_plan",
         "message_type",

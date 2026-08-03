@@ -25,6 +25,7 @@ class StudioOutput(TypedDict):
     conversation_id: str | None
     tenant_id: str | None
     logical_plan: dict[str, Any] | None
+    dataset_query_plan: dict[str, Any] | None
     sql: str | None
     message_type: str
     rows: list[dict[str, Any]]
@@ -45,6 +46,7 @@ class StudioState(TypedDict, total=False):
     conversation_id: str | None
     tenant_id: str | None
     logical_plan: dict[str, Any] | None
+    dataset_query_plan: dict[str, Any] | None
     sql: str | None
     message_type: str
     rows: list[dict[str, Any]]

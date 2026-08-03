@@ -19,6 +19,7 @@ from data_agent.datasources import (
     DataSourceStatus,
     SemanticBindingRecord,
     SemanticFieldMapping,
+    SemanticRelationship,
 )
 from data_agent.tools.schemas import CatalogSnapshot
 
@@ -169,6 +170,11 @@ class DataSourceListResponse(StrictApiModel):
     items: list[DataSourceResponse]
 
 
+class DataSourceDeleteResponse(StrictApiModel):
+    source_id: str
+    deleted: bool = True
+
+
 class DataSourceCatalogResponse(StrictApiModel):
     source_id: str
     version: int
@@ -207,8 +213,10 @@ class SemanticBindingCreateRequest(StrictApiModel):
     binding_id: str | None = None
     domain_id: str = Field(min_length=1)
     mappings: tuple[SemanticFieldMapping, ...] = Field(min_length=1)
+    primary_relation: str | None = None
+    relationships: tuple[SemanticRelationship, ...] = ()
 
-    @field_validator("binding_id", "domain_id")
+    @field_validator("binding_id", "domain_id", "primary_relation")
     @classmethod
     def strip_binding_text(cls, value: str | None) -> str | None:
         if value is None:
@@ -271,6 +279,7 @@ __all__ = [
     "ConversationResponse",
     "ConversationUpdateRequest",
     "DataSourceCatalogResponse",
+    "DataSourceDeleteResponse",
     "DataSourceListResponse",
     "DataSourceResponse",
     "LoginRequest",

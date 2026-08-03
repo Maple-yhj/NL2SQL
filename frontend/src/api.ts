@@ -205,6 +205,15 @@ export class ApiClient {
     });
   }
 
+  deleteDataSource(
+    sourceId: string,
+  ): Promise<{ source_id: string; deleted: boolean }> {
+    return this.request<{ source_id: string; deleted: boolean }>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}`,
+      { method: "DELETE" },
+    );
+  }
+
   listDataSourceBindings(
     sourceId: string,
   ): Promise<{ items: SemanticBinding[] }> {

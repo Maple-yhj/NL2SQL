@@ -118,6 +118,7 @@ export interface AgentResponse {
   conversation_id: string | null;
   tenant_id: string | null;
   logical_plan: LogicalQueryPlan | null;
+  dataset_query_plan: LogicalQueryPlan | null;
   sql: string | null;
   message_type: MessageType;
   rows: DataRow[];
@@ -153,6 +154,7 @@ export interface ChartSpec {
 export interface MessageMetadata {
   contextualized_question?: string | null;
   logical_plan?: LogicalQueryPlan | null;
+  dataset_query_plan?: LogicalQueryPlan | null;
   sql?: string | null;
   message_type?: MessageType;
   rows?: DataRow[];
@@ -237,6 +239,17 @@ export interface SemanticFieldMapping {
   physical_column: string;
 }
 
+export type SemanticJoinType = "inner" | "left";
+
+export interface SemanticRelationship {
+  relationship_id: string;
+  left_relation: string;
+  left_column: string;
+  right_relation: string;
+  right_column: string;
+  join_type: SemanticJoinType;
+}
+
 export interface SemanticBinding {
   binding_id: string;
   tenant_id: string;
@@ -246,6 +259,8 @@ export interface SemanticBinding {
   version: number;
   status: SemanticBindingStatus;
   mappings: SemanticFieldMapping[];
+  primary_relation?: string | null;
+  relationships?: SemanticRelationship[];
   created_at: string;
   updated_at: string;
 }
@@ -254,4 +269,6 @@ export interface SemanticBindingCreatePayload {
   binding_id?: string;
   domain_id: string;
   mappings: SemanticFieldMapping[];
+  primary_relation?: string | null;
+  relationships?: SemanticRelationship[];
 }

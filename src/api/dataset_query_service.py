@@ -1,4 +1,4 @@
-"""Governed query path for user-selected single-relation datasets."""
+"""Governed query path for user-selected single- and multi-relation datasets."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 import math
 import re
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
@@ -43,6 +44,7 @@ from data_agent.runtime.models import (
 )
 from data_agent.skills.models import AnalysisType, LogicalQueryPlan, ResultShape
 from data_agent.tools import AccessGrant, CredentialLease
+from data_agent.tools.connectors import ConnectorError, ConnectorErrorCode
 from data_agent.tools.schemas import CatalogSnapshot, TabularResult
 
 
@@ -58,8 +60,11 @@ Scalar = str | int | float | bool
 
 _SYSTEM_PROMPT = (
     "You are a governed dataset query planner. Return exactly one JSON object "
-    "matching the supplied DatasetQueryPlan JSON Schema. Never return SQL or "
-    "physical table/column names. Use only logical refs from logicalCatalog. "
+    "matching the supplied JSON Schema. Never return SQL or physical table/column "
+    "names. Use only logical refs from logicalCatalog. If the requested metric is "
+    "not defined by the catalog, return needs_clarification or unsupported instead "
+    "of silently replacing it with another metric. For follow-ups, return only a "
+    "DatasetPlanPatch and preserve every prior plan field not explicitly changed. "
     "Prefer a small result and never exceed the schema limit."
 )
 _FENCED_JSON = re.compile(
@@ -70,6 +75,12 @@ _FENCED_JSON = re.compile(
 
 class DatasetPlanModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DatasetPlanStatus(StrEnum):
+    READY = "ready"
+    NEEDS_CLARIFICATION = "needs_clarification"
+    UNSUPPORTED = "unsupported"
 
 
 class DatasetFilterOperator(StrEnum):
@@ -118,7 +129,9 @@ class DatasetOrdering(DatasetPlanModel):
 
 
 class DatasetQueryPlan(DatasetPlanModel):
-    analysis_type: Literal["detail", "aggregate"]
+    status: DatasetPlanStatus = DatasetPlanStatus.READY
+    clarification_question: str | None = None
+    analysis_type: Literal["detail", "aggregate"] | None = None
     select: tuple[NonBlankText, ...] = ()
     aggregations: tuple[DatasetAggregation, ...] = ()
     group_by: tuple[NonBlankText, ...] = ()
@@ -128,11 +141,33 @@ class DatasetQueryPlan(DatasetPlanModel):
 
     @model_validator(mode="after")
     def validate_shape(self) -> "DatasetQueryPlan":
+        if self.status != DatasetPlanStatus.READY:
+            if not (self.clarification_question or "").strip():
+                raise ValueError(
+                    "non-ready plans require a clarification question"
+                )
+            if (
+                self.analysis_type is not None
+                or self.select
+                or self.aggregations
+                or self.group_by
+                or self.filters
+                or self.order_by
+            ):
+                raise ValueError(
+                    "non-ready plans cannot include executable query fields"
+                )
+            return self
+        if self.clarification_question is not None:
+            raise ValueError("ready plans cannot include a clarification question")
         if self.analysis_type == "detail":
             if not self.select or self.aggregations or self.group_by:
                 raise ValueError("detail plans require select fields only")
-        elif not self.aggregations:
-            raise ValueError("aggregate plans require aggregations")
+        elif self.analysis_type == "aggregate":
+            if not self.aggregations:
+                raise ValueError("aggregate plans require aggregations")
+        else:
+            raise ValueError("ready plans require an analysis type")
         aliases = tuple(item.alias for item in self.aggregations)
         if len(aliases) != len(set(aliases)):
             raise ValueError("aggregation aliases must be unique")
@@ -140,6 +175,104 @@ class DatasetQueryPlan(DatasetPlanModel):
             if len(values) != len(set(values)):
                 raise ValueError("logical refs must be unique")
         return self
+
+
+class DatasetPlanPatch(DatasetPlanModel):
+    status: DatasetPlanStatus = DatasetPlanStatus.READY
+    clarification_question: str | None = None
+    analysis_type: Literal["detail", "aggregate"] | None = None
+    select: tuple[NonBlankText, ...] | None = None
+    aggregations: tuple[DatasetAggregation, ...] | None = None
+    group_by: tuple[NonBlankText, ...] | None = None
+    filters: tuple[DatasetFilter, ...] | None = None
+    add_filters: tuple[DatasetFilter, ...] = ()
+    order_by: tuple[DatasetOrdering, ...] | None = None
+    limit: int | None = Field(default=None, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def validate_patch(self) -> "DatasetPlanPatch":
+        if self.status == DatasetPlanStatus.READY:
+            if self.clarification_question is not None:
+                raise ValueError(
+                    "ready patches cannot include a clarification question"
+                )
+            return self
+        if not (self.clarification_question or "").strip():
+            raise ValueError(
+                "non-ready patches require a clarification question"
+            )
+        executable = (
+            self.analysis_type,
+            self.select,
+            self.aggregations,
+            self.group_by,
+            self.filters,
+            self.order_by,
+            self.limit,
+        )
+        if any(item is not None for item in executable) or self.add_filters:
+            raise ValueError(
+                "non-ready patches cannot include executable query fields"
+            )
+        return self
+
+    def apply(self, prior: DatasetQueryPlan) -> DatasetQueryPlan:
+        if self.status != DatasetPlanStatus.READY:
+            return DatasetQueryPlan(
+                status=self.status,
+                clarification_question=self.clarification_question,
+            )
+        if prior.status != DatasetPlanStatus.READY:
+            raise ValueError("cannot patch a non-ready dataset query plan")
+        filters = (
+            self.filters
+            if self.filters is not None
+            else prior.filters + self.add_filters
+        )
+        return DatasetQueryPlan(
+            analysis_type=self.analysis_type or prior.analysis_type,
+            select=prior.select if self.select is None else self.select,
+            aggregations=(
+                prior.aggregations
+                if self.aggregations is None
+                else self.aggregations
+            ),
+            group_by=(
+                prior.group_by if self.group_by is None else self.group_by
+            ),
+            filters=filters,
+            order_by=(
+                prior.order_by if self.order_by is None else self.order_by
+            ),
+            limit=prior.limit if self.limit is None else self.limit,
+        )
+
+
+class DatasetPlanUpdate(DatasetPlanModel):
+    mode: Literal["patch", "replace"]
+    patch: DatasetPlanPatch | None = None
+    plan: DatasetQueryPlan | None = None
+
+    @model_validator(mode="after")
+    def validate_update(self) -> "DatasetPlanUpdate":
+        if self.mode == "patch":
+            if self.patch is None or self.plan is not None:
+                raise ValueError("patch updates require only patch")
+        elif self.plan is None or self.patch is not None:
+            raise ValueError("replace updates require only plan")
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetConversationContext:
+    prior_question: str
+    prior_plan: DatasetQueryPlan
+
+
+@dataclass(frozen=True, slots=True)
+class DatasetPlanningResult:
+    plan: DatasetQueryPlan
+    contextualized_question: str
 
 
 class DatasetLogicalPlanner:
@@ -153,7 +286,8 @@ class DatasetLogicalPlanner:
         question: str,
         binding: SemanticBindingRecord,
         catalog: CatalogSnapshot,
-    ) -> DatasetQueryPlan:
+        conversation_context: DatasetConversationContext | None = None,
+    ) -> DatasetPlanningResult:
         type_by_physical = {
             (relation.relation, column.name): column.data_type
             for relation in catalog.relations
@@ -169,12 +303,32 @@ class DatasetLogicalPlanner:
             }
             for mapping in binding.mappings
         ]
-        request = {
-            "task": "create_dataset_query_plan",
-            "question": question,
-            "logicalCatalog": logical_catalog,
-            "datasetQueryPlanSchema": DatasetQueryPlan.model_json_schema(),
-        }
+        if conversation_context is None:
+            request = {
+                "task": "create_dataset_query_plan",
+                "question": question,
+                "logicalCatalog": logical_catalog,
+                "datasetQueryPlanSchema": DatasetQueryPlan.model_json_schema(),
+            }
+            contextualized_question = question
+        else:
+            request = {
+                "task": "update_dataset_query_plan",
+                "priorQuestion": conversation_context.prior_question,
+                "priorPlan": conversation_context.prior_plan.model_dump(
+                    mode="json"
+                ),
+                "followUpQuestion": question,
+                "logicalCatalog": logical_catalog,
+                "datasetPlanUpdateSchema": DatasetPlanUpdate.model_json_schema(),
+                "instructions": (
+                    "Choose mode=patch only for an elliptical or narrowing "
+                    "follow-up; omitted patch fields inherit from priorPlan and "
+                    "add_filters narrows without replacing aggregation/grouping. "
+                    "Choose mode=replace for an independent new question."
+                ),
+            }
+            contextualized_question = question
         prompt = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
         failure = ""
         for attempt in range(self._max_attempts):
@@ -184,7 +338,26 @@ class DatasetLogicalPlanner:
                 max_output_tokens=2048,
             )
             try:
-                return DatasetQueryPlan.model_validate(self._json_object(raw))
+                document = self._json_object(raw)
+                plan, inherited = self._parse_plan(
+                    document,
+                    conversation_context=conversation_context,
+                )
+                if conversation_context is not None and inherited:
+                    contextualized_question = (
+                        f"{conversation_context.prior_question}；追问：{question}"
+                    )
+                plan = self._enforce_answerability(
+                    question=question,
+                    plan=plan,
+                    logical_refs=tuple(
+                        item["ref"] for item in logical_catalog
+                    ),
+                )
+                return DatasetPlanningResult(
+                    plan=plan,
+                    contextualized_question=contextualized_question,
+                )
             except ValueError as exc:
                 failure = str(exc)
                 if attempt + 1 >= self._max_attempts:
@@ -202,6 +375,82 @@ class DatasetLogicalPlanner:
         raise ValueError(
             "model failed to produce a valid DatasetQueryPlan: " + failure
         )
+
+    @staticmethod
+    def _parse_plan(
+        document: dict[str, object],
+        *,
+        conversation_context: DatasetConversationContext | None,
+    ) -> tuple[DatasetQueryPlan, bool]:
+        if conversation_context is None:
+            return DatasetQueryPlan.model_validate(document), False
+        if document.get("mode") in {"patch", "replace"}:
+            update = DatasetPlanUpdate.model_validate(document)
+            if update.mode == "replace":
+                assert update.plan is not None
+                return update.plan, False
+            assert update.patch is not None
+            return update.patch.apply(conversation_context.prior_plan), True
+        if "analysis_type" in document and any(
+            key in document
+            for key in ("select", "aggregations", "group_by")
+        ):
+            return DatasetQueryPlan.model_validate(document), False
+        return (
+            DatasetPlanPatch.model_validate(document).apply(
+                conversation_context.prior_plan
+            ),
+            True,
+        )
+
+    @staticmethod
+    def _enforce_answerability(
+        *,
+        question: str,
+        plan: DatasetQueryPlan,
+        logical_refs: tuple[str, ...],
+    ) -> DatasetQueryPlan:
+        if plan.status != DatasetPlanStatus.READY:
+            return plan
+        lowered_refs = tuple(item.casefold() for item in logical_refs)
+        refund_intent = re.search(
+            r"(退款|退货|refund|returned|return rate)",
+            question,
+            flags=re.IGNORECASE,
+        )
+        refund_semantics = any(
+            re.search(r"(退款|退货|refund|return)", item)
+            for item in lowered_refs
+        )
+        if refund_intent is not None and not refund_semantics:
+            return DatasetQueryPlan(
+                status=DatasetPlanStatus.NEEDS_CLARIFICATION,
+                clarification_question=(
+                    "当前数据集没有可识别的退款或退货字段，无法可靠计算退款率。"
+                    "请提供退款判定字段或退款事件数据。"
+                ),
+            )
+        rate_intent = re.search(
+            r"(率|占比|比例|rate|ratio|percentage|percent)",
+            question,
+            flags=re.IGNORECASE,
+        )
+        rate_semantics = any(
+            re.search(
+                r"(率|占比|比例|rate|ratio|percentage|percent)",
+                item,
+            )
+            for item in lowered_refs
+        )
+        if rate_intent is not None and not rate_semantics:
+            return DatasetQueryPlan(
+                status=DatasetPlanStatus.NEEDS_CLARIFICATION,
+                clarification_question=(
+                    "该问题需要派生比率，但当前语义绑定没有已定义的比率指标。"
+                    "请明确分子、分母及统计口径后再查询。"
+                ),
+            )
+        return plan
 
     @staticmethod
     def _json_object(value: str) -> dict[str, object]:
@@ -230,6 +479,8 @@ class DatasetQueryCompiler:
         schema_fingerprint: str,
         bundle_digest: str,
     ) -> PreparedQuery:
+        if plan.status != DatasetPlanStatus.READY:
+            raise ValueError("non-ready dataset query plans cannot be compiled")
         mappings = {item.logical_ref: item for item in binding.mappings}
         referenced = {
             *plan.select,
@@ -247,29 +498,65 @@ class DatasetQueryCompiler:
             )
         physical_refs = referenced - aggregation_aliases
         relations = {mappings[ref].physical_relation for ref in physical_refs}
-        if len(relations) != 1:
-            raise ValueError(
-                "the first dataset runtime version supports one relation per query"
-            )
-        relation = next(iter(relations))
-        if relation.count(".") != 1:
-            raise ValueError("physical relation must be schema-qualified")
-        schema, table = relation.split(".", 1)
-        table_alias = "dataset"
-        source = exp.Table(
-            this=exp.to_identifier(table, quoted=True),
-            db=exp.to_identifier(schema, quoted=True),
-            alias=exp.TableAlias(
-                this=exp.to_identifier(table_alias, quoted=True)
-            ),
+        primary_relation = (
+            binding.primary_relation
+            or binding.mappings[0].physical_relation
         )
+        relationship_by_right = {
+            item.right_relation: item for item in binding.relationships
+        }
+        required_relationship_ids: set[str] = set()
+        for relation in relations:
+            current = relation
+            visited: set[str] = set()
+            while current != primary_relation:
+                if current in visited:
+                    raise ValueError("dataset relationship graph contains a cycle")
+                visited.add(current)
+                relationship = relationship_by_right.get(current)
+                if relationship is None:
+                    raise ValueError(
+                        "dataset query relations are not connected to the primary relation"
+                    )
+                required_relationship_ids.add(relationship.relationship_id)
+                current = relationship.left_relation
+        required_relationships = tuple(
+            item
+            for item in binding.relationships
+            if item.relationship_id in required_relationship_ids
+        )
+        joined_relations = (
+            primary_relation,
+            *(item.right_relation for item in required_relationships),
+        )
+        aliases = {
+            relation: f"dataset_{index}"
+            for index, relation in enumerate(joined_relations, start=1)
+        }
+
+        def table_expression(relation: str) -> exp.Table:
+            if relation.count(".") != 1:
+                raise ValueError("physical relation must be schema-qualified")
+            schema, table = relation.split(".", 1)
+            return exp.Table(
+                this=exp.to_identifier(table, quoted=True),
+                db=exp.to_identifier(schema, quoted=True),
+                alias=exp.TableAlias(
+                    this=exp.to_identifier(aliases[relation], quoted=True)
+                ),
+            )
+
+        source = table_expression(primary_relation)
         parameters: list[QueryParameter] = []
 
         def column(ref: str) -> exp.Column:
             mapping = mappings[ref]
             return exp.Column(
                 this=exp.to_identifier(mapping.physical_column, quoted=True),
-                table=exp.to_identifier(table_alias, quoted=True),
+                table=exp.to_identifier(
+                    aliases[mapping.physical_relation],
+                    quoted=True,
+                ),
             )
 
         def parameter(value: Scalar, purpose: Literal["filter", "limit"]):
@@ -312,6 +599,37 @@ class DatasetQueryCompiler:
             )
             output_aliases[aggregation.alias] = aggregation.alias
         query = exp.select(*selections).from_(source)
+        joins: list[exp.Join] = []
+        for relationship in required_relationships:
+            left = exp.Column(
+                this=exp.to_identifier(
+                    relationship.left_column,
+                    quoted=True,
+                ),
+                table=exp.to_identifier(
+                    aliases[relationship.left_relation],
+                    quoted=True,
+                ),
+            )
+            right = exp.Column(
+                this=exp.to_identifier(
+                    relationship.right_column,
+                    quoted=True,
+                ),
+                table=exp.to_identifier(
+                    aliases[relationship.right_relation],
+                    quoted=True,
+                ),
+            )
+            joins.append(
+                exp.Join(
+                    this=table_expression(relationship.right_relation),
+                    on=exp.EQ(this=left, expression=right),
+                    kind=relationship.join_type.value.upper(),
+                )
+            )
+        if joins:
+            query.set("joins", joins)
 
         predicates: list[exp.Expression] = []
         for item in plan.filters:
@@ -404,7 +722,7 @@ class DatasetQueryCompiler:
             logical_sql=sql,
             executable_sql=sql,
             parameters=tuple(parameters),
-            allowed_relations=(relation,),
+            allowed_relations=joined_relations,
             policy_decision_id=hashlib.sha256(
                 f"{binding.binding_id}:{binding.version}".encode()
             ).hexdigest(),
@@ -447,6 +765,8 @@ class DataSourceQueryService:
         self,
         request: AgentRequest,
         principal: PrincipalContext,
+        *,
+        conversation_context: DatasetConversationContext | None = None,
     ) -> AgentResponse:
         if (
             request.source_id is None
@@ -456,15 +776,13 @@ class DataSourceQueryService:
         ):
             raise ValueError("dataset query requires complete datasource pins")
         try:
-            source, snapshot, binding, connector = (
-                await self._data_sources.resolve_active_binding(
-                    tenant_id=principal.tenant_id,
-                    source_id=request.source_id,
-                    source_version=request.source_version,
-                    binding_id=request.binding_id,
-                    binding_version=request.binding_version,
-                    domain_id=request.domain_id,
-                )
+            context = await self._data_sources.resolve_active_binding(
+                tenant_id=principal.tenant_id,
+                source_id=request.source_id,
+                source_version=request.source_version,
+                binding_id=request.binding_id,
+                binding_version=request.binding_version,
+                domain_id=request.domain_id,
             )
         except DataSourceRegistryError as exc:
             return self._failure(
@@ -474,6 +792,10 @@ class DataSourceQueryService:
                 str(exc),
                 "resolve_datasource",
             )
+        source = context.source
+        snapshot = context.snapshot
+        binding = context.binding
+        connector = context.connector
         if request.conversation_id is not None:
             try:
                 await self._data_sources.pin_conversation(
@@ -491,10 +813,11 @@ class DataSourceQueryService:
                     "pin_conversation_datasource",
                 )
         try:
-            plan = await self._planner.build_plan(
+            planning = await self._planner.build_plan(
                 question=request.question,
                 binding=binding,
                 catalog=snapshot.catalog,
+                conversation_context=conversation_context,
             )
         except ValueError as exc:
             return self._failure(
@@ -503,6 +826,32 @@ class DataSourceQueryService:
                 ErrorCode.LOGICAL_PLAN_INVALID,
                 str(exc),
                 "plan_dataset_query",
+            )
+        plan = planning.plan
+        contextualized_question = planning.contextualized_question
+        serialized_plan = plan.model_dump(mode="json")
+        if plan.status != DatasetPlanStatus.READY:
+            return AgentResponse(
+                ok=True,
+                question=request.question,
+                contextualized_question=contextualized_question,
+                conversation_id=request.conversation_id,
+                tenant_id=principal.tenant_id,
+                dataset_query_plan=serialized_plan,
+                message_type="clarification",
+                answer=plan.clarification_question,
+                trace=(
+                    AgentTraceEntry(
+                        node="resolve_datasource",
+                        status="completed",
+                    ),
+                    AgentTraceEntry(
+                        node="plan_dataset_query",
+                        status=plan.status.value,
+                    ),
+                )
+                if request.include_trace
+                else (),
             )
         dialect = connector.capabilities().dialect
         if dialect not in {"postgres", "sqlite", "duckdb"}:
@@ -544,10 +893,11 @@ class DataSourceQueryService:
             return AgentResponse(
                 ok=True,
                 question=request.question,
-                contextualized_question=request.question,
+                contextualized_question=contextualized_question,
                 conversation_id=request.conversation_id,
                 tenant_id=principal.tenant_id,
                 logical_plan=prepared.logical_plan,
+                dataset_query_plan=serialized_plan,
                 sql=prepared.logical_sql,
                 message_type="plan",
                 answer="已生成只读查询计划，尚未执行。",
@@ -581,7 +931,7 @@ class DataSourceQueryService:
             grant_id=grant_id,
             bundle_digest=bundle_digest,
             source=source.source_id,
-            connection_ref=source.location_ref or source.source_id,
+            connection_ref=context.connection_ref,
             capabilities=("query.execute",),
             secret="internal-immutable-snapshot",
             issued_at=now,
@@ -601,6 +951,16 @@ class DataSourceQueryService:
                     grant,
                     lease,
                 )
+        except ConnectorError as exc:
+            code, message, retryable = self._connector_failure(exc.code)
+            return self._failure(
+                request,
+                principal,
+                code,
+                message,
+                "execute_dataset_query",
+                retryable=retryable,
+            )
         except Exception:
             return self._failure(
                 request,
@@ -621,10 +981,11 @@ class DataSourceQueryService:
         return AgentResponse(
             ok=True,
             question=request.question,
-            contextualized_question=request.question,
+            contextualized_question=contextualized_question,
             conversation_id=request.conversation_id,
             tenant_id=principal.tenant_id,
             logical_plan=prepared.logical_plan,
+            dataset_query_plan=serialized_plan,
             sql=prepared.logical_sql,
             message_type="chart" if chart is not None else "table",
             rows=rows,
@@ -637,6 +998,8 @@ class DataSourceQueryService:
         self,
         request: AgentRequest,
         principal: PrincipalContext,
+        *,
+        conversation_context: DatasetConversationContext | None = None,
     ) -> AsyncIterator[AgentEvent]:
         run_id = "dataset-run-" + uuid4().hex
         yield AgentEvent(
@@ -650,7 +1013,11 @@ class DataSourceQueryService:
             ),
         )
         try:
-            response = await self.run(request, principal)
+            response = await self.run(
+                request,
+                principal,
+                conversation_context=conversation_context,
+            )
         except asyncio.CancelledError:
             response = self._failure(
                 request,
@@ -776,6 +1143,8 @@ class DataSourceQueryService:
         code: ErrorCode,
         message: str,
         node: str,
+        *,
+        retryable: bool = False,
     ) -> AgentResponse:
         safe_message = message.strip()[:1000] or "dataset query failed"
         return AgentResponse(
@@ -785,7 +1154,11 @@ class DataSourceQueryService:
             conversation_id=request.conversation_id,
             tenant_id=principal.tenant_id,
             answer=safe_message,
-            error=AgentError(code=code, message=safe_message),
+            error=AgentError(
+                code=code,
+                message=safe_message,
+                retryable=retryable,
+            ),
             trace=(
                 AgentTraceEntry(
                     node=node,
@@ -797,10 +1170,59 @@ class DataSourceQueryService:
             else (),
         )
 
+    @staticmethod
+    def _connector_failure(
+        code: ConnectorErrorCode,
+    ) -> tuple[ErrorCode, str, bool]:
+        if code in {
+            ConnectorErrorCode.CREDENTIAL_EXPIRED,
+            ConnectorErrorCode.CREDENTIAL_MISMATCH,
+            ConnectorErrorCode.GRANT_EXPIRED,
+            ConnectorErrorCode.GRANT_MISMATCH,
+        }:
+            return (
+                ErrorCode.ACCESS_DENIED,
+                "数据源执行授权无效或已过期。",
+                False,
+            )
+        if code == ConnectorErrorCode.RELATION_NOT_ALLOWED:
+            return (
+                ErrorCode.SQL_POLICY_VIOLATION,
+                "查询引用了未授权的数据表。",
+                False,
+            )
+        if code == ConnectorErrorCode.ROW_LIMIT_EXCEEDED:
+            return (
+                ErrorCode.COST_EXCEEDED,
+                "查询结果超过允许的行数上限。",
+                False,
+            )
+        if code == ConnectorErrorCode.TIMEOUT:
+            return (
+                ErrorCode.DEADLINE_EXCEEDED,
+                "数据源查询超时，请缩小查询范围后重试。",
+                True,
+            )
+        if code == ConnectorErrorCode.CATALOG_INVALID:
+            return (
+                ErrorCode.BINDING_STALE,
+                "数据源结构已变化，请刷新目录并重新激活语义绑定。",
+                False,
+            )
+        return (
+            ErrorCode.INTERNAL_ERROR,
+            "数据源当前不可用，请稍后重试。",
+            True,
+        )
+
 
 __all__ = [
     "DataSourceQueryService",
     "DatasetLogicalPlanner",
+    "DatasetConversationContext",
+    "DatasetPlanPatch",
+    "DatasetPlanStatus",
+    "DatasetPlanUpdate",
     "DatasetQueryCompiler",
     "DatasetQueryPlan",
 ]

@@ -40,6 +40,7 @@ from api.schemas import (
     ConversationResponse,
     ConversationUpdateRequest,
     DataSourceCatalogResponse,
+    DataSourceDeleteResponse,
     DataSourceListResponse,
     DataSourceResponse,
     LoginRequest,
@@ -58,7 +59,12 @@ from api.schemas import (
     TokenResponse,
 )
 from api.datasource_service import DataSourceService
-from api.dataset_query_service import DataSourceQueryService
+from api.dataset_query_service import (
+    DataSourceQueryService,
+    DatasetConversationContext,
+    DatasetPlanStatus,
+    DatasetQueryPlan,
+)
 from api.run_streams import RunCoordinator
 from data_agent.memory import (
     ApprovalContext,
@@ -255,6 +261,25 @@ async def list_data_sources(
     )
 
 
+@router.delete(
+    "/api/data-sources/{source_id}",
+    response_model=DataSourceDeleteResponse,
+)
+async def delete_data_source(
+    source_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        deleted = await service.delete_source(
+            tenant_id=principal.tenant_id,
+            source_id=source_id,
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+    return DataSourceDeleteResponse(source_id=deleted.source_id)
+
+
 @router.post(
     "/api/data-sources/postgres",
     response_model=DataSourceResponse,
@@ -389,6 +414,8 @@ async def create_data_source_binding(
             binding_id=request.binding_id,
             domain_id=request.domain_id,
             mappings=request.mappings,
+            primary_relation=request.primary_relation,
+            relationships=request.relationships,
         )
     except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
         raise _data_source_error(exc) from exc
@@ -777,9 +804,15 @@ async def send_conversation_message(
                     runtime_principal,
                 )
             else:
+                conversation_context = await _dataset_conversation_context(
+                    runtime,
+                    runtime_principal,
+                    path_conversation_id,
+                )
                 response = await data_query.run(
                     agent_request,
                     runtime_principal,
+                    conversation_context=conversation_context,
                 )
             await _record_conversation_turn(
                 runtime,
@@ -856,11 +889,21 @@ async def stream_conversation_message(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    conversation_context = (
+        await _dataset_conversation_context(
+            runtime,
+            runtime_principal,
+            path_conversation_id,
+        )
+        if agent_request.source_id is not None
+        else None
+    )
     events = _request_event_stream(
         agent_request,
         runtime_principal,
         runtime=runtime,
         data_query=data_query,
+        conversation_context=conversation_context,
     )
     return _sse_response(coordinator.observe(runtime_principal, events))
 
@@ -889,11 +932,16 @@ def _request_event_stream(
     *,
     runtime: ProductRuntime,
     data_query: DataSourceQueryService | None,
+    conversation_context: DatasetConversationContext | None = None,
 ) -> AsyncIterator[AgentEvent]:
     if request.source_id is None:
         return runtime.run(request, principal)
     events = (
-        data_query.stream(request, principal)
+        data_query.stream(
+            request,
+            principal,
+            conversation_context=conversation_context,
+        )
         if data_query is not None
         else _single_response_events(
             request,
@@ -906,6 +954,52 @@ def _request_event_stream(
         principal,
         events,
     )
+
+
+async def _dataset_conversation_context(
+    runtime: ProductRuntime,
+    principal: PrincipalContext,
+    conversation_id: str,
+) -> DatasetConversationContext | None:
+    list_messages = getattr(runtime, "list_conversation_messages", None)
+    if not callable(list_messages):
+        return None
+    messages = await list_messages(
+        principal=principal,
+        domain_id=USER_DATASET_DOMAIN_ID,
+        conversation_id=conversation_id,
+        limit=100,
+    )
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if message.role != "assistant":
+            continue
+        document = message.metadata.dataset_query_plan
+        if document is None:
+            continue
+        try:
+            prior_plan = DatasetQueryPlan.model_validate(document)
+        except ValueError:
+            continue
+        if prior_plan.status != DatasetPlanStatus.READY:
+            continue
+        prior_question = message.metadata.contextualized_question
+        if prior_question is None:
+            prior_question = next(
+                (
+                    item.content
+                    for item in reversed(messages[:index])
+                    if item.role == "user"
+                ),
+                "",
+            )
+        if not prior_question.strip():
+            continue
+        return DatasetConversationContext(
+            prior_question=prior_question,
+            prior_plan=prior_plan,
+        )
+    return None
 
 
 async def _record_terminal_stream(
