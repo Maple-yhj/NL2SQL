@@ -52,6 +52,8 @@ from api.schemas import (
     Nl2SqlRequest,
     PostgresDataSourceRequest,
     RefreshRequest,
+    RelationshipGraphActivateRequest,
+    RelationshipDiscoveryResponse,
     RunCancelResponse,
     RunEventListResponse,
     SemanticBindingCreateRequest,
@@ -98,6 +100,13 @@ from data_agent.runtime.events import (
     RunFailedPayload,
     RunStartedPayload,
 )
+from data_agent.relationships.models import (
+    RelationshipGraphDraft,
+    RelationshipRecommendationRun,
+)
+from data_agent.relationships.router import GraphRouteError, GraphRouteRequest, GraphRouteResolver
+from data_agent.relationships.validator import validate_graph
+from data_agent.datasources import SemanticGraphBindingRecord
 
 
 router = APIRouter()
@@ -329,7 +338,7 @@ async def upload_file_data_source(
         )
     except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
         raise _data_source_error(exc) from exc
-    return _data_source_response(source)
+    return await _data_source_response_with_discovery(source, service)
 
 
 @router.post(
@@ -353,7 +362,7 @@ async def upload_sqlite_data_source(
         )
     except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
         raise _data_source_error(exc) from exc
-    return _data_source_response(source)
+    return await _data_source_response_with_discovery(source, service)
 
 
 @router.get(
@@ -378,6 +387,141 @@ async def get_data_source_catalog(
         fingerprint=snapshot.fingerprint,
         catalog=snapshot.catalog,
     )
+
+
+@router.get(
+    "/api/data-sources/{source_id}/relationship-graphs/draft",
+    response_model=RelationshipGraphDraft,
+)
+async def get_relationship_graph_draft(
+    source_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        graph = await service.get_relationship_draft(
+            tenant_id=principal.tenant_id, source_id=source_id
+        )
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+    if graph is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="relationship graph draft was not found")
+    return graph
+
+
+@router.post(
+    "/api/data-sources/{source_id}/relationship-recommendations",
+    response_model=RelationshipRecommendationRun,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def rerun_relationship_recommendations(
+    source_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        _, run = await service.ensure_relationship_discovery(
+            tenant_id=principal.tenant_id, source_id=source_id
+        )
+        return run
+    except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+
+
+@router.get(
+    "/api/data-sources/{source_id}/relationship-recommendations/{run_id}",
+    response_model=RelationshipRecommendationRun,
+)
+async def get_relationship_recommendation_run(
+    source_id: str,
+    run_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    run = await service.registry.get_recommendation_run(tenant_id=principal.tenant_id, run_id=run_id)
+    if run is None or run.source_id != source_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="relationship recommendation run was not found")
+    return run
+
+
+@router.patch(
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}",
+    response_model=RelationshipGraphDraft,
+)
+async def patch_relationship_graph(
+    source_id: str,
+    graph_id: str,
+    draft: RelationshipGraphDraft,
+    expected_revision: int = Query(ge=1),
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    if draft.graph_id != graph_id or draft.source_id != source_id or draft.tenant_id != principal.tenant_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="graph identity cannot be changed")
+    try:
+        return await service.registry.save_graph_draft(draft, expected_revision=expected_revision)
+    except (DataSourceRegistryError, ValueError) as exc:
+        raise _data_source_error(exc) from exc
+
+
+@router.post(
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/validate",
+)
+async def validate_relationship_graph(
+    source_id: str,
+    graph_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    graph = await service.get_relationship_draft(tenant_id=principal.tenant_id, source_id=source_id)
+    if graph is None or graph.graph_id != graph_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="relationship graph draft was not found")
+    return validate_graph(graph)
+
+
+@router.post(
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/preview-route",
+)
+async def preview_relationship_route(
+    source_id: str,
+    graph_id: str,
+    request: GraphRouteRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    graph = await service.get_relationship_draft(tenant_id=principal.tenant_id, source_id=source_id)
+    if graph is None or graph.graph_id != graph_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="relationship graph draft was not found")
+    try:
+        return GraphRouteResolver().resolve(graph, request, findings=validate_graph(graph).findings)
+    except GraphRouteError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+
+@router.post(
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/activate",
+    response_model=SemanticGraphBindingRecord,
+)
+async def activate_relationship_graph(
+    source_id: str, graph_id: str, request: RelationshipGraphActivateRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    try:
+        return await service.activate_relationship_graph(
+            tenant_id=principal.tenant_id, source_id=source_id, graph_id=graph_id,
+            domain_id=request.domain_id, mappings=request.mappings, binding_id=request.binding_id,
+        )
+    except DataSourceRegistryError as exc:
+        raise _data_source_error(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "GRAPH_VALIDATION_FAILED", "message": str(exc)},
+        ) from exc
 
 
 @router.get(
@@ -1172,6 +1316,29 @@ def _data_source_response(
     )
 
 
+async def _data_source_response_with_discovery(
+    source: DataSourceDefinition,
+    service: DataSourceService,
+) -> DataSourceResponse:
+    response = _data_source_response(source)
+    discovery = await service.latest_relationship_discovery(
+        tenant_id=source.tenant_id,
+        source_id=source.source_id,
+    )
+    if discovery is None:
+        return response
+    graph, run = discovery
+    return response.model_copy(
+        update={
+            "relationship_discovery": RelationshipDiscoveryResponse(
+                graph_id=graph.graph_id,
+                run_id=run.run_id,
+                status=run.status,
+            )
+        }
+    )
+
+
 def _data_source_error(
     error: DataSourceRegistryError | FileSnapshotError | ValueError,
 ) -> HTTPException:
@@ -1180,6 +1347,8 @@ def _data_source_error(
             DataSourceRegistryErrorCode.NOT_FOUND: status.HTTP_404_NOT_FOUND,
             DataSourceRegistryErrorCode.ALREADY_EXISTS: status.HTTP_409_CONFLICT,
             DataSourceRegistryErrorCode.VERSION_CONFLICT: status.HTTP_409_CONFLICT,
+            DataSourceRegistryErrorCode.GRAPH_REVISION_CONFLICT: status.HTTP_409_CONFLICT,
+            DataSourceRegistryErrorCode.GRAPH_STALE_SNAPSHOT: status.HTTP_409_CONFLICT,
         }.get(error.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
     elif (
         isinstance(error, FileSnapshotError)
@@ -1188,6 +1357,14 @@ def _data_source_error(
         status_code = status.HTTP_413_REQUEST_ENTITY_TOO_LARGE
     else:
         status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    if isinstance(error, DataSourceRegistryError) and error.code in {
+        DataSourceRegistryErrorCode.GRAPH_REVISION_CONFLICT,
+        DataSourceRegistryErrorCode.GRAPH_STALE_SNAPSHOT,
+    }:
+        return HTTPException(
+            status_code=status_code,
+            detail={"code": error.code.value, "message": str(error)},
+        )
     return HTTPException(status_code=status_code, detail=str(error))
 
 

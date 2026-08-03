@@ -267,6 +267,19 @@ EvidenceKind = Literal[
 ]
 
 
+class RelationshipRouteEvidence(SkillModel):
+    """The immutable graph route and grain decision used for one query."""
+
+    route_digest: NonBlankText
+    logical_node_ids: tuple[NonBlankText, ...]
+    edge_ids: tuple[NonBlankText, ...]
+    cardinality_by_node: tuple[
+        tuple[NonBlankText, Literal["one", "many", "unknown"]], ...
+    ]
+    fanout_decision: NonBlankText
+    preaggregation_required: bool = False
+
+
 class LogicalQueryPlan(SkillModel):
     """A complete, physical-system-independent analytical query plan."""
 
@@ -286,6 +299,7 @@ class LogicalQueryPlan(SkillModel):
     cross_tab: CrossTabSpec | None = None
     expected_grain: tuple[CanonicalFieldRef, ...] = ()
     assumptions: tuple[NonBlankText, ...] = ()
+    relationship_evidence: RelationshipRouteEvidence | None = None
     requested_evidence: tuple[EvidenceKind, ...] = ()
     derived_calculations: tuple[DerivedCalculation, ...] = ()
     having: tuple[LogicalFilter, ...] = ()

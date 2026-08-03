@@ -1,8 +1,8 @@
-import type { AgentMode, SemanticBinding, SendMessagePayload } from "./types";
+import type { AgentMode, AnySemanticBinding, SendMessagePayload } from "./types";
 
 export function createSendMessagePayload(
   question: string,
-  binding: SemanticBinding,
+  binding: AnySemanticBinding,
   mode: AgentMode = "execute",
 ): SendMessagePayload {
   const payload: SendMessagePayload = {

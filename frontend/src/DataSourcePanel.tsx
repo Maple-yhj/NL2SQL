@@ -24,17 +24,19 @@ import type {
   DataSource,
   DataSourceCatalog,
   CatalogRelation,
+  AnySemanticBinding,
   SemanticBinding,
   SemanticFieldMapping,
   SemanticRelationship,
 } from "./types";
+import { RelationshipGraphEditor } from "./relationships/RelationshipGraphEditor";
 
 interface DataSourcePanelProps {
   api: ApiClient;
   sources: DataSource[];
-  selectedBinding: SemanticBinding | null;
+  selectedBinding: AnySemanticBinding | null;
   onRefresh: () => Promise<DataSource[]>;
-  onBindingSelect: (binding: SemanticBinding | null) => void;
+  onBindingSelect: (binding: AnySemanticBinding | null) => void;
   onClose: () => void;
 }
 
@@ -50,7 +52,7 @@ export function DataSourcePanel({
     selectedBinding?.source_id ?? sources[0]?.source_id ?? "",
   );
   const [catalog, setCatalog] = useState<DataSourceCatalog | null>(null);
-  const [bindings, setBindings] = useState<SemanticBinding[]>([]);
+  const [bindings, setBindings] = useState<AnySemanticBinding[]>([]);
   const [relationName, setRelationName] = useState("");
   const [selectedRelations, setSelectedRelations] = useState<string[]>([]);
   const [primaryRelation, setPrimaryRelation] = useState("");
@@ -97,7 +99,7 @@ export function DataSourcePanel({
               ? current
               : firstRelation?.relation ?? "",
           );
-          if (activeSemanticBinding) {
+          if (activeSemanticBinding && !("schema_version" in activeSemanticBinding && activeSemanticBinding.schema_version === 2)) {
             const mappedRelations = Array.from(
               new Set(
                 activeSemanticBinding.mappings.map(
@@ -678,6 +680,7 @@ export function DataSourcePanel({
                     <p>选择主表，逐张加入关联表；查询时仅连接问题实际需要的数据表。</p>
                   </div>
                 </div>
+                {selectedId && <RelationshipGraphEditor api={api} sourceId={selectedId} onActivated={(binding) => { setBindings((current) => [...current.filter((item) => item.binding_id !== binding.binding_id), binding]); onBindingSelect(binding); setJustActivated(true); }} />}
                 <form className="datasource-binding-form" onSubmit={confirmBinding}>
                   <div className="datasource-binding-controls">
                     <label>
@@ -905,7 +908,7 @@ export function DataSourcePanel({
                   <div className="binding-actions">
                     <span>
                       {activeBinding
-                        ? `当前已激活 v${activeBinding.version} · ${activeBinding.relationships?.length ?? 0} 条关联`
+                        ? `当前已激活 v${activeBinding.version} · ${"relationships" in activeBinding ? activeBinding.relationships?.length ?? 0 : "图"} ${"relationships" in activeBinding ? "条关联" : "关系图"}`
                         : `将激活 ${selectedRelations.length} 张表的统一语义范围`}
                     </span>
                     <button

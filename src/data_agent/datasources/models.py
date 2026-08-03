@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -164,6 +164,7 @@ class SemanticRelationship(DataSourceModel):
 
 
 class SemanticBindingRecord(DataSourceModel):
+    schema_version: Literal[1] = 1
     binding_id: StableIdentifier
     tenant_id: StableIdentifier
     source_id: StableIdentifier
@@ -237,6 +238,31 @@ class SemanticBindingRecord(DataSourceModel):
         return self
 
 
+class SemanticGraphFieldMapping(DataSourceModel):
+    logical_ref: NonBlankText
+    node_id: StableIdentifier
+    column_id: NonBlankText
+
+
+class SemanticGraphBindingRecord(DataSourceModel):
+    """Immutable v2 binding; editable relationship graphs never become active."""
+
+    schema_version: Literal[2] = 2
+    binding_id: StableIdentifier
+    tenant_id: StableIdentifier
+    source_id: StableIdentifier
+    source_snapshot_version: int = Field(ge=1)
+    schema_fingerprint: NonBlankText
+    domain_id: StableIdentifier
+    version: int = Field(ge=1)
+    status: SemanticBindingStatus = SemanticBindingStatus.DRAFT
+    graph: "ActivatedRelationshipGraph"
+    mappings: tuple[SemanticGraphFieldMapping, ...] = Field(min_length=1)
+    validation_report_digest: NonBlankText
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class ConversationDataSourcePin(DataSourceModel):
     tenant_id: StableIdentifier
     user_id: NonBlankText
@@ -249,6 +275,13 @@ class ConversationDataSourcePin(DataSourceModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+# Import late so the relationship package remains independent of the datasource
+# control plane and historical v1 bindings keep loading without a migration.
+from data_agent.relationships.models import ActivatedRelationshipGraph  # noqa: E402
+
+SemanticGraphBindingRecord.model_rebuild()
+
+
 __all__ = [
     "ConversationDataSourcePin",
     "DataSourceDefinition",
@@ -256,6 +289,8 @@ __all__ = [
     "DataSourceSnapshot",
     "DataSourceStatus",
     "SemanticBindingRecord",
+    "SemanticGraphBindingRecord",
+    "SemanticGraphFieldMapping",
     "SemanticBindingStatus",
     "SemanticFieldMapping",
     "SemanticJoinType",

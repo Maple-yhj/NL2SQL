@@ -11,8 +11,11 @@ from pathlib import Path
 
 from data_agent.tools.schemas import (
     CatalogColumn,
+    CatalogForeignKey,
+    CatalogKey,
     CatalogRelation,
     CatalogSnapshot,
+    stable_catalog_id,
 )
 
 from .file_snapshot import FileSnapshotError, FileSnapshotErrorCode
@@ -85,7 +88,7 @@ class SQLiteSnapshotImporter:
         try:
             connection = sqlite3.connect(uri, uri=True)
             connection.execute("PRAGMA query_only = ON")
-            relations: list[CatalogRelation] = []
+            relation_specs: list[tuple[str, list[tuple[object, ...]]]] = []
             rows = connection.execute(
                 """
                 SELECT name
@@ -108,17 +111,84 @@ class SQLiteSnapshotImporter:
                 ).fetchall()
                 if not columns:
                     continue
+                relation_specs.append((name, columns))
+            relation_names = {name for name, _ in relation_specs}
+            relations: list[CatalogRelation] = []
+            for name, columns in relation_specs:
+                relation = f"main.{name}"
+                escaped = name.replace('"', '""')
+                relation_id = stable_catalog_id("relation", relation)
+                catalog_columns = tuple(
+                    CatalogColumn(
+                        column_id=stable_catalog_id("column", relation, str(column[1])),
+                        name=str(column[1]),
+                        data_type=str(column[2] or "unknown"),
+                        nullable=not bool(column[3]),
+                        ordinal=index,
+                    )
+                    for index, column in enumerate(columns, start=1)
+                )
+                by_name = {column.name: column.column_id for column in catalog_columns}
+                primary_columns = tuple(
+                    by_name[str(column[1])]
+                    for column in sorted(columns, key=lambda item: int(item[5] or 0))
+                    if int(column[5] or 0) > 0
+                )
+                keys: list[CatalogKey] = []
+                if primary_columns:
+                    keys.append(CatalogKey(kind="primary", column_ids=primary_columns))
+                index_rows = connection.execute(
+                    f'PRAGMA main.index_list("{escaped}")'
+                ).fetchall()
+                for index_row in index_rows:
+                    if not bool(index_row[2]) or str(index_row[3]) == "pk":
+                        continue
+                    index_name = str(index_row[1]).replace('"', '""')
+                    index_columns = tuple(
+                        by_name[str(item[2])]
+                        for item in connection.execute(
+                            f'PRAGMA main.index_info("{index_name}")'
+                        ).fetchall()
+                        if item[2] is not None
+                    )
+                    if index_columns:
+                        keys.append(CatalogKey(kind="unique", column_ids=index_columns))
+                foreign_keys: list[CatalogForeignKey] = []
+                foreign_rows = connection.execute(
+                    f'PRAGMA main.foreign_key_list("{escaped}")'
+                ).fetchall()
+                grouped_foreign: dict[int, list[tuple[object, ...]]] = {}
+                for row in foreign_rows:
+                    grouped_foreign.setdefault(int(row[0]), []).append(row)
+                for foreign_id, parts in grouped_foreign.items():
+                    ordered = sorted(parts, key=lambda row: int(row[1]))
+                    target_table = str(ordered[0][2])
+                    if target_table not in relation_names or any(
+                        item[3] is None or item[4] is None for item in ordered
+                    ):
+                        continue
+                    target_relation = f"main.{target_table}"
+                    foreign_keys.append(
+                        CatalogForeignKey(
+                            foreign_key_id=stable_catalog_id(
+                                "foreign-key", relation, str(foreign_id)
+                            ),
+                            from_relation_id=relation_id,
+                            from_column_ids=tuple(by_name[str(item[3])] for item in ordered),
+                            to_relation_id=stable_catalog_id("relation", target_relation),
+                            to_column_ids=tuple(
+                                stable_catalog_id("column", target_relation, str(item[4]))
+                                for item in ordered
+                            ),
+                        )
+                    )
                 relations.append(
                     CatalogRelation(
-                        relation=f"main.{name}",
-                        columns=tuple(
-                            CatalogColumn(
-                                name=str(column[1]),
-                                data_type=str(column[2] or "unknown"),
-                                nullable=not bool(column[3]),
-                            )
-                            for column in columns
-                        ),
+                        relation_id=relation_id,
+                        relation=relation,
+                        columns=catalog_columns,
+                        keys=tuple(keys),
+                        foreign_keys=tuple(foreign_keys),
                     )
                 )
             if not relations:

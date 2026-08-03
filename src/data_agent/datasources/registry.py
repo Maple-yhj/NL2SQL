@@ -8,6 +8,10 @@ from enum import StrEnum
 from typing import Protocol
 
 from data_agent.tools.connectors import DataSourceConnector
+from data_agent.relationships.models import (
+    RelationshipGraphDraft,
+    RelationshipRecommendationRun,
+)
 
 from .models import (
     ConversationDataSourcePin,
@@ -17,6 +21,7 @@ from .models import (
     DataSourceStatus,
     SemanticBindingRecord,
     SemanticBindingStatus,
+    SemanticGraphBindingRecord,
 )
 
 
@@ -27,6 +32,8 @@ class DataSourceRegistryErrorCode(StrEnum):
     TENANT_MISMATCH = "TENANT_MISMATCH"
     INVALID_BINDING = "INVALID_BINDING"
     CONNECTOR_MISMATCH = "CONNECTOR_MISMATCH"
+    GRAPH_REVISION_CONFLICT = "GRAPH_REVISION_CONFLICT"
+    GRAPH_STALE_SNAPSHOT = "GRAPH_STALE_SNAPSHOT"
 
 
 class DataSourceRegistryError(RuntimeError):
@@ -99,6 +106,37 @@ class DataSourceRegistry(Protocol):
         binding_id: str,
     ) -> SemanticBindingRecord: ...
 
+    async def create_graph_draft(
+        self, draft: RelationshipGraphDraft
+    ) -> RelationshipGraphDraft: ...
+
+    async def get_graph_draft(
+        self, *, tenant_id: str, source_id: str, source_snapshot_version: int
+    ) -> RelationshipGraphDraft | None: ...
+
+    async def save_graph_draft(
+        self, draft: RelationshipGraphDraft, *, expected_revision: int
+    ) -> RelationshipGraphDraft: ...
+
+    async def save_recommendation_run(
+        self, run: RelationshipRecommendationRun
+    ) -> RelationshipRecommendationRun: ...
+
+    async def get_recommendation_run(
+        self, *, tenant_id: str, run_id: str
+    ) -> RelationshipRecommendationRun | None: ...
+
+    async def activate_graph_binding(
+        self, binding: SemanticGraphBindingRecord
+    ) -> SemanticGraphBindingRecord: ...
+
+    async def list_graph_bindings(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> tuple[SemanticGraphBindingRecord, ...]: ...
+
     async def pin_conversation(
         self,
         pin: ConversationDataSourcePin,
@@ -123,6 +161,11 @@ class InMemoryDataSourceRegistry:
         self._conversation_pins: dict[
             tuple[str, str, str], ConversationDataSourcePin
         ] = {}
+        self._graph_drafts: dict[tuple[str, str], RelationshipGraphDraft] = {}
+        self._recommendation_runs: dict[
+            tuple[str, str], RelationshipRecommendationRun
+        ] = {}
+        self._graph_bindings: dict[tuple[str, str], SemanticGraphBindingRecord] = {}
         self._lock = asyncio.Lock()
 
     async def create(
@@ -204,6 +247,21 @@ class InMemoryDataSourceRegistry:
                 candidate_key: pin
                 for candidate_key, pin in self._conversation_pins.items()
                 if pin.tenant_id != tenant_id or pin.source_id != source_id
+            }
+            self._graph_drafts = {
+                candidate_key: draft
+                for candidate_key, draft in self._graph_drafts.items()
+                if draft.tenant_id != tenant_id or draft.source_id != source_id
+            }
+            self._recommendation_runs = {
+                candidate_key: run
+                for candidate_key, run in self._recommendation_runs.items()
+                if run.tenant_id != tenant_id or run.source_id != source_id
+            }
+            self._graph_bindings = {
+                candidate_key: binding
+                for candidate_key, binding in self._graph_bindings.items()
+                if binding.tenant_id != tenant_id or binding.source_id != source_id
             }
             return source
 
@@ -382,6 +440,160 @@ class InMemoryDataSourceRegistry:
             )
             self._bindings[key] = activated
             return activated
+
+    async def create_graph_draft(
+        self, draft: RelationshipGraphDraft
+    ) -> RelationshipGraphDraft:
+        key = (draft.tenant_id, draft.graph_id)
+        async with self._lock:
+            if key in self._graph_drafts:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.ALREADY_EXISTS,
+                    "relationship graph draft already exists",
+                )
+            if (
+                draft.tenant_id,
+                draft.source_id,
+                draft.source_snapshot_version,
+            ) not in self._snapshots:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "relationship graph source snapshot was not found",
+                )
+            if draft.revision != 1:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.VERSION_CONFLICT,
+                    "new relationship graph drafts must start at revision 1",
+                )
+            self._graph_drafts[key] = draft
+            return draft
+
+    async def get_graph_draft(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+        source_snapshot_version: int,
+    ) -> RelationshipGraphDraft | None:
+        async with self._lock:
+            return next(
+                (
+                    draft
+                    for draft in self._graph_drafts.values()
+                    if draft.tenant_id == tenant_id
+                    and draft.source_id == source_id
+                    and draft.source_snapshot_version == source_snapshot_version
+                ),
+                None,
+            )
+
+    async def save_graph_draft(
+        self,
+        draft: RelationshipGraphDraft,
+        *,
+        expected_revision: int,
+    ) -> RelationshipGraphDraft:
+        key = (draft.tenant_id, draft.graph_id)
+        async with self._lock:
+            current = self._graph_drafts.get(key)
+            if current is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "relationship graph draft was not found",
+                )
+            if current.revision != expected_revision or draft.revision != expected_revision + 1:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.GRAPH_REVISION_CONFLICT,
+                    "relationship graph draft revision is stale",
+                )
+            if (
+                current.source_id != draft.source_id
+                or current.source_snapshot_version != draft.source_snapshot_version
+                or current.schema_fingerprint != draft.schema_fingerprint
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.VERSION_CONFLICT,
+                    "relationship graph draft cannot change its source snapshot",
+                )
+            self._graph_drafts[key] = draft
+            return draft
+
+    async def save_recommendation_run(
+        self, run: RelationshipRecommendationRun
+    ) -> RelationshipRecommendationRun:
+        key = (run.tenant_id, run.run_id)
+        async with self._lock:
+            draft = self._graph_drafts.get((run.tenant_id, run.graph_id))
+            if draft is None or (
+                draft.source_id != run.source_id
+                or draft.source_snapshot_version != run.source_snapshot_version
+                or draft.schema_fingerprint != run.schema_fingerprint
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "recommendation run graph draft was not found",
+                )
+            current = self._recommendation_runs.get(key)
+            if current is not None and current.source_id != run.source_id:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.VERSION_CONFLICT,
+                    "recommendation run belongs to another datasource",
+                )
+            self._recommendation_runs[key] = run
+            return run
+
+    async def get_recommendation_run(
+        self, *, tenant_id: str, run_id: str
+    ) -> RelationshipRecommendationRun | None:
+        async with self._lock:
+            return self._recommendation_runs.get((tenant_id, run_id))
+
+    async def activate_graph_binding(
+        self, binding: SemanticGraphBindingRecord
+    ) -> SemanticGraphBindingRecord:
+        key = (binding.tenant_id, binding.binding_id)
+        async with self._lock:
+            snapshot = self._snapshots.get((binding.tenant_id, binding.source_id, binding.source_snapshot_version))
+            if snapshot is None or snapshot.fingerprint != binding.schema_fingerprint:
+                raise DataSourceRegistryError(DataSourceRegistryErrorCode.GRAPH_STALE_SNAPSHOT, "graph binding source snapshot is stale")
+            if key in self._graph_bindings:
+                raise DataSourceRegistryError(DataSourceRegistryErrorCode.ALREADY_EXISTS, "graph binding already exists")
+            now = datetime.now(UTC)
+            for candidate_key, candidate in tuple(self._bindings.items()):
+                if (
+                    candidate.tenant_id == binding.tenant_id
+                    and candidate.source_id == binding.source_id
+                    and candidate.domain_id == binding.domain_id
+                    and candidate.status == SemanticBindingStatus.ACTIVE
+                ):
+                    self._bindings[candidate_key] = candidate.model_copy(
+                        update={
+                            "status": SemanticBindingStatus.RETIRED,
+                            "updated_at": now,
+                        }
+                    )
+            for candidate_key, candidate in tuple(self._graph_bindings.items()):
+                if candidate.tenant_id == binding.tenant_id and candidate.source_id == binding.source_id and candidate.domain_id == binding.domain_id and candidate.status == SemanticBindingStatus.ACTIVE:
+                    self._graph_bindings[candidate_key] = candidate.model_copy(update={"status": SemanticBindingStatus.RETIRED, "updated_at": now})
+            active = binding.model_copy(update={"status": SemanticBindingStatus.ACTIVE, "updated_at": now})
+            self._graph_bindings[key] = active
+            return active
+
+    async def list_graph_bindings(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> tuple[SemanticGraphBindingRecord, ...]:
+        async with self._lock:
+            return tuple(
+                binding
+                for (candidate_tenant, _), binding in sorted(
+                    self._graph_bindings.items()
+                )
+                if candidate_tenant == tenant_id
+                and binding.source_id == source_id
+            )
 
     async def pin_conversation(
         self,

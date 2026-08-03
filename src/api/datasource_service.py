@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,8 @@ from data_agent.datasources import (
     DataSourceSnapshot,
     FileSnapshotImporter,
     SemanticBindingRecord,
+    SemanticGraphBindingRecord,
+    SemanticGraphFieldMapping,
     SemanticBindingStatus,
     SemanticFieldMapping,
     SemanticRelationship,
@@ -44,6 +47,20 @@ from data_agent.tools.schemas import (
     CatalogRelation,
     CatalogSnapshot,
 )
+from data_agent.relationships.models import (
+    RelationshipCondition,
+    RelationshipComponent,
+    RelationshipEdge,
+    RelationshipEdgeQuality,
+    RelationshipGraphDraft,
+    RelationshipGraphNode,
+    RelationshipProvenance,
+    RelationshipRecommendationRun,
+)
+from data_agent.relationships.recommender import RelationshipRecommender
+from data_agent.relationships.models import ActivatedRelationshipGraph, validate_graph_catalog
+from data_agent.relationships.validator import validate_graph
+from data_agent.runtime.dependencies import ModelClient
 
 
 _SOURCE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
@@ -58,7 +75,7 @@ class DataSourceExecutionContext:
 
     source: DataSourceDefinition
     snapshot: DataSourceSnapshot
-    binding: SemanticBindingRecord
+    binding: SemanticBindingRecord | SemanticGraphBindingRecord
     connector: DataSourceConnector
     connection_ref: str
 
@@ -100,6 +117,7 @@ class DataSourceService:
         connector_registry: ConnectorRegistry | None = None,
         postgres_pool_factory: PostgresPoolFactory | None = None,
         secret_resolver: SecretResolver | None = None,
+        relationship_model_client: ModelClient | None = None,
         max_upload_bytes: int = 64 * 1024 * 1024,
     ) -> None:
         configured_root = state_root or os.environ.get("DATA_AGENT_STATE_DIR")
@@ -115,6 +133,11 @@ class DataSourceService:
         self._resources: list[Any] = []
         self._source_resources: dict[tuple[str, str], list[Any]] = {}
         self._max_upload_bytes = max_upload_bytes
+        self._relationship_model_client = relationship_model_client
+        self._relationship_tasks: set[asyncio.Task[None]] = set()
+        self._latest_relationship_runs: dict[
+            tuple[str, str, int], RelationshipRecommendationRun
+        ] = {}
 
     @property
     def registry(self) -> DataSourceRegistry:
@@ -127,6 +150,243 @@ class DataSourceService:
     @property
     def state_root(self) -> Path:
         return self._state_root
+
+    async def ensure_relationship_discovery(
+        self, *, tenant_id: str, source_id: str
+    ) -> tuple[RelationshipGraphDraft, RelationshipRecommendationRun]:
+        """Create the non-blocking draft/run lifecycle after catalog publication."""
+
+        snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
+        existing = await self._registry.get_graph_draft(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            source_snapshot_version=snapshot.version,
+        )
+        graph = existing
+        if graph is None:
+            graph_id = f"graph-{uuid4().hex[:20]}"
+            nodes = tuple(
+                RelationshipGraphNode(
+                    node_id=f"node-{relation.relation_id.split(':', 1)[-1][:20]}",
+                    relation_id=relation.relation_id,
+                    role_name=relation.relation.rsplit('.', 1)[-1],
+                    logical_entity=relation.relation.replace('.', '_'),
+                )
+                for relation in snapshot.catalog.relations
+            )
+            nodes_by_relation = {node.relation_id: node for node in nodes}
+            constraint_edges: list[RelationshipEdge] = []
+            for relation in snapshot.catalog.relations:
+                for foreign_key in relation.foreign_keys:
+                    left = nodes_by_relation.get(foreign_key.from_relation_id)
+                    right = nodes_by_relation.get(foreign_key.to_relation_id)
+                    if left is None or right is None:
+                        continue
+                    target = next(
+                        (
+                            candidate
+                            for candidate in snapshot.catalog.relations
+                            if candidate.relation_id == foreign_key.to_relation_id
+                        ),
+                        None,
+                    )
+                    target_is_unique = target is not None and any(
+                        set(key.column_ids) == set(foreign_key.to_column_ids)
+                        for key in target.keys
+                    )
+                    constraint_edges.append(
+                        RelationshipEdge(
+                            edge_id=f"edge-{foreign_key.foreign_key_id}",
+                            from_node_id=left.node_id,
+                            to_node_id=right.node_id,
+                            conditions=tuple(
+                                RelationshipCondition(
+                                    from_column_id=from_column,
+                                    to_column_id=to_column,
+                                )
+                                for from_column, to_column in zip(
+                                    foreign_key.from_column_ids,
+                                    foreign_key.to_column_ids,
+                                    strict=True,
+                                )
+                            ),
+                            cardinality="many_to_one" if target_is_unique else "unknown",
+                            provenance=RelationshipProvenance(
+                                source="database_constraint",
+                                explanation="Declared database foreign key.",
+                            ),
+                            quality=RelationshipEdgeQuality(evidence_level="high"),
+                        )
+                    )
+            graph = RelationshipGraphDraft(
+                graph_id=graph_id,
+                tenant_id=tenant_id,
+                source_id=source_id,
+                source_snapshot_version=snapshot.version,
+                schema_fingerprint=snapshot.fingerprint,
+                revision=1,
+                status="draft",
+                nodes=nodes,
+                edges=tuple(constraint_edges),
+                components=tuple(
+                    RelationshipComponent(
+                        component_id=f"component-{node.node_id.removeprefix('node-')}",
+                        anchor_node_id=node.node_id,
+                        grain_column_ids=(),
+                    )
+                    for node in nodes
+                ),
+            )
+            await self._registry.create_graph_draft(graph)
+        run = RelationshipRecommendationRun(
+            run_id=f"recommendation-{uuid4().hex[:20]}",
+            tenant_id=tenant_id,
+            source_id=source_id,
+            source_snapshot_version=snapshot.version,
+            graph_id=graph.graph_id,
+            status="queued",
+            schema_fingerprint=snapshot.fingerprint,
+            prompt_version=RelationshipRecommender.prompt_version,
+            profiler_version="profile-v1",
+        )
+        if self._relationship_model_client is None:
+            run = run.model_copy(
+                update={
+                    "status": "retryable_failed",
+                    "error_code": "RELATIONSHIP_RECOMMENDATION_FAILED",
+                    "error_message": "Relationship recommendation model is unavailable.",
+                }
+            )
+            await self._registry.save_recommendation_run(run)
+        else:
+            await self._registry.save_recommendation_run(run)
+            task = asyncio.create_task(self._run_relationship_recommendations(graph, run))
+            self._relationship_tasks.add(task)
+            task.add_done_callback(self._relationship_tasks.discard)
+        self._latest_relationship_runs[(tenant_id, source_id, snapshot.version)] = run
+        return graph, run
+
+    async def latest_relationship_discovery(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> tuple[RelationshipGraphDraft, RelationshipRecommendationRun] | None:
+        """Return the run created during this process's most recent publish."""
+
+        snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
+        run = self._latest_relationship_runs.get(
+            (tenant_id, source_id, snapshot.version)
+        )
+        if run is None:
+            return None
+        graph = await self._registry.get_graph_draft(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            source_snapshot_version=snapshot.version,
+        )
+        return (graph, run) if graph is not None else None
+
+    async def _run_relationship_recommendations(
+        self, graph: RelationshipGraphDraft, run: RelationshipRecommendationRun
+    ) -> None:
+        """Best-effort discovery: failures never affect an already published datasource."""
+        assert self._relationship_model_client is not None
+        running = run.model_copy(update={"status": "running", "model_id": self._relationship_model_client.model_id})
+        await self._registry.save_recommendation_run(running)
+        try:
+            snapshot = await self._registry.get_snapshot(tenant_id=run.tenant_id, source_id=run.source_id, version=run.source_snapshot_version)
+            recommendations = await RelationshipRecommender().recommend(catalog=snapshot.catalog, model_client=self._relationship_model_client)
+            current = await self._registry.get_graph_draft(
+                tenant_id=run.tenant_id,
+                source_id=run.source_id,
+                source_snapshot_version=run.source_snapshot_version,
+            )
+            if current is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "relationship graph draft was not found",
+                )
+            nodes = {node.relation_id: node for node in current.nodes}
+            edges = list(current.edges)
+            known_conditions = {
+                tuple(
+                    (condition.from_column_id, condition.to_column_id)
+                    for condition in edge.conditions
+                )
+                for edge in edges
+            }
+            for index, item in enumerate(recommendations, start=1):
+                left, right = nodes.get(item.from_relation_id), nodes.get(item.to_relation_id)
+                if left is None or right is None:
+                    continue
+                conditions = ((item.from_column_id, item.to_column_id),)
+                if conditions in known_conditions:
+                    continue
+                known_conditions.add(conditions)
+                edges.append(RelationshipEdge(
+                    edge_id=f"llm-{run.run_id.removeprefix('recommendation-')}-{index}",
+                    from_node_id=left.node_id, to_node_id=right.node_id,
+                    conditions=(RelationshipCondition(from_column_id=item.from_column_id, to_column_id=item.to_column_id),),
+                    cardinality=item.cardinality_hint if item.cardinality_hint in {"one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"} else "unknown",
+                    provenance=RelationshipProvenance(source="llm", run_id=run.run_id, model_id=self._relationship_model_client.model_id, prompt_version=RelationshipRecommender.prompt_version, explanation=item.explanation),
+                    quality=RelationshipEdgeQuality(evidence_level="recommended" if item.confidence >= .6 else "low"),
+                ))
+            if tuple(edges) != current.edges:
+                updated = current.model_copy(update={"edges": tuple(edges), "revision": current.revision + 1, "status": "draft"})
+                await self._registry.save_graph_draft(updated, expected_revision=current.revision)
+            await self._registry.save_recommendation_run(running.model_copy(update={"status": "succeeded"}))
+        except Exception:
+            await self._registry.save_recommendation_run(running.model_copy(update={"status": "retryable_failed", "error_code": "RELATIONSHIP_RECOMMENDATION_FAILED", "error_message": "Relationship recommendation could not be completed."}))
+
+    async def get_relationship_draft(
+        self, *, tenant_id: str, source_id: str
+    ) -> RelationshipGraphDraft | None:
+        snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
+        return await self._registry.get_graph_draft(
+            tenant_id=tenant_id, source_id=source_id, source_snapshot_version=snapshot.version
+        )
+
+    async def activate_relationship_graph(
+        self, *, tenant_id: str, source_id: str, graph_id: str, domain_id: str,
+        mappings: tuple[SemanticGraphFieldMapping, ...], binding_id: str | None = None,
+    ) -> SemanticGraphBindingRecord:
+        snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
+        graph = await self.get_relationship_draft(tenant_id=tenant_id, source_id=source_id)
+        if graph is None or graph.graph_id != graph_id:
+            raise DataSourceRegistryError(DataSourceRegistryErrorCode.NOT_FOUND, "relationship graph draft was not found")
+        validate_graph_catalog(graph, snapshot.catalog)
+        report = validate_graph(graph)
+        if not report.activation_allowed:
+            raise ValueError("relationship graph validation does not permit activation")
+        nodes = {node.node_id for node in graph.nodes}
+        columns = {
+            column.column_id: relation.relation_id
+            for relation in snapshot.catalog.relations
+            for column in relation.columns
+        }
+        node_relations = {node.node_id: node.relation_id for node in graph.nodes}
+        if any(
+            item.node_id not in nodes
+            or item.column_id not in columns
+            or node_relations[item.node_id] != columns[item.column_id]
+            for item in mappings
+        ):
+            raise ValueError("graph binding mapping references an unknown graph field")
+        existing = await self._registry.list_bindings(tenant_id=tenant_id, source_id=source_id)
+        graph_bindings = await self._registry.list_graph_bindings(tenant_id=tenant_id, source_id=source_id)
+        version = max(
+            (item.version for item in (*existing, *graph_bindings) if item.domain_id == domain_id),
+            default=0,
+        ) + 1
+        binding = SemanticGraphBindingRecord(
+            binding_id=binding_id or f"{source_id}-graph-binding-{version}", tenant_id=tenant_id,
+            source_id=source_id, source_snapshot_version=snapshot.version, schema_fingerprint=snapshot.fingerprint,
+            domain_id=domain_id, version=version,
+            graph=ActivatedRelationshipGraph(graph_id=graph.graph_id, revision=graph.revision, nodes=graph.nodes, edges=graph.edges, components=graph.components, route_rules=graph.route_rules),
+            mappings=mappings, validation_report_digest=report.report_digest,
+        )
+        return await self._registry.activate_graph_binding(binding)
 
     @staticmethod
     def _source_id(value: str | None) -> str:
@@ -251,6 +511,11 @@ class DataSourceService:
         return await self._registry.create(definition)
 
     async def close(self) -> None:
+        tasks, self._relationship_tasks = self._relationship_tasks, set()
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         resources, self._resources = self._resources, []
         self._source_resources = {}
         for resource in reversed(resources):
@@ -291,6 +556,9 @@ class DataSourceService:
                 raise ValueError("datasource snapshot path is outside the storage root")
             if snapshot_root.exists():
                 shutil.rmtree(snapshot_root)
+        for key in tuple(self._latest_relationship_runs):
+            if key[:2] == (tenant_id, source_id):
+                self._latest_relationship_runs.pop(key, None)
         return source
 
     async def import_file_source(
@@ -396,6 +664,9 @@ class DataSourceService:
                 connector,
                 source_version=1,
             )
+            await self.ensure_relationship_discovery(
+                tenant_id=tenant_id, source_id=resolved_source_id
+            )
             return updated
         finally:
             shutil.rmtree(tenant_staging, ignore_errors=True)
@@ -487,6 +758,9 @@ class DataSourceService:
                 ),
                 source_version=1,
             )
+            await self.ensure_relationship_discovery(
+                tenant_id=tenant_id, source_id=resolved_source_id
+            )
             return updated
         finally:
             shutil.rmtree(tenant_staging, ignore_errors=True)
@@ -556,11 +830,16 @@ class DataSourceService:
         *,
         tenant_id: str,
         source_id: str,
-    ) -> tuple[SemanticBindingRecord, ...]:
-        return await self._registry.list_bindings(
+    ) -> tuple[SemanticBindingRecord | SemanticGraphBindingRecord, ...]:
+        bindings = await self._registry.list_bindings(
             tenant_id=tenant_id,
             source_id=source_id,
         )
+        graph_bindings = await self._registry.list_graph_bindings(
+            tenant_id=tenant_id,
+            source_id=source_id,
+        )
+        return tuple((*bindings, *graph_bindings))
 
     async def resolve_active_binding(
         self,
@@ -590,10 +869,14 @@ class DataSourceService:
             tenant_id=tenant_id,
             source_id=source_id,
         )
+        graph_bindings = await self._registry.list_graph_bindings(
+            tenant_id=tenant_id,
+            source_id=source_id,
+        )
         binding = next(
             (
                 item
-                for item in bindings
+                for item in (*bindings, *graph_bindings)
                 if item.binding_id == binding_id
             ),
             None,
@@ -632,7 +915,7 @@ class DataSourceService:
         tenant_id: str,
         user_id: str,
         conversation_id: str,
-        binding: SemanticBindingRecord,
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
     ) -> ConversationDataSourcePin:
         return await self._registry.pin_conversation(
             ConversationDataSourcePin(
@@ -653,7 +936,7 @@ class DataSourceService:
         tenant_id: str,
         user_id: str,
         conversation_id: str,
-    ) -> SemanticBindingRecord | None:
+    ) -> SemanticBindingRecord | SemanticGraphBindingRecord | None:
         pin = await self._registry.get_conversation_pin(
             tenant_id=tenant_id,
             user_id=user_id,
@@ -665,10 +948,14 @@ class DataSourceService:
             tenant_id=tenant_id,
             source_id=pin.source_id,
         )
+        graph_bindings = await self._registry.list_graph_bindings(
+            tenant_id=tenant_id,
+            source_id=pin.source_id,
+        )
         return next(
             (
                 binding
-                for binding in bindings
+                for binding in (*bindings, *graph_bindings)
                 if binding.binding_id == pin.binding_id
                 and binding.version == pin.binding_version
                 and binding.source_snapshot_version == pin.source_version
@@ -772,6 +1059,9 @@ class DataSourceService:
             updated = await self._registry.publish_snapshot(snapshot)
             self._register_postgres_connector(updated, snapshot, pool)
             self._track_resource(source, pool)
+            await self.ensure_relationship_discovery(
+                tenant_id=source.tenant_id, source_id=source.source_id
+            )
             return updated
         except BaseException:
             await self._close_resource(pool)

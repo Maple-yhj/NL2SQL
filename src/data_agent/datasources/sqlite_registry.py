@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Callable, TypeVar
 
+from data_agent.relationships.models import (
+    RelationshipGraphDraft,
+    RelationshipRecommendationRun,
+)
+
 from .models import (
     ConversationDataSourcePin,
     DataSourceDefinition,
@@ -15,6 +20,7 @@ from .models import (
     DataSourceStatus,
     SemanticBindingRecord,
     SemanticBindingStatus,
+    SemanticGraphBindingRecord,
 )
 from .registry import DataSourceRegistryError, DataSourceRegistryErrorCode
 
@@ -147,6 +153,18 @@ class SQLiteDataSourceRegistry:
                 )
             connection.execute(
                 "DELETE FROM semantic_bindings WHERE tenant_id = ? AND source_id = ?",
+                (tenant_id, source_id),
+            )
+            connection.execute(
+                "DELETE FROM relationship_graph_drafts WHERE tenant_id = ? AND source_id = ?",
+                (tenant_id, source_id),
+            )
+            connection.execute(
+                "DELETE FROM relationship_recommendation_runs WHERE tenant_id = ? AND source_id = ?",
+                (tenant_id, source_id),
+            )
+            connection.execute(
+                "DELETE FROM semantic_graph_bindings WHERE tenant_id = ? AND source_id = ?",
                 (tenant_id, source_id),
             )
             connection.execute(
@@ -489,6 +507,218 @@ class SQLiteDataSourceRegistry:
 
         return await self._write(operation)
 
+    async def create_graph_draft(
+        self, draft: RelationshipGraphDraft
+    ) -> RelationshipGraphDraft:
+        def operation(connection: sqlite3.Connection) -> RelationshipGraphDraft:
+            snapshot = connection.execute(
+                """SELECT 1 FROM data_source_snapshots
+                WHERE tenant_id = ? AND source_id = ? AND version = ?""",
+                (draft.tenant_id, draft.source_id, draft.source_snapshot_version),
+            ).fetchone()
+            if snapshot is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "relationship graph source snapshot was not found",
+                )
+            if draft.revision != 1:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.VERSION_CONFLICT,
+                    "new relationship graph drafts must start at revision 1",
+                )
+            try:
+                connection.execute(
+                    """INSERT INTO relationship_graph_drafts
+                    (tenant_id, graph_id, source_id, source_snapshot_version, revision, status, payload)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        draft.tenant_id, draft.graph_id, draft.source_id,
+                        draft.source_snapshot_version, draft.revision, draft.status,
+                        draft.model_dump_json(),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.ALREADY_EXISTS,
+                    "relationship graph draft already exists",
+                ) from exc
+            return draft
+
+        return await self._write(operation)
+
+    async def get_graph_draft(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+        source_snapshot_version: int,
+    ) -> RelationshipGraphDraft | None:
+        def operation(connection: sqlite3.Connection) -> RelationshipGraphDraft | None:
+            row = connection.execute(
+                """SELECT payload FROM relationship_graph_drafts
+                WHERE tenant_id = ? AND source_id = ? AND source_snapshot_version = ?
+                ORDER BY graph_id LIMIT 1""",
+                (tenant_id, source_id, source_snapshot_version),
+            ).fetchone()
+            return RelationshipGraphDraft.model_validate_json(row[0]) if row else None
+
+        return await self._read(operation)
+
+    async def save_graph_draft(
+        self,
+        draft: RelationshipGraphDraft,
+        *,
+        expected_revision: int,
+    ) -> RelationshipGraphDraft:
+        def operation(connection: sqlite3.Connection) -> RelationshipGraphDraft:
+            current = connection.execute(
+                """SELECT source_id, source_snapshot_version, revision, payload
+                FROM relationship_graph_drafts WHERE tenant_id = ? AND graph_id = ?""",
+                (draft.tenant_id, draft.graph_id),
+            ).fetchone()
+            if current is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "relationship graph draft was not found",
+                )
+            if int(current[2]) != expected_revision or draft.revision != expected_revision + 1:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.GRAPH_REVISION_CONFLICT,
+                    "relationship graph draft revision is stale",
+                )
+            existing = RelationshipGraphDraft.model_validate_json(current[3])
+            if (
+                existing.source_id != draft.source_id
+                or existing.source_snapshot_version != draft.source_snapshot_version
+                or existing.schema_fingerprint != draft.schema_fingerprint
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.VERSION_CONFLICT,
+                    "relationship graph draft cannot change its source snapshot",
+                )
+            changed = connection.execute(
+                """UPDATE relationship_graph_drafts
+                SET revision = ?, status = ?, payload = ?
+                WHERE tenant_id = ? AND graph_id = ? AND revision = ?""",
+                (
+                    draft.revision, draft.status, draft.model_dump_json(),
+                    draft.tenant_id, draft.graph_id, expected_revision,
+                ),
+            ).rowcount
+            if changed != 1:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.GRAPH_REVISION_CONFLICT,
+                    "relationship graph draft revision is stale",
+                )
+            return draft
+
+        return await self._write(operation)
+
+    async def save_recommendation_run(
+        self, run: RelationshipRecommendationRun
+    ) -> RelationshipRecommendationRun:
+        def operation(connection: sqlite3.Connection) -> RelationshipRecommendationRun:
+            graph = connection.execute(
+                """SELECT payload FROM relationship_graph_drafts
+                WHERE tenant_id = ? AND graph_id = ?""",
+                (run.tenant_id, run.graph_id),
+            ).fetchone()
+            if graph is None:
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.NOT_FOUND,
+                    "recommendation run graph draft was not found",
+                )
+            draft = RelationshipGraphDraft.model_validate_json(graph[0])
+            if (
+                draft.source_id != run.source_id
+                or draft.source_snapshot_version != run.source_snapshot_version
+                or draft.schema_fingerprint != run.schema_fingerprint
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.VERSION_CONFLICT,
+                    "recommendation run does not match its graph draft",
+                )
+            connection.execute(
+                """INSERT INTO relationship_recommendation_runs
+                (tenant_id, run_id, source_id, source_snapshot_version, status, payload)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, run_id) DO UPDATE SET
+                    status = excluded.status, payload = excluded.payload""",
+                (
+                    run.tenant_id, run.run_id, run.source_id,
+                    run.source_snapshot_version, run.status, run.model_dump_json(),
+                ),
+            )
+            return run
+
+        return await self._write(operation)
+
+    async def get_recommendation_run(
+        self, *, tenant_id: str, run_id: str
+    ) -> RelationshipRecommendationRun | None:
+        def operation(connection: sqlite3.Connection) -> RelationshipRecommendationRun | None:
+            row = connection.execute(
+                """SELECT payload FROM relationship_recommendation_runs
+                WHERE tenant_id = ? AND run_id = ?""",
+                (tenant_id, run_id),
+            ).fetchone()
+            return RelationshipRecommendationRun.model_validate_json(row[0]) if row else None
+
+        return await self._read(operation)
+
+    async def activate_graph_binding(self, binding: SemanticGraphBindingRecord) -> SemanticGraphBindingRecord:
+        def operation(connection: sqlite3.Connection) -> SemanticGraphBindingRecord:
+            snapshot = connection.execute("SELECT payload FROM data_source_snapshots WHERE tenant_id=? AND source_id=? AND version=?", (binding.tenant_id, binding.source_id, binding.source_snapshot_version)).fetchone()
+            if snapshot is None or DataSourceSnapshot.model_validate_json(snapshot[0]).fingerprint != binding.schema_fingerprint:
+                raise DataSourceRegistryError(DataSourceRegistryErrorCode.GRAPH_STALE_SNAPSHOT, "graph binding source snapshot is stale")
+            current = connection.execute("SELECT 1 FROM semantic_graph_bindings WHERE tenant_id=? AND binding_id=?", (binding.tenant_id, binding.binding_id)).fetchone()
+            if current:
+                raise DataSourceRegistryError(DataSourceRegistryErrorCode.ALREADY_EXISTS, "graph binding already exists")
+            now = datetime.now(UTC)
+            legacy_rows = connection.execute(
+                "SELECT binding_id, payload FROM semantic_bindings WHERE tenant_id=? AND source_id=? AND domain_id=?",
+                (binding.tenant_id, binding.source_id, binding.domain_id),
+            ).fetchall()
+            for binding_id, payload in legacy_rows:
+                previous = SemanticBindingRecord.model_validate_json(payload)
+                if previous.status == SemanticBindingStatus.ACTIVE:
+                    retired = previous.model_copy(
+                        update={"status": SemanticBindingStatus.RETIRED, "updated_at": now}
+                    )
+                    connection.execute(
+                        "UPDATE semantic_bindings SET payload=? WHERE tenant_id=? AND binding_id=?",
+                        (retired.model_dump_json(), binding.tenant_id, binding_id),
+                    )
+            rows = connection.execute("SELECT binding_id, payload FROM semantic_graph_bindings WHERE tenant_id=? AND source_id=? AND domain_id=?", (binding.tenant_id, binding.source_id, binding.domain_id)).fetchall()
+            for binding_id, payload in rows:
+                previous = SemanticGraphBindingRecord.model_validate_json(payload)
+                if previous.status == SemanticBindingStatus.ACTIVE:
+                    retired = previous.model_copy(update={"status": SemanticBindingStatus.RETIRED, "updated_at": now})
+                    connection.execute("UPDATE semantic_graph_bindings SET payload=? WHERE tenant_id=? AND binding_id=?", (retired.model_dump_json(), binding.tenant_id, binding_id))
+            active = binding.model_copy(update={"status": SemanticBindingStatus.ACTIVE, "updated_at": now})
+            connection.execute("INSERT INTO semantic_graph_bindings (tenant_id,binding_id,source_id,domain_id,payload) VALUES (?,?,?,?,?)", (active.tenant_id, active.binding_id, active.source_id, active.domain_id, active.model_dump_json()))
+            return active
+        return await self._write(operation)
+
+    async def list_graph_bindings(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+    ) -> tuple[SemanticGraphBindingRecord, ...]:
+        def operation(connection: sqlite3.Connection) -> tuple[SemanticGraphBindingRecord, ...]:
+            rows = connection.execute(
+                """SELECT payload FROM semantic_graph_bindings
+                WHERE tenant_id = ? AND source_id = ? ORDER BY binding_id""",
+                (tenant_id, source_id),
+            ).fetchall()
+            return tuple(
+                SemanticGraphBindingRecord.model_validate_json(row[0])
+                for row in rows
+            )
+
+        return await self._read(operation)
+
     async def get_conversation_pin(
         self,
         *,
@@ -548,6 +778,32 @@ class SQLiteDataSourceRegistry:
                     conversation_id TEXT NOT NULL,
                     payload TEXT NOT NULL,
                     PRIMARY KEY (tenant_id, user_id, conversation_id)
+                );
+                CREATE TABLE IF NOT EXISTS relationship_graph_drafts (
+                    tenant_id TEXT NOT NULL,
+                    graph_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    source_snapshot_version INTEGER NOT NULL,
+                    revision INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, graph_id)
+                );
+                CREATE INDEX IF NOT EXISTS relationship_graph_drafts_source_idx
+                ON relationship_graph_drafts (tenant_id, source_id, source_snapshot_version);
+                CREATE TABLE IF NOT EXISTS relationship_recommendation_runs (
+                    tenant_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL,
+                    source_snapshot_version INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, run_id)
+                );
+                CREATE TABLE IF NOT EXISTS semantic_graph_bindings (
+                    tenant_id TEXT NOT NULL, binding_id TEXT NOT NULL,
+                    source_id TEXT NOT NULL, domain_id TEXT NOT NULL, payload TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, binding_id)
                 );
                 """
             )

@@ -11,7 +11,14 @@ import type {
   LoginPayload,
   SendMessagePayload,
   SemanticBinding,
+  AnySemanticBinding,
   SemanticBindingCreatePayload,
+  RelationshipGraphDraft,
+  RelationshipRecommendationRun,
+  RelationshipRoutePreview,
+  RelationshipValidationReport,
+  SemanticGraphFieldMapping,
+  SemanticGraphBinding,
   StoredSession,
 } from "./types";
 import { isAgentResponse } from "./agentResponseValidator";
@@ -91,8 +98,8 @@ export class ApiClient {
 
   getConversationDataSourceBinding(
     conversationId: string,
-  ): Promise<{ binding: SemanticBinding | null }> {
-    return this.request<{ binding: SemanticBinding | null }>(
+  ): Promise<{ binding: AnySemanticBinding | null }> {
+    return this.request<{ binding: AnySemanticBinding | null }>(
       `/api/conversations/${encodeURIComponent(conversationId)}/data-source-binding`,
     );
   }
@@ -169,6 +176,34 @@ export class ApiClient {
     );
   }
 
+  getRelationshipGraphDraft(sourceId: string): Promise<RelationshipGraphDraft> {
+    return this.request<RelationshipGraphDraft>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/draft`);
+  }
+
+  rerunRelationshipRecommendations(sourceId: string): Promise<RelationshipRecommendationRun> {
+    return this.request<RelationshipRecommendationRun>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-recommendations`, { method: "POST" });
+  }
+
+  getRelationshipRecommendationRun(sourceId: string, runId: string): Promise<RelationshipRecommendationRun> {
+    return this.request<RelationshipRecommendationRun>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-recommendations/${encodeURIComponent(runId)}`);
+  }
+
+  saveRelationshipGraph(sourceId: string, graph: RelationshipGraphDraft, expectedRevision: number): Promise<RelationshipGraphDraft> {
+    return this.request<RelationshipGraphDraft>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/${encodeURIComponent(graph.graph_id)}?expected_revision=${expectedRevision}`, { method: "PATCH", body: JSON.stringify(graph) });
+  }
+
+  validateRelationshipGraph(sourceId: string, graphId: string): Promise<RelationshipValidationReport> {
+    return this.request<RelationshipValidationReport>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/${encodeURIComponent(graphId)}/validate`, { method: "POST" });
+  }
+
+  previewRelationshipRoute(sourceId: string, graphId: string, requiredNodeIds: string[]): Promise<RelationshipRoutePreview> {
+    return this.request<RelationshipRoutePreview>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/${encodeURIComponent(graphId)}/preview-route`, { method: "POST", body: JSON.stringify({ required_node_ids: requiredNodeIds }) });
+  }
+
+  activateRelationshipGraph(sourceId: string, graphId: string, payload: { domain_id: string; mappings: SemanticGraphFieldMapping[]; binding_id?: string }): Promise<SemanticGraphBinding> {
+    return this.request<SemanticGraphBinding>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/${encodeURIComponent(graphId)}/activate`, { method: "POST", body: JSON.stringify(payload) });
+  }
+
   uploadFileDataSource(
     name: string,
     files: File[],
@@ -216,8 +251,8 @@ export class ApiClient {
 
   listDataSourceBindings(
     sourceId: string,
-  ): Promise<{ items: SemanticBinding[] }> {
-    return this.request<{ items: SemanticBinding[] }>(
+  ): Promise<{ items: AnySemanticBinding[] }> {
+    return this.request<{ items: AnySemanticBinding[] }>(
       `/api/data-sources/${encodeURIComponent(sourceId)}/bindings`,
     );
   }

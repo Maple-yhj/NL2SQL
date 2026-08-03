@@ -51,7 +51,9 @@ import type {
   ConversationMessageResponse,
   DataSource,
   DataRow,
-  SemanticBinding,
+  JsonValue,
+  LogicalQueryPlan,
+  AnySemanticBinding,
   StoredSession,
 } from "./types";
 import {
@@ -101,7 +103,7 @@ export function App() {
   const [conversationActionId, setConversationActionId] = useState("");
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [activeDataBinding, setActiveDataBinding] =
-    useState<SemanticBinding | null>(null);
+    useState<AnySemanticBinding | null>(null);
   const [dataSourcePanelOpen, setDataSourcePanelOpen] = useState(false);
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [conversationQuery, setConversationQuery] = useState("");
@@ -1107,11 +1109,12 @@ function EvidenceDrawer({
   onClose,
 }: {
   message: ChatMessage;
-  binding: SemanticBinding | null;
+  binding: AnySemanticBinding | null;
   onClose: () => void;
 }) {
   const viewModel = createAssistantViewModel(message);
   const pins = message.metadata.version_pins;
+  const relationshipEvidence = getRelationshipEvidence(viewModel.logicalPlan);
 
   return (
     <>
@@ -1164,6 +1167,22 @@ function EvidenceDrawer({
               </summary>
               <pre>{JSON.stringify(viewModel.logicalPlan, null, 2)}</pre>
             </details>
+          )}
+
+          {relationshipEvidence && (
+            <section className="evidence-section">
+              <div className="evidence-section-heading">
+                <Waypoints size={16} />
+                <h3>关系路径决策</h3>
+              </div>
+              <dl className="evidence-facts">
+                <div><dt>Route digest</dt><dd>{evidenceText(relationshipEvidence.route_digest)}</dd></div>
+                <div><dt>逻辑节点</dt><dd>{evidenceText(relationshipEvidence.logical_node_ids)}</dd></div>
+                <div><dt>关联边</dt><dd>{evidenceText(relationshipEvidence.edge_ids)}</dd></div>
+                <div><dt>Cardinality</dt><dd>{evidenceText(relationshipEvidence.cardinality_by_node)}</dd></div>
+                <div><dt>Fan-out</dt><dd>{evidenceText(relationshipEvidence.fanout_decision)}</dd></div>
+              </dl>
+            </section>
           )}
 
           {viewModel.showSqlCard && (
@@ -1258,6 +1277,18 @@ function EvidenceDrawer({
       </aside>
     </>
   );
+}
+
+function getRelationshipEvidence(plan: LogicalQueryPlan | null): Record<string, JsonValue> | null {
+  const evidence = plan?.relationship_evidence;
+  return evidence && typeof evidence === "object" && !Array.isArray(evidence)
+    ? evidence
+    : null;
+}
+
+function evidenceText(value: JsonValue | undefined): string {
+  if (value === undefined || value === null) return "—";
+  return typeof value === "string" ? value : JSON.stringify(value);
 }
 
 function LoginView({

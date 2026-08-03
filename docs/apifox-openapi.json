@@ -1,6 +1,62 @@
 {
   "components": {
     "schemas": {
+      "ActivatedRelationshipGraph": {
+        "additionalProperties": false,
+        "description": "Immutable graph payload pinned inside a v2 semantic binding.",
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "graph_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipGraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "route_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RelationshipRouteRule"
+            },
+            "title": "Route Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "graph_id",
+          "revision",
+          "nodes",
+          "edges",
+          "components"
+        ],
+        "title": "ActivatedRelationshipGraph",
+        "type": "object"
+      },
       "AgentError": {
         "additionalProperties": false,
         "description": "Error safe to expose at an API, CLI, or event boundary.",
@@ -571,6 +627,14 @@
       "CatalogColumn": {
         "additionalProperties": false,
         "properties": {
+          "column_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Column Id",
+            "type": "string"
+          },
           "data_type": {
             "minLength": 1,
             "title": "Data Type",
@@ -584,6 +648,12 @@
           "nullable": {
             "title": "Nullable",
             "type": "boolean"
+          },
+          "ordinal": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Ordinal",
+            "type": "integer"
           }
         },
         "required": [
@@ -592,6 +662,101 @@
           "nullable"
         ],
         "title": "CatalogColumn",
+        "type": "object"
+      },
+      "CatalogForeignKey": {
+        "additionalProperties": false,
+        "properties": {
+          "foreign_key_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Foreign Key Id",
+            "type": "string"
+          },
+          "from_column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "From Column Ids",
+            "type": "array"
+          },
+          "from_relation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "From Relation Id",
+            "type": "string"
+          },
+          "to_column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "To Column Ids",
+            "type": "array"
+          },
+          "to_relation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "To Relation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_relation_id",
+          "from_column_ids",
+          "to_relation_id",
+          "to_column_ids"
+        ],
+        "title": "CatalogForeignKey",
+        "type": "object"
+      },
+      "CatalogKey": {
+        "additionalProperties": false,
+        "properties": {
+          "column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Column Ids",
+            "type": "array"
+          },
+          "key_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "primary",
+              "unique"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "column_ids"
+        ],
+        "title": "CatalogKey",
         "type": "object"
       },
       "CatalogRelation": {
@@ -616,6 +781,14 @@
             ],
             "title": "Estimated Rows"
           },
+          "foreign_keys": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CatalogForeignKey"
+            },
+            "title": "Foreign Keys",
+            "type": "array"
+          },
           "freshness_at": {
             "anyOf": [
               {
@@ -628,9 +801,25 @@
             ],
             "title": "Freshness At"
           },
+          "keys": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CatalogKey"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
           "relation": {
             "minLength": 1,
             "title": "Relation",
+            "type": "string"
+          },
+          "relation_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Relation Id",
             "type": "string"
           }
         },
@@ -745,9 +934,13 @@
                 "$ref": "#/components/schemas/SemanticBindingRecord"
               },
               {
+                "$ref": "#/components/schemas/SemanticGraphBindingRecord"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Binding"
           }
         },
         "title": "ConversationDataSourceBindingResponse",
@@ -1379,6 +1572,16 @@
             "title": "Options",
             "type": "object"
           },
+          "relationship_discovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipDiscoveryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "source_id": {
             "title": "Source Id",
             "type": "string"
@@ -1594,6 +1797,13 @@
           "COST_EXCEEDED",
           "EMPTY_RESULT",
           "JOIN_EXPLOSION",
+          "GRAPH_NO_PATH",
+          "GRAPH_AMBIGUOUS_PATH",
+          "GRAPH_UNSAFE_FANOUT",
+          "GRAPH_STALE_SNAPSHOT",
+          "GRAPH_REVISION_CONFLICT",
+          "GRAPH_VALIDATION_FAILED",
+          "RELATIONSHIP_RECOMMENDATION_FAILED",
           "ACCESS_DENIED",
           "RESULT_SEMANTIC_MISMATCH",
           "TOOL_BUDGET_EXCEEDED",
@@ -1671,6 +1881,34 @@
           "joinGrain"
         ],
         "title": "GrainAlignment",
+        "type": "object"
+      },
+      "GraphRouteRequest": {
+        "properties": {
+          "required_logical_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Required Logical Refs",
+            "type": "array"
+          },
+          "required_node_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "title": "Required Node Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "required_node_ids"
+        ],
+        "title": "GraphRouteRequest",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1896,6 +2134,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RankingSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relationshipEvidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipRouteEvidence"
               },
               {
                 "type": "null"
@@ -2674,6 +2922,810 @@
         "title": "RefreshRequest",
         "type": "object"
       },
+      "RelationshipComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Anchor Node Id",
+            "type": "string"
+          },
+          "anchor_scoped": {
+            "default": false,
+            "title": "Anchor Scoped",
+            "type": "boolean"
+          },
+          "component_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Component Id",
+            "type": "string"
+          },
+          "grain_column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "title": "Grain Column Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "component_id",
+          "anchor_node_id",
+          "grain_column_ids"
+        ],
+        "title": "RelationshipComponent",
+        "type": "object"
+      },
+      "RelationshipCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "from_column_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "From Column Id",
+            "type": "string"
+          },
+          "operator": {
+            "const": "eq",
+            "default": "eq",
+            "title": "Operator",
+            "type": "string"
+          },
+          "to_column_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "To Column Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_column_id",
+          "to_column_id"
+        ],
+        "title": "RelationshipCondition",
+        "type": "object"
+      },
+      "RelationshipDiscoveryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "graph_id": {
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_id",
+          "run_id",
+          "status"
+        ],
+        "title": "RelationshipDiscoveryResponse",
+        "type": "object"
+      },
+      "RelationshipEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "cardinality": {
+            "default": "unknown",
+            "enum": [
+              "one_to_one",
+              "one_to_many",
+              "many_to_one",
+              "many_to_many",
+              "unknown"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipCondition"
+            },
+            "minItems": 1,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "edge_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "from_node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "From Node Id",
+            "type": "string"
+          },
+          "join_semantics": {
+            "default": "inner",
+            "enum": [
+              "inner",
+              "left"
+            ],
+            "title": "Join Semantics",
+            "type": "string"
+          },
+          "preserve_node_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preserve Node Id"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/RelationshipProvenance"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipEdgeQuality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "route_priority": {
+            "default": 100,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Route Priority",
+            "type": "integer"
+          },
+          "to_node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "To Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id",
+          "from_node_id",
+          "to_node_id",
+          "conditions",
+          "provenance"
+        ],
+        "title": "RelationshipEdge",
+        "type": "object"
+      },
+      "RelationshipEdgeQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "average_fanout": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Fanout"
+          },
+          "evidence_level": {
+            "enum": [
+              "high",
+              "recommended",
+              "low",
+              "blocked"
+            ],
+            "title": "Evidence Level",
+            "type": "string"
+          },
+          "expansion_ratio": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expansion Ratio"
+          },
+          "left_orphan_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left Orphan Rate"
+          },
+          "left_unique": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left Unique"
+          },
+          "match_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Rate"
+          },
+          "maximum_fanout": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum Fanout"
+          },
+          "right_orphan_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right Orphan Rate"
+          },
+          "right_unique": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right Unique"
+          }
+        },
+        "required": [
+          "evidence_level"
+        ],
+        "title": "RelationshipEdgeQuality",
+        "type": "object"
+      },
+      "RelationshipGraphActivateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticGraphFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain_id",
+          "mappings"
+        ],
+        "title": "RelationshipGraphActivateRequest",
+        "type": "object"
+      },
+      "RelationshipGraphDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "graph_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipGraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "route_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RelationshipRouteRule"
+            },
+            "title": "Route Rules",
+            "type": "array"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "discovering",
+              "draft",
+              "validating",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "revision",
+          "status",
+          "nodes",
+          "edges",
+          "components"
+        ],
+        "title": "RelationshipGraphDraft",
+        "type": "object"
+      },
+      "RelationshipGraphNode": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "logical_entity": {
+            "minLength": 1,
+            "title": "Logical Entity",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "relation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "role_name": {
+            "minLength": 1,
+            "title": "Role Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "relation_id",
+          "role_name",
+          "logical_entity"
+        ],
+        "title": "RelationshipGraphNode",
+        "type": "object"
+      },
+      "RelationshipProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "explanation": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "rejected": {
+            "default": false,
+            "title": "Rejected",
+            "type": "boolean"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source": {
+            "enum": [
+              "database_constraint",
+              "llm",
+              "user",
+              "migration"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "user_edited": {
+            "default": false,
+            "title": "User Edited",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "RelationshipProvenance",
+        "type": "object"
+      },
+      "RelationshipRecommendationRun": {
+        "additionalProperties": false,
+        "description": "Auditable asynchronous discovery attempt; raw prompts and rows stay out.",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "graph_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "profiler_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profiler Version"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "run_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "retryable_failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "graph_id",
+          "status",
+          "schema_fingerprint"
+        ],
+        "title": "RelationshipRecommendationRun",
+        "type": "object"
+      },
+      "RelationshipRouteEvidence": {
+        "additionalProperties": false,
+        "description": "The immutable graph route and grain decision used for one query.",
+        "properties": {
+          "cardinalityByNode": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "one",
+                    "many",
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Cardinalitybynode",
+            "type": "array"
+          },
+          "edgeIds": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Edgeids",
+            "type": "array"
+          },
+          "fanoutDecision": {
+            "minLength": 1,
+            "title": "Fanoutdecision",
+            "type": "string"
+          },
+          "logicalNodeIds": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Logicalnodeids",
+            "type": "array"
+          },
+          "preaggregationRequired": {
+            "default": false,
+            "title": "Preaggregationrequired",
+            "type": "boolean"
+          },
+          "routeDigest": {
+            "minLength": 1,
+            "title": "Routedigest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "routeDigest",
+          "logicalNodeIds",
+          "edgeIds",
+          "cardinalityByNode",
+          "fanoutDecision"
+        ],
+        "title": "RelationshipRouteEvidence",
+        "type": "object"
+      },
+      "RelationshipRouteRule": {
+        "additionalProperties": false,
+        "properties": {
+          "ordered_edge_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Ordered Edge Ids",
+            "type": "array"
+          },
+          "rule_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "terminal_node_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Terminal Node Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rule_id",
+          "terminal_node_ids",
+          "ordered_edge_ids"
+        ],
+        "title": "RelationshipRouteRule",
+        "type": "object"
+      },
       "ResultShape": {
         "enum": [
           "scalar",
@@ -2969,7 +4021,14 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/SemanticBindingRecord"
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SemanticBindingRecord"
+                },
+                {
+                  "$ref": "#/components/schemas/SemanticGraphBindingRecord"
+                }
+              ]
             },
             "title": "Items",
             "type": "array"
@@ -3030,6 +4089,12 @@
             },
             "title": "Relationships",
             "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
           },
           "source_id": {
             "maxLength": 128,
@@ -3111,6 +4176,134 @@
           "physical_column"
         ],
         "title": "SemanticFieldMapping",
+        "type": "object"
+      },
+      "SemanticGraphBindingRecord": {
+        "additionalProperties": false,
+        "description": "Immutable v2 binding; editable relationship graphs never become active.",
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/ActivatedRelationshipGraph"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticGraphFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 2,
+            "default": 2,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SemanticBindingStatus",
+            "default": "draft"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "validation_report_digest": {
+            "minLength": 1,
+            "title": "Validation Report Digest",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "binding_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "domain_id",
+          "version",
+          "graph",
+          "mappings",
+          "validation_report_digest"
+        ],
+        "title": "SemanticGraphBindingRecord",
+        "type": "object"
+      },
+      "SemanticGraphFieldMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "column_id": {
+            "minLength": 1,
+            "title": "Column Id",
+            "type": "string"
+          },
+          "logical_ref": {
+            "minLength": 1,
+            "title": "Logical Ref",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_ref",
+          "node_id",
+          "column_id"
+        ],
+        "title": "SemanticGraphFieldMapping",
         "type": "object"
       },
       "SemanticJoinType": {
@@ -4520,6 +5713,395 @@
           }
         ],
         "summary": "Get Data Source Catalog"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/draft": {
+      "get": {
+        "operationId": "get_relationship_graph_draft_api_data_sources__source_id__relationship_graphs_draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipGraphDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Relationship Graph Draft"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}": {
+      "patch": {
+        "operationId": "patch_relationship_graph_api_data_sources__source_id__relationship_graphs__graph_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelationshipGraphDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipGraphDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Patch Relationship Graph"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/activate": {
+      "post": {
+        "operationId": "activate_relationship_graph_api_data_sources__source_id__relationship_graphs__graph_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelationshipGraphActivateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticGraphBindingRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Activate Relationship Graph"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/preview-route": {
+      "post": {
+        "operationId": "preview_relationship_route_api_data_sources__source_id__relationship_graphs__graph_id__preview_route_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Preview Relationship Route"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/validate": {
+      "post": {
+        "operationId": "validate_relationship_graph_api_data_sources__source_id__relationship_graphs__graph_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Validate Relationship Graph"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-recommendations": {
+      "post": {
+        "operationId": "rerun_relationship_recommendations_api_data_sources__source_id__relationship_recommendations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipRecommendationRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Rerun Relationship Recommendations"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-recommendations/{run_id}": {
+      "get": {
+        "operationId": "get_relationship_recommendation_run_api_data_sources__source_id__relationship_recommendations__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipRecommendationRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Relationship Recommendation Run"
       }
     },
     "/api/memory/proposals": {

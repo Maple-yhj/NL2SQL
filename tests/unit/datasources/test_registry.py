@@ -18,8 +18,16 @@ from data_agent.datasources import (
     InMemoryDataSourceRegistry,
     SemanticBindingRecord,
     SemanticBindingStatus,
+    SemanticGraphBindingRecord,
+    SemanticGraphFieldMapping,
     SemanticFieldMapping,
     SQLiteDataSourceRegistry,
+)
+from data_agent.relationships.models import (
+    ActivatedRelationshipGraph,
+    RelationshipGraphDraft,
+    RelationshipGraphNode,
+    RelationshipRecommendationRun,
 )
 from data_agent.tools.schemas import (
     CatalogColumn,
@@ -194,6 +202,33 @@ class DataSourceRegistryTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
         await self.registry.save_binding(binding)
+        snapshot = await self.registry.get_snapshot(
+            tenant_id="tenant-a", source_id="orders", version=1
+        )
+        relation = snapshot.catalog.relations[0]
+        graph = RelationshipGraphDraft(
+            graph_id="orders-graph",
+            tenant_id="tenant-a",
+            source_id="orders",
+            source_snapshot_version=1,
+            schema_fingerprint=snapshot.fingerprint,
+            revision=1,
+            status="draft",
+            nodes=(RelationshipGraphNode(node_id="orders", relation_id=relation.relation_id, role_name="orders", logical_entity="Orders"),),
+            edges=(),
+            components=(),
+        )
+        await self.registry.create_graph_draft(graph)
+        run = RelationshipRecommendationRun(
+            run_id="orders-run",
+            tenant_id="tenant-a",
+            source_id="orders",
+            source_snapshot_version=1,
+            graph_id=graph.graph_id,
+            status="succeeded",
+            schema_fingerprint=snapshot.fingerprint,
+        )
+        await self.registry.save_recommendation_run(run)
         pin = ConversationDataSourcePin(
             tenant_id="tenant-a",
             user_id="user-a",
@@ -227,12 +262,48 @@ class DataSourceRegistryTests(unittest.IsolatedAsyncioTestCase):
                 conversation_id="conversation-a",
             )
         )
+        self.assertIsNone(
+            await self.registry.get_graph_draft(
+                tenant_id="tenant-a", source_id="orders", source_snapshot_version=1
+            )
+        )
+        self.assertIsNone(
+            await self.registry.get_recommendation_run(
+                tenant_id="tenant-a", run_id="orders-run"
+            )
+        )
         with self.assertRaises(DataSourceRegistryError):
             await self.registry.get_snapshot(
                 tenant_id="tenant-a",
                 source_id="orders",
                 version=1,
             )
+
+    async def test_graph_activation_reports_a_typed_stale_snapshot_error(self) -> None:
+        snapshot = _snapshot()
+        await self.registry.publish_snapshot(snapshot)
+        relation = snapshot.catalog.relations[0]
+        binding = SemanticGraphBindingRecord(
+            binding_id="stale-graph",
+            tenant_id="tenant-a",
+            source_id="orders",
+            source_snapshot_version=1,
+            schema_fingerprint="sha256:stale",
+            domain_id="dataset.orders",
+            version=1,
+            graph=ActivatedRelationshipGraph(
+                graph_id="stale-graph",
+                revision=1,
+                nodes=(RelationshipGraphNode(node_id="orders", relation_id=relation.relation_id, role_name="orders", logical_entity="Orders"),),
+                edges=(),
+                components=(),
+            ),
+            mappings=(SemanticGraphFieldMapping(logical_ref="dataset.Order.amount", node_id="orders", column_id=relation.columns[1].column_id),),
+            validation_report_digest="sha256:report",
+        )
+        with self.assertRaises(DataSourceRegistryError) as captured:
+            await self.registry.activate_graph_binding(binding)
+        self.assertEqual(captured.exception.code, DataSourceRegistryErrorCode.GRAPH_STALE_SNAPSHOT)
 
 
 class SQLiteDataSourceRegistryTests(unittest.IsolatedAsyncioTestCase):

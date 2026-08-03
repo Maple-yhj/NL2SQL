@@ -336,6 +336,47 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("olist_order_items_dataset", introspect_sql)
         self.assertIn("olist_order_items_dataset", introspect_args[1])
 
+    async def test_introspection_includes_primary_unique_and_foreign_keys(self) -> None:
+        class ConstraintConnection(_Connection):
+            async def fetch(self, sql: str, *args: object, timeout: float | None = None):
+                self.fetch_calls.append((sql, args, timeout))
+                if "information_schema.table_constraints" in sql:
+                    return [
+                        {"table_schema": "public", "table_name": "customers", "constraint_name": "customers_pkey", "constraint_type": "PRIMARY KEY", "column_name": "id", "ordinal_position": 1, "foreign_table_schema": None, "foreign_table_name": None, "foreign_column_name": None},
+                        {"table_schema": "public", "table_name": "orders", "constraint_name": "orders_pkey", "constraint_type": "PRIMARY KEY", "column_name": "id", "ordinal_position": 1, "foreign_table_schema": None, "foreign_table_name": None, "foreign_column_name": None},
+                        {"table_schema": "public", "table_name": "orders", "constraint_name": "orders_customer_fkey", "constraint_type": "FOREIGN KEY", "column_name": "customer_id", "ordinal_position": 1, "foreign_table_schema": "public", "foreign_table_name": "customers", "foreign_column_name": "id"},
+                    ]
+                if "information_schema.columns" in sql:
+                    return [
+                        {"table_schema": "public", "table_name": "customers", "column_name": "id", "data_type": "integer", "is_nullable": "NO"},
+                        {"table_schema": "public", "table_name": "orders", "column_name": "id", "data_type": "integer", "is_nullable": "NO"},
+                        {"table_schema": "public", "table_name": "orders", "column_name": "customer_id", "data_type": "integer", "is_nullable": "NO"},
+                    ]
+                return []
+
+        allowed = ("public.customers", "public.orders")
+        connector = PostgresConnector(
+            _Pool(ConstraintConnection()),
+            allowed_relations=allowed,
+            schema_fingerprint=self.bundle.schema_fingerprint,
+        )
+        catalog = await connector.introspect_schema(
+            self._grant(
+                tool_name="data.inspect",
+                prepared_query_hash=None,
+                logical_plan_hash=None,
+                allowed_relations=allowed,
+            ),
+            self._lease(),
+            relations=allowed,
+        )
+
+        customers, orders = catalog.relations
+        self.assertEqual(customers.keys[0].kind, "primary")
+        self.assertEqual(orders.keys[0].kind, "primary")
+        self.assertEqual(len(orders.foreign_keys), 1)
+        self.assertEqual(orders.foreign_keys[0].to_relation_id, customers.relation_id)
+
     async def test_cancellation_propagates_and_releases_transaction_and_pool(self) -> None:
         connection = _Connection(block=True)
         pool = _Pool(connection)

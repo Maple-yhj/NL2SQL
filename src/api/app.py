@@ -44,15 +44,16 @@ def create_app(
             "memory",
             None,
         )
-        resolved_data_sources = (
-            data_source_service or DataSourceService()
-        )
-        application.state.data_source_service = resolved_data_sources
         model_client = getattr(
             getattr(composition, "dependencies", None),
             "model_client",
             None,
         )
+        resolved_data_sources = (
+            data_source_service
+            or DataSourceService(relationship_model_client=model_client)
+        )
+        application.state.data_source_service = resolved_data_sources
         application.state.data_source_query_service = (
             data_source_query_service
             or (

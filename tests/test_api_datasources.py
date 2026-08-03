@@ -108,6 +108,22 @@ class ApiDatasourceTests(unittest.TestCase):
         self.assertEqual(source["kind"], "csv")
         self.assertEqual(source["status"], "ready")
         self.assertNotIn("location_ref", source)
+        graph = self.client.get(
+            "/api/data-sources/orders-file/relationship-graphs/draft",
+            headers=self.headers,
+        )
+        self.assertEqual(graph.status_code, 200, graph.text)
+        denied_graph = self.client.get(
+            "/api/data-sources/orders-file/relationship-graphs/draft",
+            headers=_auth_headers(tenant_id="other-tenant"),
+        )
+        self.assertEqual(denied_graph.status_code, 404)
+        run_id = source["relationship_discovery"]["run_id"]
+        denied_run = self.client.get(
+            f"/api/data-sources/orders-file/relationship-recommendations/{run_id}",
+            headers=_auth_headers(tenant_id="other-tenant"),
+        )
+        self.assertEqual(denied_run.status_code, 404)
 
         listed = self.client.get(
             "/api/data-sources",
@@ -378,6 +394,11 @@ class ApiDatasourceTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["kind"], "sqlite")
+        self.assertEqual(
+            response.json()["relationship_discovery"]["status"],
+            "retryable_failed",
+        )
+        self.assertTrue(response.json()["relationship_discovery"]["graph_id"])
         catalog = self.client.get(
             "/api/data-sources/customers-sqlite/catalog",
             headers=self.headers,

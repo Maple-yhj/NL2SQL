@@ -368,6 +368,13 @@ const schema = {
         "COST_EXCEEDED",
         "EMPTY_RESULT",
         "JOIN_EXPLOSION",
+        "GRAPH_NO_PATH",
+        "GRAPH_AMBIGUOUS_PATH",
+        "GRAPH_UNSAFE_FANOUT",
+        "GRAPH_STALE_SNAPSHOT",
+        "GRAPH_REVISION_CONFLICT",
+        "GRAPH_VALIDATION_FAILED",
+        "RELATIONSHIP_RECOMMENDATION_FAILED",
         "ACCESS_DENIED",
         "RESULT_SEMANTIC_MISMATCH",
         "TOOL_BUDGET_EXCEEDED",
@@ -626,6 +633,16 @@ const schema = {
             }
           ]
         },
+        "relationshipEvidence": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/RelationshipRouteEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "relationships": {
           "items": {
             "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
@@ -703,6 +720,7 @@ const schema = {
         "metrics",
         "ordering",
         "ranking",
+        "relationshipEvidence",
         "relationships",
         "requestedEvidence",
         "resultShape",
@@ -810,6 +828,67 @@ const schema = {
       "required": [
         "measure",
         "mode"
+      ],
+      "type": "object"
+    },
+    "RelationshipRouteEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "cardinalityByNode": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "one",
+                  "many",
+                  "unknown"
+                ],
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "edgeIds": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "fanoutDecision": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "logicalNodeIds": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "preaggregationRequired": {
+          "type": "boolean"
+        },
+        "routeDigest": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "cardinalityByNode",
+        "edgeIds",
+        "fanoutDecision",
+        "logicalNodeIds",
+        "preaggregationRequired",
+        "routeDigest"
       ],
       "type": "object"
     },

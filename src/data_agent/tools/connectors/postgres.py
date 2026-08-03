@@ -17,6 +17,8 @@ from data_agent.runtime.binding import PreparedQuery
 from ..models import AccessGrant, CredentialLease
 from ..schemas import (
     CatalogColumn,
+    CatalogForeignKey,
+    CatalogKey,
     CatalogRelation,
     CatalogSnapshot,
     CellValue,
@@ -24,6 +26,7 @@ from ..schemas import (
     ExplainResult,
     QueryRow,
     TabularResult,
+    stable_catalog_id,
 )
 from .base import ConnectorError, ConnectorErrorCode
 
@@ -106,6 +109,34 @@ FROM information_schema.columns
 WHERE table_schema = ANY($1::text[])
   AND table_name = ANY($2::text[])
 ORDER BY table_schema, table_name, ordinal_position"""
+_CONSTRAINT_INTROSPECTION_SQL = """SELECT
+    tc.table_schema,
+    tc.table_name,
+    tc.constraint_name,
+    tc.constraint_type,
+    kcu.column_name,
+    kcu.ordinal_position,
+    target_kcu.table_schema AS foreign_table_schema,
+    target_kcu.table_name AS foreign_table_name,
+    target_kcu.column_name AS foreign_column_name
+FROM information_schema.table_constraints AS tc
+JOIN information_schema.key_column_usage AS kcu
+  ON tc.constraint_catalog = kcu.constraint_catalog
+ AND tc.constraint_schema = kcu.constraint_schema
+ AND tc.constraint_name = kcu.constraint_name
+LEFT JOIN information_schema.referential_constraints AS rc
+  ON tc.constraint_catalog = rc.constraint_catalog
+ AND tc.constraint_schema = rc.constraint_schema
+ AND tc.constraint_name = rc.constraint_name
+LEFT JOIN information_schema.key_column_usage AS target_kcu
+  ON rc.unique_constraint_catalog = target_kcu.constraint_catalog
+ AND rc.unique_constraint_schema = target_kcu.constraint_schema
+ AND rc.unique_constraint_name = target_kcu.constraint_name
+ AND target_kcu.ordinal_position = kcu.position_in_unique_constraint
+WHERE tc.table_schema = ANY($1::text[])
+  AND tc.table_name = ANY($2::text[])
+  AND tc.constraint_type IN ('PRIMARY KEY', 'UNIQUE', 'FOREIGN KEY')
+ORDER BY tc.table_schema, tc.table_name, tc.constraint_name, kcu.ordinal_position"""
 _SET_TIMEOUT_SQL = "SELECT set_config('statement_timeout', $1, true)"
 
 
@@ -444,6 +475,13 @@ class PostgresConnector:
             )
         schemas = tuple(dict.fromkeys(item.split(".", 1)[0] for item in requested))
         tables = tuple(dict.fromkeys(item.split(".", 1)[1] for item in requested))
+        constraint_records = await self._fetch_in_readonly_transaction(
+            _CONSTRAINT_INTROSPECTION_SQL,
+            (schemas, tables),
+            grant,
+            lease,
+            required_capability="data.inspect",
+        )
         records = await self._fetch_in_readonly_transaction(
             _INTROSPECTION_SQL,
             (schemas, tables),
@@ -460,9 +498,15 @@ class PostgresConnector:
                     continue
                 grouped[relation].append(
                     CatalogColumn(
+                        column_id=stable_catalog_id(
+                            "column",
+                            relation,
+                            str(value["column_name"]),
+                        ),
                         name=str(value["column_name"]),
                         data_type=str(value["data_type"]),
                         nullable=str(value["is_nullable"]).upper() == "YES",
+                        ordinal=len(grouped[relation]) + 1,
                     )
                 )
             except (KeyError, TypeError, ValueError) as exc:
@@ -470,11 +514,84 @@ class PostgresConnector:
                     ConnectorErrorCode.CATALOG_INVALID,
                     "PostgreSQL catalog row is incomplete",
                 ) from exc
+        constraints: dict[tuple[str, str], list[Mapping[str, object]]] = defaultdict(list)
+        for record in constraint_records:
+            value = _as_mapping(record)
+            try:
+                relation = f"{value['table_schema']}.{value['table_name']}"
+                constraint_name = str(value["constraint_name"])
+                constraint_type = str(value["constraint_type"])
+                column_name = str(value["column_name"])
+            except (KeyError, TypeError, ValueError):
+                # Some lightweight drivers or test doubles cannot expose
+                # constraint metadata. Missing metadata stays unknown rather
+                # than being misinterpreted as an empty schema.
+                continue
+            if relation in requested and constraint_type in {
+                "PRIMARY KEY",
+                "UNIQUE",
+                "FOREIGN KEY",
+            }:
+                constraints[(relation, constraint_name)].append(value)
+
+        catalog_relations: list[CatalogRelation] = []
+        for relation in requested:
+            if relation not in grouped:
+                continue
+            relation_id = stable_catalog_id("relation", relation)
+            columns = tuple(grouped[relation])
+            by_name = {column.name: column.column_id for column in columns}
+            keys: list[CatalogKey] = []
+            foreign_keys: list[CatalogForeignKey] = []
+            for (candidate_relation, constraint_name), rows in constraints.items():
+                if candidate_relation != relation:
+                    continue
+                ordered = sorted(rows, key=lambda item: int(item.get("ordinal_position", 0) or 0))
+                constraint_type = str(ordered[0]["constraint_type"])
+                column_ids = tuple(
+                    by_name[str(item["column_name"])]
+                    for item in ordered
+                    if str(item["column_name"]) in by_name
+                )
+                if not column_ids:
+                    continue
+                if constraint_type in {"PRIMARY KEY", "UNIQUE"}:
+                    keys.append(
+                        CatalogKey(
+                            key_id=stable_catalog_id("key", relation, constraint_name),
+                            kind="primary" if constraint_type == "PRIMARY KEY" else "unique",
+                            column_ids=column_ids,
+                        )
+                    )
+                    continue
+                target_schema = str(ordered[0].get("foreign_table_schema") or "")
+                target_table = str(ordered[0].get("foreign_table_name") or "")
+                target_relation = f"{target_schema}.{target_table}"
+                target_columns = tuple(
+                    stable_catalog_id("column", target_relation, str(item["foreign_column_name"]))
+                    for item in ordered
+                    if item.get("foreign_column_name") is not None
+                )
+                if target_schema and target_table and len(target_columns) == len(column_ids):
+                    foreign_keys.append(
+                        CatalogForeignKey(
+                            foreign_key_id=stable_catalog_id("foreign-key", relation, constraint_name),
+                            from_relation_id=relation_id,
+                            from_column_ids=column_ids,
+                            to_relation_id=stable_catalog_id("relation", target_relation),
+                            to_column_ids=target_columns,
+                        )
+                    )
+            catalog_relations.append(
+                CatalogRelation(
+                    relation_id=relation_id,
+                    relation=relation,
+                    columns=columns,
+                    keys=tuple(keys),
+                    foreign_keys=tuple(foreign_keys),
+                )
+            )
         return CatalogSnapshot(
             schema_fingerprint=self._schema_fingerprint,
-            relations=tuple(
-                CatalogRelation(relation=relation, columns=tuple(grouped[relation]))
-                for relation in requested
-                if relation in grouped
-            ),
+            relations=tuple(catalog_relations),
         )

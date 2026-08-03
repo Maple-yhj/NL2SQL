@@ -22,7 +22,13 @@ from api.datasource_service import DataSourceService
 from data_agent.datasources import (
     DataSourceRegistryError,
     SemanticBindingRecord,
+    SemanticGraphBindingRecord,
+    SemanticFieldMapping,
+    SemanticRelationship,
 )
+from data_agent.relationships.compiler import bind_join_plan
+from data_agent.relationships.grain import FanoutGuard
+from data_agent.relationships.router import GraphRouteError, GraphRouteRequest, GraphRouteResolver
 from data_agent.runtime.binding import PreparedQuery, QueryParameter
 from data_agent.runtime.dependencies import ModelClient
 from data_agent.runtime.errors import AgentError, ErrorCode
@@ -42,7 +48,12 @@ from data_agent.runtime.models import (
     ChartSpec,
     PrincipalContext,
 )
-from data_agent.skills.models import AnalysisType, LogicalQueryPlan, ResultShape
+from data_agent.skills.models import (
+    AnalysisType,
+    LogicalQueryPlan,
+    RelationshipRouteEvidence,
+    ResultShape,
+)
 from data_agent.tools import AccessGrant, CredentialLease
 from data_agent.tools.connectors import ConnectorError, ConnectorErrorCode
 from data_agent.tools.schemas import CatalogSnapshot, TabularResult
@@ -284,7 +295,7 @@ class DatasetLogicalPlanner:
         self,
         *,
         question: str,
-        binding: SemanticBindingRecord,
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
         catalog: CatalogSnapshot,
         conversation_context: DatasetConversationContext | None = None,
     ) -> DatasetPlanningResult:
@@ -293,16 +304,20 @@ class DatasetLogicalPlanner:
             for relation in catalog.relations
             for column in relation.columns
         }
-        logical_catalog = [
-            {
-                "ref": mapping.logical_ref,
-                "type": type_by_physical.get(
-                    (mapping.physical_relation, mapping.physical_column),
-                    "unknown",
-                ),
-            }
-            for mapping in binding.mappings
-        ]
+        if isinstance(binding, SemanticBindingRecord):
+            logical_catalog = [
+                {"ref": mapping.logical_ref, "type": type_by_physical.get((mapping.physical_relation, mapping.physical_column), "unknown")}
+                for mapping in binding.mappings
+            ]
+        else:
+            relation_by_node = {node.node_id: node.relation_id for node in binding.graph.nodes}
+            relation_by_id = {relation.relation_id: relation.relation for relation in catalog.relations}
+            column_by_id = {column.column_id: (relation.relation, column.name) for relation in catalog.relations for column in relation.columns}
+            logical_catalog = [
+                {"ref": mapping.logical_ref, "type": type_by_physical.get(column_by_id.get(mapping.column_id, ("", "")), "unknown")}
+                for mapping in binding.mappings
+                if relation_by_node.get(mapping.node_id) in relation_by_id
+            ]
         if conversation_context is None:
             request = {
                 "task": "create_dataset_query_plan",
@@ -474,11 +489,26 @@ class DatasetQueryCompiler:
         self,
         *,
         plan: DatasetQueryPlan,
-        binding: SemanticBindingRecord,
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
         dialect: Literal["postgres", "sqlite", "duckdb"],
         schema_fingerprint: str,
         bundle_digest: str,
+        catalog: CatalogSnapshot | None = None,
+        _relation_table_overrides: dict[str, str] | None = None,
+        _join_conditions_overrides: dict[str, tuple[tuple[str, str], ...]] | None = None,
+        _alias_overrides: dict[str, str] | None = None,
     ) -> PreparedQuery:
+        if isinstance(binding, SemanticGraphBindingRecord):
+            if catalog is None:
+                raise ValueError("graph binding compilation requires a catalog snapshot")
+            return self._compile_graph(
+                plan=plan,
+                binding=binding,
+                catalog=catalog,
+                dialect=dialect,
+                schema_fingerprint=schema_fingerprint,
+                bundle_digest=bundle_digest,
+            )
         if plan.status != DatasetPlanStatus.READY:
             raise ValueError("non-ready dataset query plans cannot be compiled")
         mappings = {item.logical_ref: item for item in binding.mappings}
@@ -529,15 +559,16 @@ class DatasetQueryCompiler:
             primary_relation,
             *(item.right_relation for item in required_relationships),
         )
-        aliases = {
+        aliases = _alias_overrides or {
             relation: f"dataset_{index}"
             for index, relation in enumerate(joined_relations, start=1)
         }
 
         def table_expression(relation: str) -> exp.Table:
-            if relation.count(".") != 1:
+            physical_relation = (_relation_table_overrides or {}).get(relation, relation)
+            if physical_relation.count(".") != 1:
                 raise ValueError("physical relation must be schema-qualified")
-            schema, table = relation.split(".", 1)
+            schema, table = physical_relation.split(".", 1)
             return exp.Table(
                 this=exp.to_identifier(table, quoted=True),
                 db=exp.to_identifier(schema, quoted=True),
@@ -601,30 +632,30 @@ class DatasetQueryCompiler:
         query = exp.select(*selections).from_(source)
         joins: list[exp.Join] = []
         for relationship in required_relationships:
-            left = exp.Column(
-                this=exp.to_identifier(
-                    relationship.left_column,
-                    quoted=True,
-                ),
-                table=exp.to_identifier(
-                    aliases[relationship.left_relation],
-                    quoted=True,
-                ),
+            conditions = (_join_conditions_overrides or {}).get(
+                relationship.relationship_id,
+                ((relationship.left_column, relationship.right_column),),
             )
-            right = exp.Column(
-                this=exp.to_identifier(
-                    relationship.right_column,
-                    quoted=True,
-                ),
-                table=exp.to_identifier(
-                    aliases[relationship.right_relation],
-                    quoted=True,
-                ),
-            )
+            predicates = [
+                exp.EQ(
+                    this=exp.Column(
+                        this=exp.to_identifier(left_column, quoted=True),
+                        table=exp.to_identifier(aliases[relationship.left_relation], quoted=True),
+                    ),
+                    expression=exp.Column(
+                        this=exp.to_identifier(right_column, quoted=True),
+                        table=exp.to_identifier(aliases[relationship.right_relation], quoted=True),
+                    ),
+                )
+                for left_column, right_column in conditions
+            ]
+            on = predicates[0]
+            for predicate in predicates[1:]:
+                on = exp.and_(on, predicate)
             joins.append(
                 exp.Join(
                     this=table_expression(relationship.right_relation),
-                    on=exp.EQ(this=left, expression=right),
+                    on=on,
                     kind=relationship.join_type.value.upper(),
                 )
             )
@@ -722,7 +753,12 @@ class DatasetQueryCompiler:
             logical_sql=sql,
             executable_sql=sql,
             parameters=tuple(parameters),
-            allowed_relations=joined_relations,
+            allowed_relations=tuple(
+                dict.fromkeys(
+                    (_relation_table_overrides or {}).get(relation, relation)
+                    for relation in joined_relations
+                )
+            ),
             policy_decision_id=hashlib.sha256(
                 f"{binding.binding_id}:{binding.version}".encode()
             ).hexdigest(),
@@ -730,6 +766,158 @@ class DatasetQueryCompiler:
             max_rows=plan.limit,
             bundle_digest=bundle_digest,
             schema_fingerprint=schema_fingerprint,
+        )
+
+    def _compile_graph(
+        self,
+        *,
+        plan: DatasetQueryPlan,
+        binding: SemanticGraphBindingRecord,
+        catalog: CatalogSnapshot,
+        dialect: Literal["postgres", "sqlite", "duckdb"],
+        schema_fingerprint: str,
+        bundle_digest: str,
+    ) -> PreparedQuery:
+        mappings = {mapping.logical_ref: mapping for mapping in binding.mappings}
+        referenced = {
+            *plan.select,
+            *plan.group_by,
+            *(item.ref for item in plan.aggregations),
+            *(item.ref for item in plan.filters),
+            *(item.ref for item in plan.order_by),
+        }
+        aggregation_aliases = {item.alias for item in plan.aggregations}
+        unknown = referenced - set(mappings) - aggregation_aliases
+        if unknown:
+            raise ValueError("dataset query references unknown logical fields: " + ", ".join(sorted(unknown)))
+        ordered_refs = tuple(
+            dict.fromkeys(
+                (
+                    *plan.select,
+                    *plan.group_by,
+                    *(item.ref for item in plan.aggregations),
+                    *(item.ref for item in plan.filters),
+                    *(item.ref for item in plan.order_by),
+                )
+            )
+        )
+        required_node_ids = tuple(
+            dict.fromkeys(
+                mappings[ref].node_id
+                for ref in ordered_refs
+                if ref not in aggregation_aliases
+            )
+        )
+        try:
+            route = GraphRouteResolver().resolve(
+                binding.graph,
+                GraphRouteRequest(required_node_ids=required_node_ids),
+            )
+        except GraphRouteError as exc:
+            raise ValueError(f"{exc.code}: {exc}") from exc
+        measure_nodes = tuple(
+            mappings[item.ref].node_id
+            for item in plan.aggregations
+            if item.ref in mappings
+        )
+        try:
+            fanout = FanoutGuard().require_safe(
+                graph=binding.graph,
+                route=route,
+                measure_node_ids=measure_nodes,
+                analysis_type=plan.analysis_type or "detail",
+            )
+        except ValueError as exc:
+            raise ValueError(f"GRAPH_UNSAFE_FANOUT: {exc}") from exc
+        bound = bind_join_plan(graph=binding.graph, catalog=catalog, route=route)
+        relations = {relation.relation_id: relation for relation in catalog.relations}
+        columns = {
+            column.column_id: column.name
+            for relation in catalog.relations
+            for column in relation.columns
+        }
+        node_by_id = {node.node_id: node for node in binding.graph.nodes}
+        route_node_ids = tuple(dict.fromkeys((route.root_node_id, *(step.introduced_node_id for step in route.steps))))
+        synthetic_mappings = [
+            SemanticFieldMapping(
+                logical_ref=mapping.logical_ref,
+                physical_relation=mapping.node_id,
+                physical_column=columns[mapping.column_id],
+            )
+            for mapping in binding.mappings
+        ]
+        mapped_nodes = {mapping.physical_relation for mapping in synthetic_mappings}
+        for node_id in route_node_ids:
+            if node_id not in mapped_nodes:
+                relation = relations[node_by_id[node_id].relation_id]
+                synthetic_mappings.append(
+                    SemanticFieldMapping(
+                        logical_ref=f"__graph_internal_{node_id}",
+                        physical_relation=node_id,
+                        physical_column=relation.columns[0].name,
+                    )
+                )
+        by_step = {step.edge_id: step for step in bound.steps}
+        synthetic_relationships = tuple(
+            SemanticRelationship(
+                relationship_id=step.edge_id,
+                left_relation=route.steps[index].existing_node_id,
+                left_column=step.conditions[0].left_column,
+                right_relation=route.steps[index].introduced_node_id,
+                right_column=step.conditions[0].right_column,
+                join_type="left" if step.join_type == "LEFT" else "inner",
+            )
+            for index, step in enumerate(bound.steps)
+        )
+        synthetic = SemanticBindingRecord(
+            binding_id=binding.binding_id,
+            tenant_id=binding.tenant_id,
+            source_id=binding.source_id,
+            source_snapshot_version=binding.source_snapshot_version,
+            domain_id=binding.domain_id,
+            version=binding.version,
+            status=binding.status,
+            mappings=tuple(synthetic_mappings),
+            primary_relation=route.root_node_id,
+            relationships=synthetic_relationships,
+        )
+        prepared = self.compile(
+            plan=plan,
+            binding=synthetic,
+            dialect=dialect,
+            schema_fingerprint=schema_fingerprint,
+            bundle_digest=bundle_digest,
+            _relation_table_overrides={node_id: relations[node_by_id[node_id].relation_id].relation for node_id in route_node_ids},
+            _alias_overrides=bound.aliases,
+            _join_conditions_overrides={
+                edge_id: tuple((condition.left_column, condition.right_column) for condition in step.conditions)
+                for edge_id, step in by_step.items()
+            },
+        )
+        logical_plan = prepared.logical_plan.model_copy(
+            update={
+                "assumptions": (
+                    *prepared.logical_plan.assumptions,
+                    f"relationship route digest: {route.route_digest}",
+                    "relationship nodes: " + ", ".join(route.included_node_ids),
+                    "relationship edges: " + ", ".join(step.edge_id for step in route.steps),
+                    f"fan-out decision: {fanout.reason}",
+                ),
+                "relationship_evidence": RelationshipRouteEvidence(
+                    route_digest=route.route_digest,
+                    logical_node_ids=route.included_node_ids,
+                    edge_ids=tuple(step.edge_id for step in route.steps),
+                    cardinality_by_node=fanout.cardinality.node_cardinality,
+                    fanout_decision=fanout.reason,
+                    preaggregation_required=fanout.preaggregation_required,
+                ),
+            }
+        )
+        return prepared.model_copy(
+            update={
+                "logical_plan": logical_plan,
+                "logical_plan_hash": logical_plan.stable_hash(),
+            }
         )
 
     @staticmethod
@@ -875,12 +1063,25 @@ class DataSourceQueryService:
                 dialect=dialect,
                 schema_fingerprint=snapshot.fingerprint,
                 bundle_digest=bundle_digest,
+                catalog=snapshot.catalog,
             )
         except ValueError as exc:
+            graph_code = next(
+                (
+                    code
+                    for code in (
+                        ErrorCode.GRAPH_NO_PATH,
+                        ErrorCode.GRAPH_AMBIGUOUS_PATH,
+                        ErrorCode.GRAPH_UNSAFE_FANOUT,
+                    )
+                    if str(exc).startswith(f"{code}:")
+                ),
+                None,
+            )
             return self._failure(
                 request,
                 principal,
-                ErrorCode.SQL_COMPILE_ERROR,
+                graph_code or ErrorCode.SQL_COMPILE_ERROR,
                 str(exc),
                 "compile_dataset_query",
             )

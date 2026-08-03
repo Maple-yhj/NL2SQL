@@ -141,6 +141,25 @@ The model sees logical field references only. Physical identifiers are added
 later by the deterministic compiler, and stale or cross-conversation pins are
 rejected before planning.
 
+## Relationship graphs for uploaded data sources
+
+Every published datasource now receives a revisioned relationship-graph draft.
+The browser lets an analyst add business-role nodes (including self-join roles),
+define field relationships, validate them, preview the deterministic route, and
+explicitly activate an immutable v2 binding. Recommendation prompts contain
+only catalog IDs and metadata; they never contain connection credentials or raw
+data values. Query compilation resolves only the required graph route, uses
+role-specific SQL aliases, supports composite equality predicates, and rejects
+ambiguous paths or unsafe aggregate fan-out.
+
+The legacy v1 tree bindings remain readable. The migration helper creates a v2
+draft for review without activating it:
+
+```powershell
+python scripts/migrate_v1_binding_to_graph.py binding.json catalog.json --preview
+python scripts/migrate_v1_binding_to_graph.py binding.json catalog.json --execute --output graph-draft.json
+```
+
 ## Optional governed-pack runtime
 
 The legacy Commerce pack runtime is opt-in for compatibility and offline

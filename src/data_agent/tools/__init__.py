@@ -24,6 +24,8 @@ from .models import (
 from .registry import ToolRegistry, ToolRegistryView
 from .schemas import (
     CatalogColumn,
+    CatalogForeignKey,
+    CatalogKey,
     CatalogRelation,
     CatalogSnapshot,
     ConnectorCapabilities,
@@ -36,6 +38,8 @@ __all__ = [
     "AccessGrant",
     "ArtifactRef",
     "CatalogColumn",
+    "CatalogForeignKey",
+    "CatalogKey",
     "CatalogRelation",
     "CatalogSnapshot",
     "ConnectorCapabilities",

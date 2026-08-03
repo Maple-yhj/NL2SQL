@@ -59,6 +59,13 @@ export type ErrorCode =
     | "COST_EXCEEDED"
     | "EMPTY_RESULT"
     | "JOIN_EXPLOSION"
+    | "GRAPH_NO_PATH"
+    | "GRAPH_AMBIGUOUS_PATH"
+    | "GRAPH_UNSAFE_FANOUT"
+    | "GRAPH_STALE_SNAPSHOT"
+    | "GRAPH_REVISION_CONFLICT"
+    | "GRAPH_VALIDATION_FAILED"
+    | "RELATIONSHIP_RECOMMENDATION_FAILED"
     | "ACCESS_DENIED"
     | "RESULT_SEMANTIC_MISMATCH"
     | "TOOL_BUDGET_EXCEEDED"
@@ -206,20 +213,36 @@ export interface DataSource {
   options: Record<string, string | number | boolean>;
   created_at: string;
   updated_at: string;
+  relationship_discovery?: { graph_id: string; run_id: string; status: string } | null;
 }
 
 export interface CatalogColumn {
+  column_id: string;
   name: string;
   data_type: string;
   nullable: boolean;
+  ordinal: number;
 }
 
 export interface CatalogRelation {
+  relation_id: string;
   relation: string;
   columns: CatalogColumn[];
+  keys: Array<{ key_id: string; kind: "primary" | "unique"; column_ids: string[] }>;
+  foreign_keys: Array<{ foreign_key_id: string; from_relation_id: string; from_column_ids: string[]; to_relation_id: string; to_column_ids: string[] }>;
   estimated_rows: number | null;
   freshness_at: string | null;
 }
+
+export interface RelationshipGraphNode { node_id: string; relation_id: string; role_name: string; logical_entity: string; enabled: boolean; }
+export interface RelationshipCondition { from_column_id: string; operator: "eq"; to_column_id: string; }
+export interface RelationshipEdge { edge_id: string; from_node_id: string; to_node_id: string; conditions: RelationshipCondition[]; cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | "unknown"; join_semantics: "inner" | "left"; preserve_node_id: string | null; route_priority: number; enabled: boolean; provenance: Record<string, unknown>; quality: Record<string, unknown> | null; }
+export interface RelationshipGraphDraft { graph_id: string; tenant_id: string; source_id: string; source_snapshot_version: number; schema_fingerprint: string; revision: number; status: "discovering" | "draft" | "validating" | "ready" | "failed"; nodes: RelationshipGraphNode[]; edges: RelationshipEdge[]; components: Array<Record<string, unknown>>; route_rules: Array<Record<string, unknown>>; }
+export interface RelationshipRecommendationRun { run_id: string; source_id: string; graph_id: string; status: "queued" | "running" | "succeeded" | "failed" | "retryable_failed"; error_message: string | null; }
+export interface RelationshipValidationReport { report_digest: string; activation_allowed: boolean; findings: Array<{ code: string; severity: "warning" | "error"; edge_id: string | null; message: string }>; }
+export interface RelationshipRoutePreview { root_node_id: string; included_node_ids: string[]; route_digest: string; route_rule_id: string | null; steps: Array<{ edge_id: string; existing_node_id: string; introduced_node_id: string; traversal: "forward" | "reverse" }>; }
+export interface SemanticGraphFieldMapping { logical_ref: string; node_id: string; column_id: string; }
+export interface SemanticGraphBinding { schema_version: 2; binding_id: string; source_id: string; source_snapshot_version: number; schema_fingerprint: string; domain_id: string; version: number; status: SemanticBindingStatus; validation_report_digest: string; }
 
 export interface DataSourceCatalog {
   source_id: string;
@@ -251,6 +274,7 @@ export interface SemanticRelationship {
 }
 
 export interface SemanticBinding {
+  schema_version?: 1;
   binding_id: string;
   tenant_id: string;
   source_id: string;
@@ -264,6 +288,8 @@ export interface SemanticBinding {
   created_at: string;
   updated_at: string;
 }
+
+export type AnySemanticBinding = SemanticBinding | SemanticGraphBinding;
 
 export interface SemanticBindingCreatePayload {
   binding_id?: string;

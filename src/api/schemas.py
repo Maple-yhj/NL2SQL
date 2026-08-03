@@ -18,8 +18,10 @@ from data_agent.datasources import (
     DataSourceKind,
     DataSourceStatus,
     SemanticBindingRecord,
+    SemanticGraphBindingRecord,
     SemanticFieldMapping,
     SemanticRelationship,
+    SemanticGraphFieldMapping,
 )
 from data_agent.tools.schemas import CatalogSnapshot
 
@@ -164,6 +166,13 @@ class DataSourceResponse(StrictApiModel):
     options: dict[str, str | int | float | bool]
     created_at: str
     updated_at: str
+    relationship_discovery: "RelationshipDiscoveryResponse | None" = None
+
+
+class RelationshipDiscoveryResponse(StrictApiModel):
+    graph_id: str
+    run_id: str
+    status: str
 
 
 class DataSourceListResponse(StrictApiModel):
@@ -227,12 +236,18 @@ class SemanticBindingCreateRequest(StrictApiModel):
         return stripped
 
 
+class RelationshipGraphActivateRequest(StrictApiModel):
+    domain_id: str = Field(min_length=1)
+    mappings: tuple[SemanticGraphFieldMapping, ...] = Field(min_length=1)
+    binding_id: str | None = None
+
+
 class SemanticBindingListResponse(StrictApiModel):
-    items: list[SemanticBindingRecord]
+    items: list[SemanticBindingRecord | SemanticGraphBindingRecord]
 
 
 class ConversationDataSourceBindingResponse(StrictApiModel):
-    binding: SemanticBindingRecord | None = None
+    binding: SemanticBindingRecord | SemanticGraphBindingRecord | None = None
 
 
 class RunCancelResponse(StrictApiModel):

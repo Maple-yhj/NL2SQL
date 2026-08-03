@@ -16,11 +16,13 @@ const supportedKeywords = new Set([
   "const",
   "enum",
   "items",
+  "maxItems",
   "minItems",
   "minLength",
   "minimum",
   "pattern",
   "properties",
+  "prefixItems",
   "propertyNames",
   "required",
   "type",
@@ -174,6 +176,20 @@ function validateNumber(schema: JsonSchema, value: number): boolean {
 function validateArray(schema: JsonSchema, value: unknown[]): boolean {
   if (typeof schema.minItems === "number" && value.length < schema.minItems) {
     return false;
+  }
+  if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
+    return false;
+  }
+  if (schema.prefixItems !== undefined) {
+    const prefixItems = schema.prefixItems;
+    if (!Array.isArray(prefixItems) || value.length !== prefixItems.length) {
+      return false;
+    }
+    return value.every(
+      (item, index) =>
+        isRecord(prefixItems[index]) &&
+        validateSchema(prefixItems[index] as JsonSchema, item),
+    );
   }
   if (schema.items !== undefined) {
     if (!isRecord(schema.items)) {

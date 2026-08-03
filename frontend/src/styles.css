@@ -96,6 +96,61 @@ p {
   border: 0;
 }
 
+.relationship-graph-editor {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.relationship-graph-editor h4 {
+  margin: 8px 0 -4px;
+  color: var(--ink-strong);
+}
+
+.relationship-graph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.relationship-graph-actions input,
+.relationship-graph-actions select {
+  min-width: 150px;
+  max-width: 100%;
+}
+
+.relationship-graph-table {
+  display: grid;
+  gap: 8px;
+}
+
+.relationship-graph-table > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.relationship-graph-table span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.relationship-graph-shortcuts {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .small {
   font-size: 12px;
 }
@@ -3520,6 +3575,26 @@ details.evidence-section {
 
   .binding-actions .datasource-primary {
     width: 100%;
+  }
+
+  .relationship-graph-editor {
+    padding: 12px;
+  }
+
+  .relationship-graph-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .relationship-graph-actions input,
+  .relationship-graph-actions select,
+  .relationship-graph-actions button {
+    width: 100%;
+  }
+
+  .relationship-graph-table > div {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 

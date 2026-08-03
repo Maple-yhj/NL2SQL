@@ -17,8 +17,10 @@ from data_agent.runtime.binding import PreparedQuery
 from ..models import AccessGrant, CredentialLease
 from ..schemas import (
     CatalogColumn,
+    CatalogKey,
     CatalogRelation,
     CatalogSnapshot,
+    stable_catalog_id,
     CellValue,
     ConnectorCapabilities,
     ExplainResult,
@@ -430,19 +432,27 @@ class SQLiteConnector:
                 ).fetchall()
                 if not records:
                     continue
-                catalog_relations.append(
-                    CatalogRelation(
-                        relation=relation,
-                        columns=tuple(
-                            CatalogColumn(
-                                name=str(record[1]),
-                                data_type=str(record[2] or "unknown"),
-                                nullable=not bool(record[3]),
-                            )
-                            for record in records
-                        ),
-                    )
+                columns = tuple(
+                    CatalogColumn(
+                        column_id=stable_catalog_id("column", relation, str(record[1])),
+                        name=str(record[1]), data_type=str(record[2] or "unknown"),
+                        nullable=not bool(record[3]), ordinal=index,
+                    ) for index, record in enumerate(records, start=1)
                 )
+                by_name = {column.name: column.column_id for column in columns}
+                primary = tuple(by_name[str(record[1])] for record in sorted(records, key=lambda item: int(item[5] or 0)) if int(record[5] or 0) > 0)
+                key_items = [CatalogKey(kind="primary", column_ids=primary)] if primary else []
+                indexes = connection.execute(f'PRAGMA "{alias}".index_list("{table}")').fetchall()
+                for index in indexes:
+                    if not bool(index[2]) or str(index[3]) == "pk":
+                        continue
+                    index_name = str(index[1]).replace('"', '""')
+                    fields = connection.execute(f'PRAGMA "{alias}".index_info("{index_name}")').fetchall()
+                    column_ids = tuple(by_name[str(field[2])] for field in fields if field[2] is not None)
+                    if column_ids:
+                        key_items.append(CatalogKey(kind="unique", column_ids=column_ids))
+                keys = tuple(key_items)
+                catalog_relations.append(CatalogRelation(relation=relation, columns=columns, keys=keys))
             return CatalogSnapshot(
                 schema_fingerprint=self._schema_fingerprint,
                 relations=tuple(catalog_relations),

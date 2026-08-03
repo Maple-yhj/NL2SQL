@@ -37,9 +37,9 @@ FIXTURE_PATH = (
 ROOT_SCHEMA = "AgentResponse"
 _ANNOTATION_KEYS = frozenset({"default", "description", "title"})
 _SCALAR_KEYS = frozenset(
-    {"$ref", "const", "enum", "minItems", "minLength", "minimum", "pattern", "required", "type"}
+    {"$ref", "const", "enum", "maxItems", "minItems", "minLength", "minimum", "pattern", "required", "type"}
 )
-_NESTED_KEYS = frozenset({"additionalProperties", "anyOf", "items", "properties", "propertyNames"})
+_NESTED_KEYS = frozenset({"additionalProperties", "anyOf", "items", "prefixItems", "properties", "propertyNames"})
 
 
 def build_frontend_agent_response_schema(
@@ -143,6 +143,9 @@ def _normalize_schema(schema: dict[str, Any]) -> dict[str, Any]:
             }
             continue
         if key == "anyOf":
+            normalized[key] = [_normalize_schema(nested) for nested in value]
+            continue
+        if key == "prefixItems":
             normalized[key] = [_normalize_schema(nested) for nested in value]
             continue
         if key in {"items", "propertyNames"}:
