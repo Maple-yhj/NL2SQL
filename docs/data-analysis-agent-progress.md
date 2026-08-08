@@ -447,6 +447,19 @@ LANGGRAPH_STRICT_MSGPACK=true .venv/bin/python -m pytest <release-smoke-files> -
 2. Review the protected pre-existing changes as product changes, then create auditable source-branch commits without including `.env*`, user state or caches.
 3. Re-read branch/main/origin ancestry, merge with an explicit merge commit only if the plan's clean-tree preconditions can be satisfied, and rerun the gates on local `main`.
 
+## Completed Task 16 checkpoint
+
+- Source branch: `Agent`; source commit: `4f7d11461d1c0d010a37131e71d00ad0cf63f6a2`.
+- Pre-merge local `main` and `origin/main`: `64fc763de13de549fb4765f9ba41c6a46b11d981`; the branches were identical and `main` was an ancestor of the source branch.
+- The primary worktree's four protected pre-existing untracked paths were left untouched. The merge and post-merge gates ran in a new isolated temporary `main` worktree, so no secret, cache, user state, or unconfirmed file was hidden, deleted, stashed, or committed.
+- Local `main` merge commit: `cee85366634785fc8910a3d8b8354dad6bd79bcf` (`merge: migrate default runtime to data analysis agent`). The source commit is an ancestor of local `main`; the source branch was retained and nothing was pushed.
+- Post-merge backend verification: `337 passed, 70 subtests passed`; the only warning is the pre-existing Starlette/httpx deprecation warning.
+- Post-merge frontend verification: `16` files / `63` tests passed; Vite production build passed with `1597` modules transformed.
+- Post-merge release smoke: `90 passed, 42 subtests passed`, covering API/auth/datasources, all Agent modes, multi-step/replan, pause/restart/resume, cancel/replay, and security boundaries.
+- Post-merge wheel: SHA-256 `9a360b0f276048f4823247f783cb5858be9b97b9a3fa403e6661111d78d032b2`, `99` files, valid `RECORD`, and zero retired-path matches. An isolated wheel installation loaded the CLI, API, and native Agent graph from the installed wheel.
+- All manifest-approved build/test outputs in the temporary worktree were removed; local `main` finished with a clean worktree.
+- Rollback: do not reset or force-push. If the merge is later shared, use `git revert -m 1 cee85366634785fc8910a3d8b8354dad6bd79bcf`; if it remains local, report first and obtain confirmation before choosing any rollback operation.
+
 ## Important implementation decisions already frozen by source documents
 
 - The model never submits arbitrary SQL or code; deterministic compiler/relationship routing/fan-out guard remain mandatory.

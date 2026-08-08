@@ -65,7 +65,7 @@ FastAPI routes
 - [x] 旧默认 Workflow、仅旧 Pack/OList 使用的代码和仓库垃圾完成审计及删除。
 - [x] 全量测试、前端构建、wheel 构建和安装测试通过。
 - [x] README、reading guide、OpenAPI、Apifox、前端生成契约与新架构一致。
-- [ ] 所有实现变更在当前开发分支形成可审计提交，并在最终验证后合并到本地 `main` 分支。
+- [x] 所有实现变更在当前开发分支形成可审计提交，并在最终验证后合并到本地 `main` 分支。
 
 ## 2. 目标文件结构
 
@@ -1075,16 +1075,18 @@ npm --prefix frontend run build
 
 ### 19.1 合并前置条件
 
-- [ ] 确认当前不在 `main`：
+完成说明：主工作区仍有四个 Task 0 已记录、不可擅自处理的未跟踪本地项。实际执行时确认源分支已跟踪树干净、提交边界完整，并在全新的隔离 `main` worktree 中完成合并与复验；未通过 ignore、stash、删除或提交来隐藏这些本地项。
+
+- [x] 确认当前不在 `main`：
 
 ```bash
 git branch --show-current
 ```
 
-- [ ] 确认所有实现文件、删除和生成契约已经被有意纳入提交。
-- [ ] 确认 `git status --short` 为空；不得把 `.env*`、credential、本地 state、artifact、node_modules、缓存或用户未确认的临时文件提交进去。
-- [ ] 如果仍有用户原有未提交改动，先判断它们是否属于最终产品：属于则单独审查并提交；不属于且不能安全处理则停止合并并请求用户处理，不能 stash 后遗忘、reset 或丢弃。
-- [ ] 在源分支重新运行 Task 15 全量门禁并记录源分支 HEAD：
+- [x] 确认所有实现文件、删除和生成契约已经被有意纳入提交。
+- [x] 确认源分支已跟踪树干净，且用于合并的隔离 worktree 中 `git status --short` 为空；没有把 `.env*`、credential、本地 state、artifact、node_modules、缓存或用户未确认的临时文件提交进去。
+- [x] 用户原有产品改动已经审查并纳入源提交；四个不属于产品提交的受保护本地项保留在主工作区，隔离 worktree 方案避免了 stash、reset、删除或忽略它们。
+- [x] 在源分支重新运行 Task 15 全量门禁并记录源分支 HEAD：
 
 ```bash
 git rev-parse HEAD
@@ -1095,8 +1097,8 @@ npm --prefix frontend run build
 .venv/bin/python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 ```
 
-- [ ] wheel 验证生成的 `dist/` 必须按 removal manifest 清理，确保切换分支前工作树再次为空。
-- [ ] 检查即将合并的提交和 diff 范围：
+- [x] wheel 验证生成的 `dist/` 必须按 removal manifest 清理，确保切换分支前工作树再次为空。
+- [x] 检查即将合并的提交和 diff 范围：
 
 ```bash
 git log --oneline --decorate main..HEAD
@@ -1104,35 +1106,35 @@ git diff --stat main...HEAD
 git diff --check main...HEAD
 ```
 
-- [ ] 如果 diff 中出现秘密、用户数据、大型二进制、缓存或计划外目录，停止合并并修正源分支。
+- [x] 如果 diff 中出现秘密、用户数据、大型二进制、缓存或计划外目录，停止合并并修正源分支。
 
 ### 19.2 同步 main
 
-- [ ] 记录合并前 `main` 和源分支 commit ID，写入最终交接报告。
-- [ ] 若配置了 `origin`，先运行：
+- [x] 记录合并前 `main` 和源分支 commit ID，写入最终交接报告。
+- [x] 若配置了 `origin`，先运行：
 
 ```bash
 git fetch origin
 ```
 
-- [ ] 检查本地 `main`、`origin/main` 和源分支关系。不得使用 `git reset --hard`、force push 或覆盖本地 main 的独有提交。
-- [ ] 切换到本地 main：
+- [x] 检查本地 `main`、`origin/main` 和源分支关系。不得使用 `git reset --hard`、force push 或覆盖本地 main 的独有提交。
+- [x] 切换到本地 main：
 
 ```bash
 git switch main
 ```
 
-- [ ] 如果 `origin/main` 存在且本地 main 只是落后，使用 fast-forward-only 同步：
+- [x] 如果 `origin/main` 存在且本地 main 只是落后，使用 fast-forward-only 同步：
 
 ```bash
 git merge --ff-only origin/main
 ```
 
-- [ ] 如果本地 main 与 origin/main 已分叉，停止并报告 commit 图，不自行 rebase、reset 或选择一侧覆盖。
+- [x] 如果本地 main 与 origin/main 已分叉，停止并报告 commit 图，不自行 rebase、reset 或选择一侧覆盖。
 
 ### 19.3 执行合并
 
-- [ ] 使用明确的 merge commit 合并源分支，保留整项迁移的审计边界：
+- [x] 使用明确的 merge commit 合并源分支，保留整项迁移的审计边界：
 
 ```bash
 git merge --no-ff Agent -m "merge: migrate default runtime to data analysis agent"
@@ -1140,7 +1142,7 @@ git merge --no-ff Agent -m "merge: migrate default runtime to data analysis agen
 
 执行时将 `Agent` 替换为 19.1 记录的实际源分支名。
 
-- [ ] 如果无冲突，继续 19.4。
+- [x] 如果无冲突，继续 19.4。
 - [ ] 如果有冲突：
   - 逐文件查看 source/main 两侧意图；
   - 特别保护用户原有 relationship editor 和样式改动；
@@ -1150,13 +1152,13 @@ git merge --no-ff Agent -m "merge: migrate default runtime to data analysis agen
 
 ### 19.4 在 main 上重新验证
 
-- [ ] 确认源分支 HEAD 已成为 main 的祖先：
+- [x] 确认源分支 HEAD 已成为 main 的祖先：
 
 ```bash
 git merge-base --is-ancestor <SOURCE_HEAD> main
 ```
 
-- [ ] 查看合并图和工作树：
+- [x] 查看合并图和工作树：
 
 ```bash
 git log --graph --oneline --decorate -n 30
@@ -1164,7 +1166,7 @@ git status --short
 git diff --check HEAD^ HEAD
 ```
 
-- [ ] 在 main 上重新运行完整门禁：
+- [x] 在 main 上重新运行完整门禁：
 
 ```bash
 .venv/bin/python -m pytest -p no:cacheprovider
@@ -1173,23 +1175,23 @@ npm --prefix frontend run build
 .venv/bin/python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 ```
 
-- [ ] 在临时 venv 安装 main 构建的 wheel，验证 CLI、API import 和 Agent graph import。
-- [ ] 运行最小端到端 smoke：登录、数据源、binding、Agent execute、pause/resume、run replay。
-- [ ] 清理本次验证产生的、manifest 已批准的构建产物，再确认 main 工作树为空。
+- [x] 在临时 venv 安装 main 构建的 wheel，验证 CLI、API import 和 Agent graph import。
+- [x] 运行最小端到端 smoke：登录、数据源、binding、Agent execute、pause/resume、run replay。
+- [x] 清理本次验证产生的、manifest 已批准的构建产物，再确认 main 工作树为空。
 
 ### 19.5 合并后的处理和回滚
 
-- [ ] 最终报告记录：源分支名、SOURCE_HEAD、合并前 MAIN_HEAD、merge commit、验证结果。
-- [ ] 不自动删除源分支；待用户确认 main 运行正常后再决定是否删除。
-- [ ] “并入 main”默认只要求本地 main 合并成功。除非用户另外明确要求，不自动 push `main`、创建 PR、打 tag 或删除远端分支。
-- [ ] 若 main 合并后发现问题，不使用 reset/force push。已共享历史优先使用 `git revert -m 1 <MERGE_COMMIT>`；尚未共享时也先报告并征得用户确认再选择回滚方式。
+- [x] 最终报告记录：源分支名、SOURCE_HEAD、合并前 MAIN_HEAD、merge commit、验证结果。
+- [x] 不自动删除源分支；待用户确认 main 运行正常后再决定是否删除。
+- [x] “并入 main”默认只要求本地 main 合并成功。除非用户另外明确要求，不自动 push `main`、创建 PR、打 tag 或删除远端分支。
+- [x] 若 main 合并后发现问题，不使用 reset/force push。已共享历史优先使用 `git revert -m 1 <MERGE_COMMIT>`；尚未共享时也先报告并征得用户确认再选择回滚方式。
 
 ### 验收
 
-- [ ] 源分支完整历史可从 main 到达。
-- [ ] main 上完整测试、前端构建、wheel 安装和 smoke tests 通过。
-- [ ] main 工作树干净，无秘密、缓存或本地 state 被提交。
-- [ ] 最终报告包含可审计 commit ID 和回滚说明。
+- [x] 源分支完整历史可从 main 到达。
+- [x] main 上完整测试、前端构建、wheel 安装和 smoke tests 通过。
+- [x] main 工作树干净，无秘密、缓存或本地 state 被提交。
+- [x] 最终报告包含可审计 commit ID 和回滚说明。
 
 ## 20. 建议提交拆分
 
