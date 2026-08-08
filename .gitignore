@@ -12,6 +12,7 @@ build/
 develop-eggs/
 dist/
 downloads/
+data/
 eggs/
 .eggs/
 lib/
@@ -208,6 +209,10 @@ tempCodeRunnerFile.py
 
 # PyPI configuration file
 .pypirc
+
+# Local agent execution workspaces and progress ledger
+.worktrees/
+.superpowers/
 
 # Marimo
 marimo/_static/

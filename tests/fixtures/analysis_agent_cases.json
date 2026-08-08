@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id": "single_aggregate", "minimum_tool_calls": 3, "maximum_tool_calls": 3, "oracle_value": 35},
+    {"id": "multi_query_comparison", "minimum_tool_calls": 2, "maximum_tool_calls": 2},
+    {"id": "trend_anomaly", "minimum_tool_calls": 5, "maximum_tool_calls": 5},
+    {"id": "empty_result_replan", "minimum_tool_calls": 2, "maximum_tool_calls": 2},
+    {"id": "schema_ambiguity", "closing_event": "run_waiting"},
+    {"id": "relationship_ambiguity", "closing_event": "run_waiting"},
+    {"id": "preview", "required_limitation": "preview"},
+    {"id": "budget_exhaustion", "error_code": "AGENT_MAX_STEPS_EXCEEDED"},
+    {"id": "cancellation", "error_code": "CANCELLED"},
+    {"id": "restart_resume", "closing_event": "run_completed"}
+  ]
+}

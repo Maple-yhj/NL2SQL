@@ -1,0 +1,7411 @@
+{
+  "components": {
+    "schemas": {
+      "ActivatedRelationshipGraph": {
+        "additionalProperties": false,
+        "description": "Immutable graph payload pinned inside a v2 semantic binding.",
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "graph_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipGraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "route_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RelationshipRouteRule"
+            },
+            "title": "Route Rules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "graph_id",
+          "revision",
+          "nodes",
+          "edges",
+          "components"
+        ],
+        "title": "ActivatedRelationshipGraph",
+        "type": "object"
+      },
+      "AgentArtifactKind": {
+        "enum": [
+          "catalog",
+          "logical_plan",
+          "prepared_query",
+          "query_preview",
+          "query_result",
+          "profile",
+          "computation",
+          "chart",
+          "answer"
+        ],
+        "title": "AgentArtifactKind",
+        "type": "string"
+      },
+      "AgentArtifactSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AgentArtifactKind"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "sensitivity": {
+            "enum": [
+              "metadata",
+              "derived",
+              "row_data"
+            ],
+            "title": "Sensitivity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "kind",
+          "digest",
+          "sensitivity",
+          "created_at"
+        ],
+        "title": "AgentArtifactSummary",
+        "type": "object"
+      },
+      "AgentError": {
+        "additionalProperties": false,
+        "description": "Error safe to expose at an API, CLI, or event boundary.",
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "AgentError",
+        "type": "object"
+      },
+      "AgentEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "discriminator": {
+              "mapping": {
+                "answer_synthesizing": "#/components/schemas/AnswerSynthesizingPayload",
+                "context_resolved": "#/components/schemas/ContextResolvedPayload",
+                "observation_recorded": "#/components/schemas/ObservationRecordedPayload",
+                "plan_updated": "#/components/schemas/PlanUpdatedPayload",
+                "progress": "#/components/schemas/RunProgressPayload",
+                "run_completed": "#/components/schemas/RunCompletedPayload",
+                "run_failed": "#/components/schemas/RunFailedPayload",
+                "run_resumed": "#/components/schemas/RunResumedPayload",
+                "run_started": "#/components/schemas/RunStartedPayload",
+                "run_waiting": "#/components/schemas/RunWaitingPayload",
+                "step_started": "#/components/schemas/StepStartedPayload",
+                "tool_completed": "#/components/schemas/ToolCompletedPayload",
+                "tool_started": "#/components/schemas/ToolStartedPayload"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RunStartedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunProgressPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ContextResolvedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/PlanUpdatedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/StepStartedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ToolStartedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ToolCompletedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ObservationRecordedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunWaitingPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunResumedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/AnswerSynthesizingPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunCompletedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunFailedPayload"
+              }
+            ],
+            "title": "Data"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 0.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AgentEventType"
+          }
+        },
+        "required": [
+          "type",
+          "run_id",
+          "sequence",
+          "data"
+        ],
+        "title": "AgentEvent",
+        "type": "object"
+      },
+      "AgentEventType": {
+        "enum": [
+          "run_started",
+          "progress",
+          "context_resolved",
+          "plan_updated",
+          "step_started",
+          "tool_started",
+          "tool_completed",
+          "observation_recorded",
+          "run_waiting",
+          "run_resumed",
+          "answer_synthesizing",
+          "run_completed",
+          "run_failed"
+        ],
+        "title": "AgentEventType",
+        "type": "string"
+      },
+      "AgentInputReason": {
+        "enum": [
+          "clarification",
+          "approval",
+          "conflict_resolution"
+        ],
+        "title": "AgentInputReason",
+        "type": "string"
+      },
+      "AgentInputRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "allow_free_text": {
+            "default": true,
+            "title": "Allow Free Text",
+            "type": "boolean"
+          },
+          "choices": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "interrupt_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Interrupt Id",
+            "type": "string"
+          },
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/AgentInputReason"
+          }
+        },
+        "required": [
+          "interrupt_id",
+          "reason",
+          "prompt"
+        ],
+        "title": "AgentInputRequest",
+        "type": "object"
+      },
+      "AgentMode": {
+        "enum": [
+          "plan",
+          "preview",
+          "execute"
+        ],
+        "title": "AgentMode",
+        "type": "string"
+      },
+      "AgentResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "analysis_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStepSummary"
+            },
+            "title": "Analysis Steps",
+            "type": "array"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactSummary"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextualized_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextualized Question"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "dataset_query_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Query Plan"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "logical_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalQueryPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_type": {
+            "default": "text",
+            "minLength": 1,
+            "title": "Message Type",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "pending_memory_updates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProposalSummary"
+            },
+            "title": "Pending Memory Updates",
+            "type": "array"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql"
+          },
+          "tenant_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Id"
+          },
+          "trace": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentTraceEntry"
+            },
+            "title": "Trace",
+            "type": "array"
+          },
+          "version_pins": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "question"
+        ],
+        "title": "AgentResponse",
+        "type": "object"
+      },
+      "AgentRow": {
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "propertyNames": {
+          "minLength": 1
+        },
+        "title": "AgentRow",
+        "type": "object"
+      },
+      "AgentTraceEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "node": {
+            "minLength": 1,
+            "title": "Node",
+            "type": "string"
+          },
+          "status": {
+            "minLength": 1,
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node",
+          "status"
+        ],
+        "title": "AgentTraceEntry",
+        "type": "object"
+      },
+      "AnalysisPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_criteria": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Completion Criteria",
+            "type": "array"
+          },
+          "plan_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStep"
+            },
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_id",
+          "revision",
+          "steps",
+          "completion_criteria"
+        ],
+        "title": "AnalysisPlan",
+        "type": "object"
+      },
+      "AnalysisStep": {
+        "additionalProperties": false,
+        "properties": {
+          "depends_on": {
+            "default": [],
+            "items": {
+              "maxLength": 160,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "expected_evidence": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Expected Evidence",
+            "type": "array"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "blocked",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "objective",
+          "status"
+        ],
+        "title": "AnalysisStep",
+        "type": "object"
+      },
+      "AnalysisStepSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "blocked",
+              "skipped",
+              "waiting_input",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Tool Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "step_id",
+          "objective",
+          "status"
+        ],
+        "title": "AnalysisStepSummary",
+        "type": "object"
+      },
+      "AnalysisType": {
+        "enum": [
+          "metric",
+          "trend",
+          "ranking",
+          "detail",
+          "comparison",
+          "cross_tab",
+          "distribution",
+          "derived",
+          "follow_up",
+          "tenant_scoped"
+        ],
+        "title": "AnalysisType",
+        "type": "string"
+      },
+      "AnswerSynthesizingPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "answer_synthesizing",
+            "default": "answer_synthesizing",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "AnswerSynthesizingPayload",
+        "type": "object"
+      },
+      "ApprovalContext": {
+        "additionalProperties": false,
+        "properties": {
+          "approver_user_id": {
+            "minLength": 1,
+            "title": "Approver User Id",
+            "type": "string"
+          },
+          "decided_at": {
+            "format": "date-time",
+            "title": "Decided At",
+            "type": "string"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "roles": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "approver_user_id",
+          "decision",
+          "decided_at"
+        ],
+        "title": "ApprovalContext",
+        "type": "object"
+      },
+      "ApprovalDecision": {
+        "enum": [
+          "approve",
+          "reject"
+        ],
+        "title": "ApprovalDecision",
+        "type": "string"
+      },
+      "ArtifactReference": {
+        "additionalProperties": false,
+        "description": "A pointer to a complete artifact; the artifact body never lives in memory.",
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "kind": {
+            "minLength": 1,
+            "title": "Kind",
+            "type": "string"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id",
+          "run_id",
+          "kind",
+          "digest"
+        ],
+        "title": "ArtifactReference",
+        "type": "object"
+      },
+      "AuthUserResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Roles",
+            "type": "array"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "username",
+          "roles"
+        ],
+        "title": "AuthUserResponse",
+        "type": "object"
+      },
+      "Body_upload_file_data_source_api_data_sources_files_post": {
+        "properties": {
+          "files": {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "files",
+          "name"
+        ],
+        "title": "Body_upload_file_data_source_api_data_sources_files_post",
+        "type": "object"
+      },
+      "Body_upload_sqlite_data_source_api_data_sources_sqlite_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "file",
+          "name"
+        ],
+        "title": "Body_upload_sqlite_data_source_api_data_sources_sqlite_post",
+        "type": "object"
+      },
+      "CalculationOperation": {
+        "enum": [
+          "sum",
+          "average",
+          "count",
+          "count_distinct",
+          "add",
+          "subtract",
+          "multiply",
+          "growth",
+          "lag",
+          "date_difference",
+          "composite_key"
+        ],
+        "title": "CalculationOperation",
+        "type": "string"
+      },
+      "CatalogColumn": {
+        "additionalProperties": false,
+        "properties": {
+          "column_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Column Id",
+            "type": "string"
+          },
+          "data_type": {
+            "minLength": 1,
+            "title": "Data Type",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "nullable": {
+            "title": "Nullable",
+            "type": "boolean"
+          },
+          "ordinal": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Ordinal",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "data_type",
+          "nullable"
+        ],
+        "title": "CatalogColumn",
+        "type": "object"
+      },
+      "CatalogForeignKey": {
+        "additionalProperties": false,
+        "properties": {
+          "foreign_key_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Foreign Key Id",
+            "type": "string"
+          },
+          "from_column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "From Column Ids",
+            "type": "array"
+          },
+          "from_relation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "From Relation Id",
+            "type": "string"
+          },
+          "to_column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "To Column Ids",
+            "type": "array"
+          },
+          "to_relation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "To Relation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_relation_id",
+          "from_column_ids",
+          "to_relation_id",
+          "to_column_ids"
+        ],
+        "title": "CatalogForeignKey",
+        "type": "object"
+      },
+      "CatalogKey": {
+        "additionalProperties": false,
+        "properties": {
+          "column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Column Ids",
+            "type": "array"
+          },
+          "key_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Key Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "primary",
+              "unique"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "column_ids"
+        ],
+        "title": "CatalogKey",
+        "type": "object"
+      },
+      "CatalogRelation": {
+        "additionalProperties": false,
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogColumn"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "estimated_rows": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Rows"
+          },
+          "foreign_keys": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CatalogForeignKey"
+            },
+            "title": "Foreign Keys",
+            "type": "array"
+          },
+          "freshness_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Freshness At"
+          },
+          "keys": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CatalogKey"
+            },
+            "title": "Keys",
+            "type": "array"
+          },
+          "relation": {
+            "minLength": 1,
+            "title": "Relation",
+            "type": "string"
+          },
+          "relation_id": {
+            "default": "legacy",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Relation Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation",
+          "columns"
+        ],
+        "title": "CatalogRelation",
+        "type": "object"
+      },
+      "CatalogSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogRelation"
+            },
+            "title": "Relations",
+            "type": "array"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_fingerprint",
+          "relations"
+        ],
+        "title": "CatalogSnapshot",
+        "type": "object"
+      },
+      "ChartSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "chart_type": {
+            "const": "bar",
+            "default": "bar",
+            "title": "Chart Type",
+            "type": "string"
+          },
+          "title": {
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "x_field": {
+            "minLength": 1,
+            "title": "X Field",
+            "type": "string"
+          },
+          "y_field": {
+            "minLength": 1,
+            "title": "Y Field",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "x_field",
+          "y_field"
+        ],
+        "title": "ChartSpec",
+        "type": "object"
+      },
+      "ComponentVersionPin": {
+        "additionalProperties": false,
+        "properties": {
+          "component": {
+            "minLength": 1,
+            "title": "Component",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "component",
+          "version"
+        ],
+        "title": "ComponentVersionPin",
+        "type": "object"
+      },
+      "ContextResolvedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "context_resolved",
+            "default": "context_resolved",
+            "title": "Kind",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "pattern": "^(?:sha256:)?[0-9a-f]{64}$",
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "source_version",
+          "binding_id",
+          "binding_version",
+          "schema_fingerprint"
+        ],
+        "title": "ContextResolvedPayload",
+        "type": "object"
+      },
+      "ConversationCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "default": "dataset",
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "title": "ConversationCreateRequest",
+        "type": "object"
+      },
+      "ConversationDataSourceBindingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "binding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SemanticBindingRecord"
+              },
+              {
+                "$ref": "#/components/schemas/SemanticGraphBindingRecord"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding"
+          }
+        },
+        "title": "ConversationDataSourceBindingResponse",
+        "type": "object"
+      },
+      "ConversationListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ConversationListResponse",
+        "type": "object"
+      },
+      "ConversationMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "scope": {
+            "const": "conversation",
+            "default": "conversation",
+            "title": "Scope",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          },
+          "topics": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "ConversationMemoryContent",
+        "type": "object"
+      },
+      "ConversationMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "conversation",
+            "default": "conversation",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id"
+        ],
+        "title": "ConversationMemoryOwner",
+        "type": "object"
+      },
+      "ConversationMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/ConversationMessageMetadata"
+          },
+          "role": {
+            "enum": [
+              "user",
+              "assistant",
+              "system"
+            ],
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ConversationMessage",
+        "type": "object"
+      },
+      "ConversationMessageMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "analysis_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "analysis_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStepSummary"
+            },
+            "title": "Analysis Steps",
+            "type": "array"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactSummary"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "chart": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChartSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contextualized_question": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contextualized Question"
+          },
+          "dataset_query_plan": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Query Plan"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "logical_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalQueryPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_type": {
+            "default": "text",
+            "minLength": 1,
+            "title": "Message Type",
+            "type": "string"
+          },
+          "ok": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ok"
+          },
+          "pending_memory_updates": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProposalSummary"
+            },
+            "title": "Pending Memory Updates",
+            "type": "array"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "rows": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentRow"
+            },
+            "title": "Rows",
+            "type": "array"
+          },
+          "sql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sql"
+          },
+          "trace": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentTraceEntry"
+            },
+            "title": "Trace",
+            "type": "array"
+          },
+          "version_pins": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ConversationMessageMetadata",
+        "type": "object"
+      },
+      "ConversationMessageRequest": {
+        "additionalProperties": false,
+        "description": "Conversation turns default to the user-dataset runtime scope.",
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "binding_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Version"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "domain_id": {
+            "default": "dataset",
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "enterprise_id": {
+            "default": "user-dataset",
+            "minLength": 1,
+            "title": "Enterprise Id",
+            "type": "string"
+          },
+          "include_trace": {
+            "default": false,
+            "title": "Include Trace",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentMode",
+            "default": "execute"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "requested_output": {
+            "default": "answer",
+            "minLength": 1,
+            "title": "Requested Output",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "ConversationMessageRequest",
+        "type": "object"
+      },
+      "ConversationMessagesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationMessage"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ConversationMessagesResponse",
+        "type": "object"
+      },
+      "ConversationSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "default": false,
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "title": {
+            "default": "",
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConversationSummary",
+        "type": "object"
+      },
+      "ConversationUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "ConversationUpdateRequest",
+        "type": "object"
+      },
+      "CrossTabSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "columnAxis": {
+            "minLength": 1,
+            "title": "Columnaxis",
+            "type": "string"
+          },
+          "rowAxis": {
+            "minLength": 1,
+            "title": "Rowaxis",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rowAxis",
+          "columnAxis",
+          "values"
+        ],
+        "title": "CrossTabSpec",
+        "type": "object"
+      },
+      "DataSourceCatalogResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog": {
+            "$ref": "#/components/schemas/CatalogSnapshot"
+          },
+          "fingerprint": {
+            "title": "Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "version",
+          "fingerprint",
+          "catalog"
+        ],
+        "title": "DataSourceCatalogResponse",
+        "type": "object"
+      },
+      "DataSourceDeleteResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "deleted": {
+            "default": true,
+            "title": "Deleted",
+            "type": "boolean"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "DataSourceDeleteResponse",
+        "type": "object"
+      },
+      "DataSourceKind": {
+        "enum": [
+          "postgres",
+          "sqlite",
+          "xlsx",
+          "csv"
+        ],
+        "title": "DataSourceKind",
+        "type": "string"
+      },
+      "DataSourceListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataSourceResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DataSourceListResponse",
+        "type": "object"
+      },
+      "DataSourceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_snapshot_version": {
+            "title": "Active Snapshot Version",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DataSourceKind"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "options": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "title": "Options",
+            "type": "object"
+          },
+          "relationship_discovery": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipDiscoveryResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DataSourceStatus"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "name",
+          "kind",
+          "status",
+          "active_snapshot_version",
+          "options",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DataSourceResponse",
+        "type": "object"
+      },
+      "DataSourceStatus": {
+        "enum": [
+          "registered",
+          "ready",
+          "error",
+          "disabled"
+        ],
+        "title": "DataSourceStatus",
+        "type": "string"
+      },
+      "DatasetRuntimeVersionPins": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "graph_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Graph Digest",
+            "type": "string"
+          },
+          "graph_id": {
+            "minLength": 1,
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "graph_version": {
+            "minLength": 1,
+            "title": "Graph Version",
+            "type": "string"
+          },
+          "kind": {
+            "const": "dataset",
+            "default": "dataset",
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_versions": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentVersionPin"
+            },
+            "minItems": 1,
+            "title": "Model Versions",
+            "type": "array"
+          },
+          "relationship_graph_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Graph Digest"
+          },
+          "runtime_version": {
+            "minLength": 1,
+            "title": "Runtime Version",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "pattern": "^(?:sha256:)?[0-9a-f]{64}$",
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "tool_registry_version": {
+            "minLength": 1,
+            "title": "Tool Registry Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runtime_version",
+          "graph_id",
+          "graph_version",
+          "graph_digest",
+          "tool_registry_version",
+          "model_versions",
+          "source_id",
+          "source_version",
+          "binding_id",
+          "binding_version",
+          "schema_fingerprint"
+        ],
+        "title": "DatasetRuntimeVersionPins",
+        "type": "object"
+      },
+      "DerivedCalculation": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Inputs",
+            "type": "array"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/CalculationOperation"
+          },
+          "partitionBy": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Partitionby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "operation",
+          "inputs"
+        ],
+        "title": "DerivedCalculation",
+        "type": "object"
+      },
+      "EnterpriseMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "minLength": 1,
+            "title": "Category",
+            "type": "string"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "scope": {
+            "const": "enterprise",
+            "default": "enterprise",
+            "title": "Scope",
+            "type": "string"
+          },
+          "statement": {
+            "minLength": 1,
+            "title": "Statement",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "statement"
+        ],
+        "title": "EnterpriseMemoryContent",
+        "type": "object"
+      },
+      "EnterpriseMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "enterprise",
+            "default": "enterprise",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "domain_id"
+        ],
+        "title": "EnterpriseMemoryOwner",
+        "type": "object"
+      },
+      "EpisodicMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "event": {
+            "minLength": 1,
+            "title": "Event",
+            "type": "string"
+          },
+          "lesson": {
+            "minLength": 1,
+            "title": "Lesson",
+            "type": "string"
+          },
+          "outcome": {
+            "minLength": 1,
+            "title": "Outcome",
+            "type": "string"
+          },
+          "scope": {
+            "const": "episodic",
+            "default": "episodic",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "lesson",
+          "outcome"
+        ],
+        "title": "EpisodicMemoryContent",
+        "type": "object"
+      },
+      "EpisodicMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "episodic",
+            "default": "episodic",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "domain_id"
+        ],
+        "title": "EpisodicMemoryOwner",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "INVALID_REQUEST",
+          "CONFIG_INVALID",
+          "BUNDLE_NOT_FOUND",
+          "LOGICAL_PLAN_INVALID",
+          "BINDING_STALE",
+          "SQL_COMPILE_ERROR",
+          "SQL_POLICY_VIOLATION",
+          "COST_EXCEEDED",
+          "EMPTY_RESULT",
+          "JOIN_EXPLOSION",
+          "GRAPH_NO_PATH",
+          "GRAPH_AMBIGUOUS_PATH",
+          "GRAPH_UNSAFE_FANOUT",
+          "GRAPH_STALE_SNAPSHOT",
+          "GRAPH_REVISION_CONFLICT",
+          "GRAPH_VALIDATION_FAILED",
+          "RELATIONSHIP_RECOMMENDATION_FAILED",
+          "ACCESS_DENIED",
+          "RESULT_SEMANTIC_MISMATCH",
+          "TOOL_BUDGET_EXCEEDED",
+          "CONTEXT_BUDGET_EXCEEDED",
+          "AGENT_DECISION_INVALID",
+          "AGENT_ACTION_NOT_ALLOWED",
+          "AGENT_BUDGET_EXCEEDED",
+          "AGENT_MAX_STEPS_EXCEEDED",
+          "AGENT_EVIDENCE_INSUFFICIENT",
+          "AGENT_RESPONSE_UNGROUNDED",
+          "AGENT_WAITING_FOR_INPUT",
+          "AGENT_INTERRUPT_STALE",
+          "AGENT_RESUME_CONFLICT",
+          "AGENT_ARTIFACT_NOT_FOUND",
+          "AGENT_ARTIFACT_INTEGRITY_ERROR",
+          "AGENT_CHECKPOINT_UNAVAILABLE",
+          "DEADLINE_EXCEEDED",
+          "CANCELLED",
+          "INTERNAL_ERROR"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "EvidenceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "claim_key": {
+            "minLength": 1,
+            "title": "Claim Key",
+            "type": "string"
+          },
+          "evidence_id": {
+            "minLength": 1,
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "field_refs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Field Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "claim_key",
+          "artifact_id",
+          "field_refs"
+        ],
+        "title": "EvidenceSummary",
+        "type": "object"
+      },
+      "FilterOperator": {
+        "enum": [
+          "eq",
+          "neq",
+          "gt",
+          "gte",
+          "lt",
+          "lte",
+          "in",
+          "not_in",
+          "is_null",
+          "is_not_null",
+          "contains"
+        ],
+        "title": "FilterOperator",
+        "type": "string"
+      },
+      "GrainAlignment": {
+        "additionalProperties": false,
+        "properties": {
+          "joinGrain": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Joingrain",
+            "type": "array"
+          },
+          "relationshipPath": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Relationshippath",
+            "type": "array"
+          },
+          "sourceEntity": {
+            "minLength": 1,
+            "title": "Sourceentity",
+            "type": "string"
+          },
+          "strategy": {
+            "enum": [
+              "pre_aggregate",
+              "distinct"
+            ],
+            "title": "Strategy",
+            "type": "string"
+          },
+          "targetEntity": {
+            "minLength": 1,
+            "title": "Targetentity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceEntity",
+          "targetEntity",
+          "strategy",
+          "relationshipPath",
+          "joinGrain"
+        ],
+        "title": "GrainAlignment",
+        "type": "object"
+      },
+      "GraphRouteRequest": {
+        "properties": {
+          "required_logical_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Required Logical Refs",
+            "type": "array"
+          },
+          "required_node_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "title": "Required Node Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "required_node_ids"
+        ],
+        "title": "GraphRouteRequest",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "JsonValue": {},
+      "LogicalFilter": {
+        "additionalProperties": false,
+        "properties": {
+          "operator": {
+            "$ref": "#/components/schemas/FilterOperator"
+          },
+          "ref": {
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "ref",
+          "operator"
+        ],
+        "title": "LogicalFilter",
+        "type": "object"
+      },
+      "LogicalOrdering": {
+        "additionalProperties": false,
+        "properties": {
+          "direction": {
+            "$ref": "#/components/schemas/SortDirection"
+          },
+          "ref": {
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "direction"
+        ],
+        "title": "LogicalOrdering",
+        "type": "object"
+      },
+      "LogicalQueryPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "analysisType": {
+            "$ref": "#/components/schemas/AnalysisType"
+          },
+          "assumptions": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Assumptions",
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/components/schemas/PlanContext"
+          },
+          "crossTab": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossTabSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "derivedCalculations": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DerivedCalculation"
+            },
+            "title": "Derivedcalculations",
+            "type": "array"
+          },
+          "dimensions": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Dimensions",
+            "type": "array"
+          },
+          "entities": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "expectedGrain": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Expectedgrain",
+            "type": "array"
+          },
+          "fields": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Fields",
+            "type": "array"
+          },
+          "filters": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LogicalFilter"
+            },
+            "title": "Filters",
+            "type": "array"
+          },
+          "grainAlignment": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/GrainAlignment"
+            },
+            "title": "Grainalignment",
+            "type": "array"
+          },
+          "having": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LogicalFilter"
+            },
+            "title": "Having",
+            "type": "array"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "ordering": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LogicalOrdering"
+            },
+            "title": "Ordering",
+            "type": "array"
+          },
+          "ranking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RankingSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relationshipEvidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipRouteEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "relationships": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Relationships",
+            "type": "array"
+          },
+          "requestedEvidence": {
+            "default": [],
+            "items": {
+              "enum": [
+                "semantic_resolution",
+                "logical_plan",
+                "query_result",
+                "result_profile",
+                "calculation_trace"
+              ],
+              "type": "string"
+            },
+            "title": "Requestedevidence",
+            "type": "array"
+          },
+          "resultShape": {
+            "$ref": "#/components/schemas/ResultShape"
+          },
+          "seriesAxis": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SeriesAxis"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeGrain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeGrain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "timeRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "windowSpecs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/WindowSpec"
+            },
+            "title": "Windowspecs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "analysisType",
+          "resultShape"
+        ],
+        "title": "LogicalQueryPlan",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "password": {
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "tenant_id": {
+            "default": "demo",
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LogoutRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "default": "",
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "title": "LogoutRequest",
+        "type": "object"
+      },
+      "LogoutResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "title": "LogoutResponse",
+        "type": "object"
+      },
+      "MemoryCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "discriminator": {
+              "mapping": {
+                "conversation": "#/components/schemas/ConversationMemoryContent",
+                "enterprise": "#/components/schemas/EnterpriseMemoryContent",
+                "episodic": "#/components/schemas/EpisodicMemoryContent",
+                "user": "#/components/schemas/UserMemoryContent",
+                "working": "#/components/schemas/WorkingMemoryContent"
+              },
+              "propertyName": "scope"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkingMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/ConversationMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/UserMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/EpisodicMemoryContent"
+              },
+              {
+                "$ref": "#/components/schemas/EnterpriseMemoryContent"
+              }
+            ],
+            "title": "Content"
+          },
+          "deduplication_key": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deduplication Key"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryEvidence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "owner": {
+            "discriminator": {
+              "mapping": {
+                "conversation": "#/components/schemas/ConversationMemoryOwner",
+                "enterprise": "#/components/schemas/EnterpriseMemoryOwner",
+                "episodic": "#/components/schemas/EpisodicMemoryOwner",
+                "user": "#/components/schemas/UserMemoryOwner",
+                "working": "#/components/schemas/WorkingMemoryOwner"
+              },
+              "propertyName": "scope"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkingMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/ConversationMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/UserMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/EpisodicMemoryOwner"
+              },
+              {
+                "$ref": "#/components/schemas/EnterpriseMemoryOwner"
+              }
+            ],
+            "title": "Owner"
+          },
+          "sensitivity": {
+            "$ref": "#/components/schemas/Sensitivity",
+            "default": "internal"
+          },
+          "source": {
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "trust_level": {
+            "$ref": "#/components/schemas/TrustLevel",
+            "default": "medium"
+          },
+          "versions": {
+            "$ref": "#/components/schemas/MemoryVersionPins"
+          }
+        },
+        "required": [
+          "owner",
+          "content",
+          "source"
+        ],
+        "title": "MemoryCandidate",
+        "type": "object"
+      },
+      "MemoryEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "MemoryEvidence",
+        "type": "object"
+      },
+      "MemoryProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApprovalContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "candidate": {
+            "$ref": "#/components/schemas/MemoryCandidate"
+          },
+          "committed_memory_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Committed Memory Id"
+          },
+          "conflict_with": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Conflict With",
+            "type": "array"
+          },
+          "deduplication_key": {
+            "minLength": 1,
+            "title": "Deduplication Key",
+            "type": "string"
+          },
+          "owner_key": {
+            "minLength": 1,
+            "title": "Owner Key",
+            "type": "string"
+          },
+          "proposal_id": {
+            "minLength": 1,
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposed_at": {
+            "format": "date-time",
+            "title": "Proposed At",
+            "type": "string"
+          },
+          "proposed_by": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proposed By"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus",
+            "default": "pending_approval"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "owner_key",
+          "candidate",
+          "deduplication_key",
+          "proposed_at",
+          "updated_at"
+        ],
+        "title": "MemoryProposal",
+        "type": "object"
+      },
+      "MemoryProposalDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "decision"
+        ],
+        "title": "MemoryProposalDecisionRequest",
+        "type": "object"
+      },
+      "MemoryProposalDecisionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal_id": {
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProposalStatus"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "status"
+        ],
+        "title": "MemoryProposalDecisionResponse",
+        "type": "object"
+      },
+      "MemoryProposalListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryProposal"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryProposalListResponse",
+        "type": "object"
+      },
+      "MemoryVersionPins": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Version"
+          },
+          "domain_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Version"
+          },
+          "schema_fingerprint": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Fingerprint"
+          }
+        },
+        "title": "MemoryVersionPins",
+        "type": "object"
+      },
+      "Nl2SqlRequest": {
+        "additionalProperties": false,
+        "description": "HTTP defaults target only user-provided datasets.",
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "binding_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Version"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "domain_id": {
+            "default": "dataset",
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "enterprise_id": {
+            "default": "user-dataset",
+            "minLength": 1,
+            "title": "Enterprise Id",
+            "type": "string"
+          },
+          "include_trace": {
+            "default": false,
+            "title": "Include Trace",
+            "type": "boolean"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentMode",
+            "default": "execute"
+          },
+          "question": {
+            "minLength": 1,
+            "title": "Question",
+            "type": "string"
+          },
+          "requested_output": {
+            "default": "answer",
+            "minLength": 1,
+            "title": "Requested Output",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Version"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "title": "Nl2SqlRequest",
+        "type": "object"
+      },
+      "ObservationRecordedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "artifact_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "evidence_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "observation_recorded",
+            "default": "observation_recorded",
+            "title": "Kind",
+            "type": "string"
+          },
+          "observation_id": {
+            "minLength": 1,
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation_id",
+          "action_id",
+          "summary"
+        ],
+        "title": "ObservationRecordedPayload",
+        "type": "object"
+      },
+      "PlanContext": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "default": "standalone",
+            "enum": [
+              "standalone",
+              "follow_up"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "preserve": {
+            "default": [],
+            "items": {
+              "enum": [
+                "metrics",
+                "filters",
+                "time_range",
+                "tenant_scope",
+                "grain"
+              ],
+              "type": "string"
+            },
+            "title": "Preserve",
+            "type": "array"
+          },
+          "priorQuestion": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priorquestion"
+          },
+          "tenantScope": {
+            "default": "all",
+            "enum": [
+              "all",
+              "seller"
+            ],
+            "title": "Tenantscope",
+            "type": "string"
+          }
+        },
+        "title": "PlanContext",
+        "type": "object"
+      },
+      "PlanUpdatedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "plan_updated",
+            "default": "plan_updated",
+            "title": "Kind",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/AnalysisPlan"
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "title": "PlanUpdatedPayload",
+        "type": "object"
+      },
+      "PostgresDataSourceRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "credential_ref": {
+            "minLength": 1,
+            "title": "Credential Ref",
+            "type": "string"
+          },
+          "database": {
+            "minLength": 1,
+            "title": "Database",
+            "type": "string"
+          },
+          "host": {
+            "minLength": 1,
+            "title": "Host",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "default": 5432,
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "ssl_mode": {
+            "default": "require",
+            "minLength": 1,
+            "title": "Ssl Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "credential_ref",
+          "host",
+          "database"
+        ],
+        "title": "PostgresDataSourceRequest",
+        "type": "object"
+      },
+      "ProposalStatus": {
+        "enum": [
+          "proposed",
+          "pending_approval",
+          "approved",
+          "rejected",
+          "conflict",
+          "policy_rejected",
+          "committed",
+          "invalidated"
+        ],
+        "title": "ProposalStatus",
+        "type": "string"
+      },
+      "ProposalSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "enum": [
+              "working",
+              "conversation",
+              "user",
+              "episodic",
+              "enterprise"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "source": {
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "const": "pending_approval",
+            "default": "pending_approval",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "source"
+        ],
+        "title": "ProposalSummary",
+        "type": "object"
+      },
+      "RankingSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "measure": {
+            "minLength": 1,
+            "title": "Measure",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "top_n",
+              "full"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "measure"
+        ],
+        "title": "RankingSpec",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refresh_token": {
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "RelationshipComponent": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor_node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Anchor Node Id",
+            "type": "string"
+          },
+          "anchor_scoped": {
+            "default": false,
+            "title": "Anchor Scoped",
+            "type": "boolean"
+          },
+          "component_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Component Id",
+            "type": "string"
+          },
+          "grain_column_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "title": "Grain Column Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "component_id",
+          "anchor_node_id",
+          "grain_column_ids"
+        ],
+        "title": "RelationshipComponent",
+        "type": "object"
+      },
+      "RelationshipCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "from_column_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "From Column Id",
+            "type": "string"
+          },
+          "operator": {
+            "const": "eq",
+            "default": "eq",
+            "title": "Operator",
+            "type": "string"
+          },
+          "to_column_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "To Column Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_column_id",
+          "to_column_id"
+        ],
+        "title": "RelationshipCondition",
+        "type": "object"
+      },
+      "RelationshipDiscoveryResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "graph_id": {
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_id",
+          "run_id",
+          "status"
+        ],
+        "title": "RelationshipDiscoveryResponse",
+        "type": "object"
+      },
+      "RelationshipEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "cardinality": {
+            "default": "unknown",
+            "enum": [
+              "one_to_one",
+              "one_to_many",
+              "many_to_one",
+              "many_to_many",
+              "unknown"
+            ],
+            "title": "Cardinality",
+            "type": "string"
+          },
+          "conditions": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipCondition"
+            },
+            "minItems": 1,
+            "title": "Conditions",
+            "type": "array"
+          },
+          "edge_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Edge Id",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "from_node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "From Node Id",
+            "type": "string"
+          },
+          "join_semantics": {
+            "default": "inner",
+            "enum": [
+              "inner",
+              "left"
+            ],
+            "title": "Join Semantics",
+            "type": "string"
+          },
+          "preserve_node_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preserve Node Id"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/RelationshipProvenance"
+          },
+          "quality": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelationshipEdgeQuality"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "route_priority": {
+            "default": 100,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Route Priority",
+            "type": "integer"
+          },
+          "to_node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "To Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id",
+          "from_node_id",
+          "to_node_id",
+          "conditions",
+          "provenance"
+        ],
+        "title": "RelationshipEdge",
+        "type": "object"
+      },
+      "RelationshipEdgeQuality": {
+        "additionalProperties": false,
+        "properties": {
+          "average_fanout": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Fanout"
+          },
+          "evidence_level": {
+            "enum": [
+              "high",
+              "recommended",
+              "low",
+              "blocked"
+            ],
+            "title": "Evidence Level",
+            "type": "string"
+          },
+          "expansion_ratio": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expansion Ratio"
+          },
+          "left_orphan_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left Orphan Rate"
+          },
+          "left_unique": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Left Unique"
+          },
+          "match_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Rate"
+          },
+          "maximum_fanout": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maximum Fanout"
+          },
+          "right_orphan_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right Orphan Rate"
+          },
+          "right_unique": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Right Unique"
+          }
+        },
+        "required": [
+          "evidence_level"
+        ],
+        "title": "RelationshipEdgeQuality",
+        "type": "object"
+      },
+      "RelationshipGraphActivateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticGraphFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain_id",
+          "mappings"
+        ],
+        "title": "RelationshipGraphActivateRequest",
+        "type": "object"
+      },
+      "RelationshipGraphDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipComponent"
+            },
+            "title": "Components",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipEdge"
+            },
+            "title": "Edges",
+            "type": "array"
+          },
+          "graph_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/RelationshipGraphNode"
+            },
+            "title": "Nodes",
+            "type": "array"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "route_rules": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/RelationshipRouteRule"
+            },
+            "title": "Route Rules",
+            "type": "array"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "discovering",
+              "draft",
+              "validating",
+              "ready",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "graph_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "revision",
+          "status",
+          "nodes",
+          "edges",
+          "components"
+        ],
+        "title": "RelationshipGraphDraft",
+        "type": "object"
+      },
+      "RelationshipGraphNode": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "logical_entity": {
+            "minLength": 1,
+            "title": "Logical Entity",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Node Id",
+            "type": "string"
+          },
+          "relation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "role_name": {
+            "minLength": 1,
+            "title": "Role Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "relation_id",
+          "role_name",
+          "logical_entity"
+        ],
+        "title": "RelationshipGraphNode",
+        "type": "object"
+      },
+      "RelationshipProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "explanation": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explanation"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "rejected": {
+            "default": false,
+            "title": "Rejected",
+            "type": "boolean"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "source": {
+            "enum": [
+              "database_constraint",
+              "llm",
+              "user",
+              "migration"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "user_edited": {
+            "default": false,
+            "title": "User Edited",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "RelationshipProvenance",
+        "type": "object"
+      },
+      "RelationshipRecommendationRun": {
+        "additionalProperties": false,
+        "description": "Auditable asynchronous discovery attempt; raw prompts and rows stay out.",
+        "properties": {
+          "error_code": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "graph_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "profiler_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profiler Version"
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "run_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "retryable_failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "graph_id",
+          "status",
+          "schema_fingerprint"
+        ],
+        "title": "RelationshipRecommendationRun",
+        "type": "object"
+      },
+      "RelationshipRouteEvidence": {
+        "additionalProperties": false,
+        "properties": {
+          "cardinalityByNode": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "enum": [
+                    "one",
+                    "many",
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              ],
+              "type": "array"
+            },
+            "title": "Cardinalitybynode",
+            "type": "array"
+          },
+          "edgeIds": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Edgeids",
+            "type": "array"
+          },
+          "fanoutDecision": {
+            "minLength": 1,
+            "title": "Fanoutdecision",
+            "type": "string"
+          },
+          "logicalNodeIds": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Logicalnodeids",
+            "type": "array"
+          },
+          "preaggregationRequired": {
+            "default": false,
+            "title": "Preaggregationrequired",
+            "type": "boolean"
+          },
+          "routeDigest": {
+            "minLength": 1,
+            "title": "Routedigest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "routeDigest",
+          "logicalNodeIds",
+          "edgeIds",
+          "cardinalityByNode",
+          "fanoutDecision"
+        ],
+        "title": "RelationshipRouteEvidence",
+        "type": "object"
+      },
+      "RelationshipRouteRule": {
+        "additionalProperties": false,
+        "properties": {
+          "ordered_edge_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Ordered Edge Ids",
+            "type": "array"
+          },
+          "rule_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "terminal_node_ids": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Terminal Node Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "rule_id",
+          "terminal_node_ids",
+          "ordered_edge_ids"
+        ],
+        "title": "RelationshipRouteRule",
+        "type": "object"
+      },
+      "ResultShape": {
+        "enum": [
+          "scalar",
+          "table",
+          "time_series",
+          "ranking",
+          "detail",
+          "cross_tab",
+          "distribution"
+        ],
+        "title": "ResultShape",
+        "type": "string"
+      },
+      "RunCancelResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cancelled": {
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "cancelled"
+        ],
+        "title": "RunCancelResponse",
+        "type": "object"
+      },
+      "RunCompletedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "run_completed",
+            "default": "run_completed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "RunCompletedPayload",
+        "type": "object"
+      },
+      "RunEventListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentEvent"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "RunEventListResponse",
+        "type": "object"
+      },
+      "RunFailedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "error_code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "kind": {
+            "const": "run_failed",
+            "default": "run_failed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error_code"
+        ],
+        "title": "RunFailedPayload",
+        "type": "object"
+      },
+      "RunProgressPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "progress",
+            "default": "progress",
+            "title": "Kind",
+            "type": "string"
+          },
+          "pins": {
+            "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
+          },
+          "stage": {
+            "const": "versions_pinned",
+            "default": "versions_pinned",
+            "title": "Stage",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pins"
+        ],
+        "title": "RunProgressPayload",
+        "type": "object"
+      },
+      "RunResumeRequest": {
+        "additionalProperties": false,
+        "description": "Strict public body for both normal and streaming resume endpoints.",
+        "properties": {
+          "decision": {
+            "const": "respond",
+            "default": "respond",
+            "title": "Decision",
+            "type": "string"
+          },
+          "edited_action": {
+            "title": "Edited Action",
+            "type": "null"
+          },
+          "interrupt_id": {
+            "minLength": 1,
+            "title": "Interrupt Id",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interrupt_id",
+          "message"
+        ],
+        "title": "RunResumeRequest",
+        "type": "object"
+      },
+      "RunResumedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "interrupt_id": {
+            "minLength": 1,
+            "title": "Interrupt Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "run_resumed",
+            "default": "run_resumed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interrupt_id"
+        ],
+        "title": "RunResumedPayload",
+        "type": "object"
+      },
+      "RunStartedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "enterprise_id": {
+            "minLength": 1,
+            "title": "Enterprise Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "run_started",
+            "default": "run_started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentMode"
+          }
+        },
+        "required": [
+          "mode",
+          "enterprise_id",
+          "domain_id"
+        ],
+        "title": "RunStartedPayload",
+        "type": "object"
+      },
+      "RunWaitingPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "input_request": {
+            "$ref": "#/components/schemas/AgentInputRequest"
+          },
+          "kind": {
+            "const": "run_waiting",
+            "default": "run_waiting",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "input_request"
+        ],
+        "title": "RunWaitingPayload",
+        "type": "object"
+      },
+      "RunWaitingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/AgentEvent"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "waiting",
+            "default": "waiting",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "event"
+        ],
+        "title": "RunWaitingResponse",
+        "type": "object"
+      },
+      "SemanticBindingCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binding Id"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          },
+          "primary_relation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Relation"
+          },
+          "relationships": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticRelationship"
+            },
+            "title": "Relationships",
+            "type": "array"
+          }
+        },
+        "required": [
+          "domain_id",
+          "mappings"
+        ],
+        "title": "SemanticBindingCreateRequest",
+        "type": "object"
+      },
+      "SemanticBindingListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SemanticBindingRecord"
+                },
+                {
+                  "$ref": "#/components/schemas/SemanticGraphBindingRecord"
+                }
+              ]
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SemanticBindingListResponse",
+        "type": "object"
+      },
+      "SemanticBindingRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          },
+          "primary_relation": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Relation"
+          },
+          "relationships": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticRelationship"
+            },
+            "title": "Relationships",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SemanticBindingStatus",
+            "default": "draft"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "binding_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "domain_id",
+          "version",
+          "mappings"
+        ],
+        "title": "SemanticBindingRecord",
+        "type": "object"
+      },
+      "SemanticBindingStatus": {
+        "enum": [
+          "draft",
+          "active",
+          "retired"
+        ],
+        "title": "SemanticBindingStatus",
+        "type": "string"
+      },
+      "SemanticFieldMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "logical_ref": {
+            "minLength": 1,
+            "title": "Logical Ref",
+            "type": "string"
+          },
+          "physical_column": {
+            "minLength": 1,
+            "title": "Physical Column",
+            "type": "string"
+          },
+          "physical_relation": {
+            "minLength": 1,
+            "title": "Physical Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_ref",
+          "physical_relation",
+          "physical_column"
+        ],
+        "title": "SemanticFieldMapping",
+        "type": "object"
+      },
+      "SemanticGraphBindingRecord": {
+        "additionalProperties": false,
+        "description": "Immutable v2 binding; editable relationship graphs never become active.",
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "graph": {
+            "$ref": "#/components/schemas/ActivatedRelationshipGraph"
+          },
+          "mappings": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticGraphFieldMapping"
+            },
+            "minItems": 1,
+            "title": "Mappings",
+            "type": "array"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 2,
+            "default": 2,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SemanticBindingStatus",
+            "default": "draft"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "validation_report_digest": {
+            "minLength": 1,
+            "title": "Validation Report Digest",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "binding_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "domain_id",
+          "version",
+          "graph",
+          "mappings",
+          "validation_report_digest"
+        ],
+        "title": "SemanticGraphBindingRecord",
+        "type": "object"
+      },
+      "SemanticGraphFieldMapping": {
+        "additionalProperties": false,
+        "properties": {
+          "column_id": {
+            "minLength": 1,
+            "title": "Column Id",
+            "type": "string"
+          },
+          "logical_ref": {
+            "minLength": 1,
+            "title": "Logical Ref",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Node Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_ref",
+          "node_id",
+          "column_id"
+        ],
+        "title": "SemanticGraphFieldMapping",
+        "type": "object"
+      },
+      "SemanticJoinType": {
+        "enum": [
+          "inner",
+          "left"
+        ],
+        "title": "SemanticJoinType",
+        "type": "string"
+      },
+      "SemanticRelationship": {
+        "additionalProperties": false,
+        "properties": {
+          "join_type": {
+            "$ref": "#/components/schemas/SemanticJoinType",
+            "default": "inner"
+          },
+          "left_column": {
+            "minLength": 1,
+            "title": "Left Column",
+            "type": "string"
+          },
+          "left_relation": {
+            "minLength": 1,
+            "title": "Left Relation",
+            "type": "string"
+          },
+          "relationship_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Relationship Id",
+            "type": "string"
+          },
+          "right_column": {
+            "minLength": 1,
+            "title": "Right Column",
+            "type": "string"
+          },
+          "right_relation": {
+            "minLength": 1,
+            "title": "Right Relation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relationship_id",
+          "left_relation",
+          "left_column",
+          "right_relation",
+          "right_column"
+        ],
+        "title": "SemanticRelationship",
+        "type": "object"
+      },
+      "Sensitivity": {
+        "enum": [
+          "public",
+          "internal",
+          "restricted"
+        ],
+        "title": "Sensitivity",
+        "type": "string"
+      },
+      "SeriesAxis": {
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "minLength": 1,
+            "title": "Field",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "time",
+              "numeric"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "timeGrain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TimeGrain"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "field"
+        ],
+        "title": "SeriesAxis",
+        "type": "object"
+      },
+      "SortDirection": {
+        "enum": [
+          "asc",
+          "desc"
+        ],
+        "title": "SortDirection",
+        "type": "string"
+      },
+      "StepStartedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "step_started",
+            "default": "step_started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "step_id": {
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "objective"
+        ],
+        "title": "StepStartedPayload",
+        "type": "object"
+      },
+      "TimeGrain": {
+        "enum": [
+          "day",
+          "week",
+          "month",
+          "quarter",
+          "year"
+        ],
+        "title": "TimeGrain",
+        "type": "string"
+      },
+      "TimeRange": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          },
+          "field": {
+            "minLength": 1,
+            "title": "Field",
+            "type": "string"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "TimeRange",
+        "type": "object"
+      },
+      "TokenResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUserResponse"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "expires_in",
+          "user"
+        ],
+        "title": "TokenResponse",
+        "type": "object"
+      },
+      "ToolCompletedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactSummary"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "call_id": {
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "tool_completed",
+            "default": "tool_completed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_name": {
+            "minLength": 1,
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "action_id",
+          "tool_name",
+          "status"
+        ],
+        "title": "ToolCompletedPayload",
+        "type": "object"
+      },
+      "ToolStartedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "call_id": {
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "kind": {
+            "const": "tool_started",
+            "default": "tool_started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "safe_arguments_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Safe Arguments Digest",
+            "type": "string"
+          },
+          "tool_name": {
+            "minLength": 1,
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "action_id",
+          "tool_name",
+          "display_name",
+          "safe_arguments_digest"
+        ],
+        "title": "ToolStartedPayload",
+        "type": "object"
+      },
+      "TrustLevel": {
+        "enum": [
+          "low",
+          "medium",
+          "high",
+          "verified"
+        ],
+        "title": "TrustLevel",
+        "type": "string"
+      },
+      "UserMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "preference_key": {
+            "minLength": 1,
+            "title": "Preference Key",
+            "type": "string"
+          },
+          "preference_value": {
+            "minLength": 1,
+            "title": "Preference Value",
+            "type": "string"
+          },
+          "scope": {
+            "const": "user",
+            "default": "user",
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preference_key",
+          "preference_value"
+        ],
+        "title": "UserMemoryContent",
+        "type": "object"
+      },
+      "UserMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "const": "user",
+            "default": "user",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id"
+        ],
+        "title": "UserMemoryOwner",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WindowSpec": {
+        "additionalProperties": false,
+        "properties": {
+          "axisRef": {
+            "minLength": 1,
+            "title": "Axisref",
+            "type": "string"
+          },
+          "calculation": {
+            "minLength": 1,
+            "title": "Calculation",
+            "type": "string"
+          },
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "ordering": {
+            "items": {
+              "$ref": "#/components/schemas/LogicalOrdering"
+            },
+            "minItems": 1,
+            "title": "Ordering",
+            "type": "array"
+          },
+          "outputGrain": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Outputgrain",
+            "type": "array"
+          },
+          "partitionBy": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Partitionby",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "calculation",
+          "axisRef",
+          "ordering",
+          "outputGrain"
+        ],
+        "title": "WindowSpec",
+        "type": "object"
+      },
+      "WorkingMemoryContent": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_refs": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ArtifactReference"
+            },
+            "title": "Artifact Refs",
+            "type": "array"
+          },
+          "scope": {
+            "const": "working",
+            "default": "working",
+            "title": "Scope",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "summary"
+        ],
+        "title": "WorkingMemoryContent",
+        "type": "object"
+      },
+      "WorkingMemoryOwner": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "minLength": 1,
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "scope": {
+            "const": "working",
+            "default": "working",
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "minLength": 1,
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "domain_id",
+          "conversation_id",
+          "run_id"
+        ],
+        "title": "WorkingMemoryOwner",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Access token returned by the login or refresh endpoint.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Governed Data Agent Runtime API with JWT authentication, strict plan/preview/execute requests, and conversation management.",
+    "title": "Data Agent API",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login"
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout_api_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout"
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthUserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Me"
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "operationId": "refresh_api_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh"
+      }
+    },
+    "/api/conversations": {
+      "get": {
+        "operationId": "list_conversations_api_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "dataset",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Conversations"
+      },
+      "post": {
+        "operationId": "create_conversation_api_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Conversation"
+      }
+    },
+    "/api/conversations/{conversation_id}": {
+      "get": {
+        "operationId": "get_conversation_api_conversations__conversation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "dataset",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Conversation"
+      },
+      "patch": {
+        "operationId": "update_conversation_api_conversations__conversation_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "dataset",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Update Conversation"
+      }
+    },
+    "/api/conversations/{conversation_id}/data-source-binding": {
+      "get": {
+        "operationId": "get_conversation_data_source_binding_api_conversations__conversation_id__data_source_binding_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDataSourceBindingResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Conversation Data Source Binding"
+      }
+    },
+    "/api/conversations/{conversation_id}/messages": {
+      "get": {
+        "operationId": "list_conversation_messages_api_conversations__conversation_id__messages_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": false,
+            "schema": {
+              "default": "dataset",
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationMessagesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Conversation Messages"
+      },
+      "post": {
+        "operationId": "send_conversation_message_api_conversations__conversation_id__messages_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunWaitingResponse"
+                    }
+                  ],
+                  "title": "Response Send Conversation Message Api Conversations  Conversation Id  Messages Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Send Conversation Message"
+      }
+    },
+    "/api/conversations/{conversation_id}/messages/stream": {
+      "post": {
+        "operationId": "stream_conversation_message_api_conversations__conversation_id__messages_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConversationMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Typed runtime event stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Stream Conversation Message"
+      }
+    },
+    "/api/data-sources": {
+      "get": {
+        "operationId": "list_data_sources_api_data_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Data Sources"
+      }
+    },
+    "/api/data-sources/files": {
+      "post": {
+        "operationId": "upload_file_data_source_api_data_sources_files_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file_data_source_api_data_sources_files_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Upload File Data Source"
+      }
+    },
+    "/api/data-sources/postgres": {
+      "post": {
+        "operationId": "register_postgres_data_source_api_data_sources_postgres_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostgresDataSourceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Register Postgres Data Source"
+      }
+    },
+    "/api/data-sources/sqlite": {
+      "post": {
+        "operationId": "upload_sqlite_data_source_api_data_sources_sqlite_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_sqlite_data_source_api_data_sources_sqlite_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Upload Sqlite Data Source"
+      }
+    },
+    "/api/data-sources/{source_id}": {
+      "delete": {
+        "operationId": "delete_data_source_api_data_sources__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceDeleteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Delete Data Source"
+      }
+    },
+    "/api/data-sources/{source_id}/bindings": {
+      "get": {
+        "operationId": "list_data_source_bindings_api_data_sources__source_id__bindings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticBindingListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Data Source Bindings"
+      },
+      "post": {
+        "operationId": "create_data_source_binding_api_data_sources__source_id__bindings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SemanticBindingCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticBindingRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Data Source Binding"
+      }
+    },
+    "/api/data-sources/{source_id}/bindings/{binding_id}/activate": {
+      "post": {
+        "operationId": "activate_data_source_binding_api_data_sources__source_id__bindings__binding_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "binding_id",
+            "required": true,
+            "schema": {
+              "title": "Binding Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticBindingRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Activate Data Source Binding"
+      }
+    },
+    "/api/data-sources/{source_id}/catalog": {
+      "get": {
+        "operationId": "get_data_source_catalog_api_data_sources__source_id__catalog_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSourceCatalogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Data Source Catalog"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/draft": {
+      "get": {
+        "operationId": "get_relationship_graph_draft_api_data_sources__source_id__relationship_graphs_draft_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipGraphDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Relationship Graph Draft"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}": {
+      "patch": {
+        "operationId": "patch_relationship_graph_api_data_sources__source_id__relationship_graphs__graph_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Expected Revision",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelationshipGraphDraft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipGraphDraft"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Patch Relationship Graph"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/activate": {
+      "post": {
+        "operationId": "activate_relationship_graph_api_data_sources__source_id__relationship_graphs__graph_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RelationshipGraphActivateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticGraphBindingRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Activate Relationship Graph"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/preview-route": {
+      "post": {
+        "operationId": "preview_relationship_route_api_data_sources__source_id__relationship_graphs__graph_id__preview_route_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GraphRouteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Preview Relationship Route"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-graphs/{graph_id}/validate": {
+      "post": {
+        "operationId": "validate_relationship_graph_api_data_sources__source_id__relationship_graphs__graph_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "graph_id",
+            "required": true,
+            "schema": {
+              "title": "Graph Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Validate Relationship Graph"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-recommendations": {
+      "post": {
+        "operationId": "rerun_relationship_recommendations_api_data_sources__source_id__relationship_recommendations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipRecommendationRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Rerun Relationship Recommendations"
+      }
+    },
+    "/api/data-sources/{source_id}/relationship-recommendations/{run_id}": {
+      "get": {
+        "operationId": "get_relationship_recommendation_run_api_data_sources__source_id__relationship_recommendations__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RelationshipRecommendationRun"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Relationship Recommendation Run"
+      }
+    },
+    "/api/memory/proposals": {
+      "get": {
+        "operationId": "list_memory_proposals_api_memory_proposals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/ProposalStatus",
+              "default": "pending_approval"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryProposalListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Memory Proposals"
+      }
+    },
+    "/api/memory/proposals/{proposal_id}/decision": {
+      "post": {
+        "operationId": "decide_memory_proposal_api_memory_proposals__proposal_id__decision_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryProposalDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryProposalDecisionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Decide Memory Proposal"
+      }
+    },
+    "/api/nl2sql": {
+      "post": {
+        "operationId": "nl2sql_api_nl2sql_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Nl2SqlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunWaitingResponse"
+                    }
+                  ],
+                  "title": "Response Nl2Sql Api Nl2Sql Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Nl2Sql"
+      }
+    },
+    "/api/nl2sql/stream": {
+      "post": {
+        "operationId": "stream_nl2sql_api_nl2sql_stream_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Nl2SqlRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Typed runtime event stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Stream Nl2Sql"
+      }
+    },
+    "/api/runs/{run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_runs__run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunCancelResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Cancel Run"
+      }
+    },
+    "/api/runs/{run_id}/events": {
+      "get": {
+        "operationId": "replay_run_events_api_runs__run_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after_sequence",
+            "required": false,
+            "schema": {
+              "default": -1,
+              "minimum": -1,
+              "title": "After Sequence",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunEventListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Replay Run Events"
+      }
+    },
+    "/api/runs/{run_id}/resume": {
+      "post": {
+        "operationId": "resume_run_api_runs__run_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunWaitingResponse"
+                    }
+                  ],
+                  "title": "Response Resume Run Api Runs  Run Id  Resume Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Resume Run"
+      }
+    },
+    "/api/runs/{run_id}/resume/stream": {
+      "post": {
+        "operationId": "stream_resume_run_api_runs__run_id__resume_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Typed resumed runtime event stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Stream Resume Run"
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "title": "Response Health Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health"
+      }
+    }
+  },
+  "servers": [
+    {
+      "description": "Local development",
+      "url": "http://localhost:8000"
+    }
+  ]
+}

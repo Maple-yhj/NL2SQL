@@ -1,0 +1,94 @@
+{
+  "analysis_plan": null,
+  "analysis_steps": [],
+  "answer": null,
+  "artifacts": [],
+  "chart": null,
+  "contextualized_question": "show governed gmv",
+  "conversation_id": "conv-1",
+  "dataset_query_plan": null,
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "message": "The governed run failed safely.",
+    "retryable": false
+  },
+  "evidence": [],
+  "limitations": [],
+  "logical_plan": {
+    "analysisType": "metric",
+    "assumptions": [],
+    "context": {
+      "mode": "standalone",
+      "preserve": [],
+      "priorQuestion": null,
+      "tenantScope": "all"
+    },
+    "crossTab": null,
+    "derivedCalculations": [],
+    "dimensions": [],
+    "entities": [],
+    "expectedGrain": [],
+    "fields": [],
+    "filters": [],
+    "grainAlignment": [],
+    "having": [],
+    "limit": null,
+    "metrics": [
+      "commerce.gmv"
+    ],
+    "ordering": [],
+    "ranking": null,
+    "relationshipEvidence": null,
+    "relationships": [],
+    "requestedEvidence": [],
+    "resultShape": "scalar",
+    "seriesAxis": null,
+    "timeGrain": null,
+    "timeRange": null,
+    "windowSpecs": []
+  },
+  "message_type": "chart",
+  "ok": false,
+  "pending_memory_updates": [
+    {
+      "scope": "user",
+      "source": "runtime.finalize",
+      "status": "pending_approval"
+    }
+  ],
+  "question": "show gmv",
+  "rows": [
+    {
+      "diagnostic": "safe"
+    }
+  ],
+  "sql": "SELECT 1",
+  "tenant_id": "demo",
+  "trace": [
+    {
+      "error_code": "INTERNAL_ERROR",
+      "node": "runtime",
+      "status": "failed"
+    }
+  ],
+  "version_pins": {
+    "binding_id": "sales-binding",
+    "binding_version": 1,
+    "graph_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "graph_id": "dataset.analysis-agent",
+    "graph_version": "1.0.0",
+    "kind": "dataset",
+    "model_versions": [
+      {
+        "component": "planner",
+        "version": "model-v1"
+      }
+    ],
+    "relationship_graph_digest": null,
+    "runtime_version": "1.0.0",
+    "schema_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "source_id": "sales",
+    "source_version": 1,
+    "tool_registry_version": "dataset-v1"
+  }
+}
