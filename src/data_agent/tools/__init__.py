@@ -7,6 +7,7 @@ from .models import (
     CredentialBroker,
     CredentialLease,
     NullCredentialBroker,
+    AuthorityEnvelope,
     ProviderContext,
     RetryPolicy,
     ToolBudget,
@@ -36,6 +37,7 @@ from .schemas import (
 
 __all__ = [
     "AccessGrant",
+    "AuthorityEnvelope",
     "ArtifactRef",
     "CatalogColumn",
     "CatalogForeignKey",

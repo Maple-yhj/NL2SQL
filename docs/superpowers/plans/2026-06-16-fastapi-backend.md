@@ -1,5 +1,7 @@
 # FastAPI Backend Implementation Plan
 
+> **Historical / partially retained:** Retained for FastAPI contract provenance. Current runtime composition and run lifecycle are defined by the 2026-08-08 Data Analysis Agent documents.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a FastAPI backend that exposes the existing LangGraph NL2SQL workflow through HTTP.

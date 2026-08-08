@@ -14,8 +14,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SRC_ROOT = PROJECT_ROOT / "src"
 sys.path.insert(0, str(SRC_ROOT))
 
-from data_agent.runtime.composition import ResolvedRuntimeBundle, stable_digest
-from data_agent.runtime.models import PrincipalContext
+from data_agent.analysis_agent.models import DatasetAuthority
+from data_agent.runtime.models import AgentMode, PrincipalContext
 from data_agent.tools import (
     CredentialLease,
     ProviderContext,
@@ -112,45 +112,6 @@ class _RejectingBroker:
         raise AssertionError("credential broker must not be called")
 
 
-def _bundle() -> ResolvedRuntimeBundle:
-    payload = {
-        "runtime_version": "1.0.0",
-        "domain_pack_digest": "a" * 64,
-        "enterprise_binding_digest": "b" * 64,
-        "deployment_profile_digest": "c" * 64,
-        "skill_versions": {"commerce.analytics": "1.0.0"},
-        "tool_registry_version": "1.0.0",
-        "semantic_model": {},
-        "physical_bindings": {},
-        "connector_capabilities": {
-            "sales": {"connector": "postgres", "read_only": True}
-        },
-        "compiled_access_policy": {
-            "accessMode": "tenant_scoped",
-            "maxRows": 100,
-            "queryTimeoutSeconds": 5,
-            "relationAllowlist": ["public.orders"],
-            "tenantScope": {
-                "mode": "seller_id",
-                "canonicalField": "commerce.Seller.seller_id",
-                "principalClaim": "tenant_id",
-                "adminBypass": {
-                    "principalClaim": "roles",
-                    "allowedRoles": ["admin"],
-                },
-                "ownershipPaths": {"commerce.Order": []},
-            },
-        },
-        "runtime_limits": {
-            "maxToolCalls": 3,
-            "maxDurationSeconds": 30,
-            "maxResultRows": 100,
-        },
-        "schema_fingerprint": "d" * 64,
-    }
-    return ResolvedRuntimeBundle(**payload, digest=stable_digest(payload))
-
-
 def _spec(**updates: object) -> ToolSpec:
     values = {
         "name": "query.compile",
@@ -181,8 +142,18 @@ def _context(*, allowed_tools=("query.compile",), max_calls: int = 3):
         skill_id="commerce.analytics",
         skill_version="1.0.0",
         allowed_tools=allowed_tools,
-        bundle=_bundle(),
         budget=ToolBudget(max_calls=max_calls),
+        authority=DatasetAuthority(
+            tenant_id="seller-7",
+            user_id="user-9",
+            source_id="sales",
+            source_version=1,
+            binding_id="sales-binding",
+            binding_version=1,
+            schema_fingerprint="sha256:" + "d" * 64,
+            allowed_relation_ids=("public.orders",),
+            mode=AgentMode.EXECUTE,
+        ),
     )
 
 

@@ -1,5 +1,7 @@
 # Database Auth JWT Implementation Plan
 
+> **Historical / retained subsystem:** Authentication and principal authority remain current. Agent execution and datasource authority are now defined by the 2026-08-08 design.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add database-backed API users, JWT access tokens, rotating refresh tokens, and authenticated identity enforcement for the current FastAPI API.

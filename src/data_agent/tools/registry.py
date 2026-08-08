@@ -66,11 +66,15 @@ class ToolRegistry:
 
     def allowed_view(self, context: ToolInvocationContext) -> ToolRegistryView:
         allowed = frozenset(context.allowed_tools)
+        authority_kind = context.authority.kind
+        mode = context.mode
         return ToolRegistryView(
             {
                 name: spec
                 for name, spec in self._specs.items()
                 if name in allowed
                 and set(spec.required_capabilities).issubset(allowed)
+                and authority_kind in spec.authority_kinds
+                and mode in spec.allowed_modes
             }
         )

@@ -1,7 +1,9 @@
 import type {
   ApiConversationMessage,
   AgentEvent,
+  AgentRunResult,
   AgentResponse,
+  AgentWaitingResult,
   AuthUser,
   Conversation,
   ConversationUpdatePayload,
@@ -17,6 +19,7 @@ import type {
   RelationshipRecommendationRun,
   RelationshipRoutePreview,
   RelationshipValidationReport,
+  RunResumePayload,
   SemanticGraphFieldMapping,
   SemanticGraphBinding,
   StoredSession,
@@ -124,13 +127,47 @@ export class ApiClient {
     conversationId: string,
     payload: SendMessagePayload,
     onEvent: (event: AgentEvent) => void,
-  ): Promise<ConversationMessageResponse> {
+  ): Promise<AgentRunResult> {
     const response = await this.fetchResponse(
       `/api/conversations/${encodeURIComponent(conversationId)}/messages/stream`,
       {
         method: "POST",
         body: JSON.stringify(payload),
       },
+    );
+    if (!response.ok) {
+      const body = await readJsonBody(response);
+      throw new ApiError(
+        response.status,
+        readErrorMessage(body, response.statusText),
+      );
+    }
+    if (
+      !response.headers.get("content-type")?.toLowerCase().includes(
+        "text/event-stream",
+      ) ||
+      response.body === null
+    ) {
+      throw new ApiError(502, "Runtime did not return an event stream");
+    }
+    return readAgentEventStream(response.body, onEvent);
+  }
+
+  resumeRun(runId: string, payload: RunResumePayload): Promise<AgentRunResult> {
+    return this.request<AgentRunResult>(
+      `/api/runs/${encodeURIComponent(runId)}/resume`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  }
+
+  async streamResumeRun(
+    runId: string,
+    payload: RunResumePayload,
+    onEvent: (event: AgentEvent) => void,
+  ): Promise<AgentRunResult> {
+    const response = await this.fetchResponse(
+      `/api/runs/${encodeURIComponent(runId)}/resume/stream`,
+      { method: "POST", body: JSON.stringify(payload) },
     );
     if (!response.ok) {
       const body = await readJsonBody(response);
@@ -352,11 +389,12 @@ export class ApiClient {
 async function readAgentEventStream(
   body: ReadableStream<Uint8Array>,
   onEvent: (event: AgentEvent) => void,
-): Promise<AgentResponse> {
+): Promise<AgentRunResult> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   let terminal: AgentResponse | null = null;
+  let waiting: AgentWaitingResult | null = null;
 
   function consumeFrame(frame: string): void {
     const data = frame
@@ -377,6 +415,9 @@ async function readAgentEventStream(
       throw new ApiError(502, "Runtime emitted an invalid event");
     }
     onEvent(parsed);
+    if (parsed.type === "run_waiting") {
+      waiting = { kind: "waiting", run_id: parsed.run_id, event: parsed };
+    }
     if (parsed.response !== null) {
       if (terminal !== null) {
         throw new ApiError(502, "Runtime emitted multiple terminal responses");
@@ -400,35 +441,168 @@ async function readAgentEventStream(
       break;
     }
   }
-  if (terminal === null) {
-    throw new ApiError(502, "Runtime stream ended without a terminal response");
-  }
-  return terminal;
+  if (terminal !== null) return terminal;
+  if (waiting !== null) return waiting;
+  throw new ApiError(502, "Runtime stream ended without a closing event");
 }
 
-function isAgentEvent(value: unknown): value is AgentEvent {
-  if (!isRecord(value)) {
+export function isAgentEvent(value: unknown): value is AgentEvent {
+  if (!isExactRecord(value, ["type", "run_id", "sequence", "data", "response"])) {
     return false;
   }
   const types = new Set([
     "run_started",
     "progress",
+    "context_resolved",
+    "plan_updated",
+    "step_started",
+    "tool_started",
+    "tool_completed",
+    "observation_recorded",
+    "run_waiting",
+    "run_resumed",
+    "answer_synthesizing",
     "run_completed",
     "run_failed",
   ]);
   const response = value.response;
-  return (
-    typeof value.type === "string" &&
-    types.has(value.type) &&
-    typeof value.run_id === "string" &&
-    value.run_id.trim().length > 0 &&
-    Number.isInteger(value.sequence) &&
-    Number(value.sequence) >= 0 &&
-    isRecord(value.data) &&
-    (response === null || isAgentResponse(response)) &&
-    ((value.type === "run_completed" || value.type === "run_failed") ===
-      (response !== null))
-  );
+  if (
+    typeof value.type !== "string" ||
+    !types.has(value.type) ||
+    !isNonBlankString(value.run_id) ||
+    !Number.isInteger(value.sequence) ||
+    Number(value.sequence) < 0 ||
+    !isRecord(value.data) ||
+    value.data.kind !== value.type
+  ) {
+    return false;
+  }
+  const terminal = value.type === "run_completed" || value.type === "run_failed";
+  if (terminal !== (response !== null) || (response !== null && !isAgentResponse(response))) {
+    return false;
+  }
+  if (value.type === "run_completed" && (!isRecord(response) || response.ok !== true)) {
+    return false;
+  }
+  if (value.type === "run_failed" && (!isRecord(response) || response.ok !== false)) {
+    return false;
+  }
+  return validateEventPayload(value.type, value.data, response);
+}
+
+function validateEventPayload(
+  type: string,
+  data: Record<string, unknown>,
+  response: unknown,
+): boolean {
+  switch (type) {
+    case "run_started":
+      return isExactRecord(data, ["kind", "mode", "enterprise_id", "domain_id"]) &&
+        ["plan", "preview", "execute"].includes(String(data.mode)) &&
+        isNonBlankString(data.enterprise_id) && isNonBlankString(data.domain_id);
+    case "progress":
+      return isExactRecord(data, ["kind", "stage", "pins"]) &&
+        data.stage === "versions_pinned" && isRecord(data.pins);
+    case "context_resolved":
+      return isExactRecord(data, ["kind", "source_id", "source_version", "binding_id", "binding_version", "schema_fingerprint"]) &&
+        isNonBlankString(data.source_id) && isPositiveInteger(data.source_version) &&
+        isNonBlankString(data.binding_id) && isPositiveInteger(data.binding_version) &&
+        isDigest(data.schema_fingerprint);
+    case "plan_updated":
+      return isExactRecord(data, ["kind", "plan"]) && validateAnalysisPlan(data.plan);
+    case "step_started":
+      return isExactRecord(data, ["kind", "step_id", "objective"]) &&
+        isNonBlankString(data.step_id) && isNonBlankString(data.objective);
+    case "tool_started":
+      return isExactRecord(data, ["kind", "call_id", "action_id", "tool_name", "display_name", "safe_arguments_digest"]) &&
+        isNonBlankString(data.call_id) && isNonBlankString(data.action_id) &&
+        isNonBlankString(data.tool_name) && isNonBlankString(data.display_name) &&
+        isDigest(data.safe_arguments_digest);
+    case "tool_completed":
+      return isExactRecord(data, ["kind", "call_id", "action_id", "tool_name", "status", "artifacts", "evidence", "error_code"]) &&
+        isNonBlankString(data.call_id) && isNonBlankString(data.action_id) &&
+        isNonBlankString(data.tool_name) && ["succeeded", "failed"].includes(String(data.status)) &&
+        Array.isArray(data.artifacts) && data.artifacts.every(validateArtifactSummary) &&
+        Array.isArray(data.evidence) && data.evidence.every(validateEvidenceSummary) &&
+        ((data.status === "failed") === (typeof data.error_code === "string"));
+    case "observation_recorded":
+      return isExactRecord(data, ["kind", "observation_id", "action_id", "summary", "artifact_ids", "evidence_ids"]) &&
+        isNonBlankString(data.observation_id) && isNonBlankString(data.action_id) &&
+        isNonBlankString(data.summary) && isStringArray(data.artifact_ids) &&
+        isStringArray(data.evidence_ids);
+    case "run_waiting":
+      return isExactRecord(data, ["kind", "input_request"]) &&
+        validateAgentInputRequest(data.input_request);
+    case "run_resumed":
+      return isExactRecord(data, ["kind", "interrupt_id"]) &&
+        isNonBlankString(data.interrupt_id);
+    case "answer_synthesizing":
+      return isExactRecord(data, ["kind", "evidence_ids"]) && isStringArray(data.evidence_ids);
+    case "run_completed":
+      return isExactRecord(data, ["kind"]);
+    case "run_failed":
+      return isExactRecord(data, ["kind", "error_code"]) &&
+        typeof data.error_code === "string" && isRecord(response) &&
+        isRecord(response.error) && response.error.code === data.error_code;
+    default:
+      return false;
+  }
+}
+
+function validateAgentInputRequest(value: unknown): boolean {
+  return isExactRecord(value, ["interrupt_id", "reason", "prompt", "choices", "allow_free_text", "action_id"]) &&
+    isNonBlankString(value.interrupt_id) &&
+    ["clarification", "approval", "conflict_resolution"].includes(String(value.reason)) &&
+    isNonBlankString(value.prompt) && isStringArray(value.choices) &&
+    typeof value.allow_free_text === "boolean" &&
+    (value.action_id === null || isNonBlankString(value.action_id));
+}
+
+function validateAnalysisPlan(value: unknown): boolean {
+  return isExactRecord(value, ["plan_id", "revision", "steps", "completion_criteria"]) &&
+    isNonBlankString(value.plan_id) && isPositiveInteger(value.revision) &&
+    Array.isArray(value.steps) && value.steps.every((step) =>
+      isExactRecord(step, ["step_id", "objective", "status", "depends_on", "expected_evidence"]) &&
+      isNonBlankString(step.step_id) && isNonBlankString(step.objective) &&
+      ["pending", "running", "completed", "blocked", "skipped"].includes(String(step.status)) &&
+      isStringArray(step.depends_on) && isStringArray(step.expected_evidence)) &&
+    isStringArray(value.completion_criteria);
+}
+
+function validateArtifactSummary(value: unknown): boolean {
+  return isExactRecord(value, ["artifact_id", "kind", "digest", "row_count", "sensitivity", "created_at"]) &&
+    isNonBlankString(value.artifact_id) && isNonBlankString(value.kind) && isDigest(value.digest) &&
+    (value.row_count === null || (Number.isInteger(value.row_count) && Number(value.row_count) >= 0)) &&
+    ["metadata", "derived", "row_data"].includes(String(value.sensitivity)) &&
+    isNonBlankString(value.created_at);
+}
+
+function validateEvidenceSummary(value: unknown): boolean {
+  return isExactRecord(value, ["evidence_id", "claim_key", "artifact_id", "field_refs"]) &&
+    isNonBlankString(value.evidence_id) && isNonBlankString(value.claim_key) &&
+    isNonBlankString(value.artifact_id) && isStringArray(value.field_refs);
+}
+
+function isExactRecord(value: unknown, keys: string[]): value is Record<string, unknown> {
+  return isRecord(value) && Object.keys(value).length === keys.length &&
+    keys.every((key) => Object.hasOwn(value, key));
+}
+
+function isNonBlankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isPositiveInteger(value: unknown): boolean {
+  return Number.isInteger(value) && Number(value) >= 1;
+}
+
+function isDigest(value: unknown): boolean {
+  return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonBlankString) &&
+    new Set(value).size === value.length;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,5 +1,7 @@
 # NL2SQL MVP Frontend Implementation Plan
 
+> **Historical / partially retained:** Retained for conversation and result-first UI provenance. Current Agent run, wait/resume, plan, evidence and replay UI is documented by the 2026-08-08 plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Persist query result rows into conversation history, then build a React + Vite MVP matching `canva-nl2sql-style2-user-entry.html`.

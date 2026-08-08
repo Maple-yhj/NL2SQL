@@ -15,7 +15,6 @@ from pydantic import (
     model_validator,
 )
 
-from data_agent.execution.contracts import ExecutionCheckpoint
 
 
 NonBlankText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -474,38 +473,6 @@ class ConversationSummaryWrite(MemoryModel):
     summary: str = ""
 
 
-class CheckpointRecord(MemoryModel):
-    tenant_id: NonBlankText
-    user_id: NonBlankText
-    domain_id: NonBlankText
-    conversation_id: NonBlankText
-    run_id: NonBlankText
-    checkpoint: ExecutionCheckpoint
-    created_at: datetime
-    updated_at: datetime
-
-    @model_validator(mode="after")
-    def validate_run_owner(self) -> "CheckpointRecord":
-        if self.checkpoint.state.run_id != self.run_id:
-            raise ValueError("checkpoint run_id does not match its owner")
-        return self
-
-
-class CheckpointWrite(MemoryModel):
-    tenant_id: NonBlankText
-    user_id: NonBlankText
-    domain_id: NonBlankText
-    conversation_id: NonBlankText
-    run_id: NonBlankText
-    checkpoint: ExecutionCheckpoint
-
-    @model_validator(mode="after")
-    def validate_run_owner(self) -> "CheckpointWrite":
-        if self.checkpoint.state.run_id != self.run_id:
-            raise ValueError("checkpoint run_id does not match its owner")
-        return self
-
-
 class ConversationWriteBatch(MemoryModel):
     tenant_id: NonBlankText
     user_id: NonBlankText
@@ -517,7 +484,6 @@ class ConversationWriteBatch(MemoryModel):
     conversation_summary: ConversationSummaryWrite
     artifact_refs: tuple[ArtifactReference, ...] = ()
     proposals: tuple[MemoryCandidate, ...] = ()
-    checkpoint: CheckpointWrite | None = None
 
     @model_validator(mode="after")
     def validate_batch_owners(self) -> "ConversationWriteBatch":
@@ -553,8 +519,6 @@ class ConversationWriteBatch(MemoryModel):
                 reference.run_id,
             ) != owner:
                 raise ValueError("artifact reference owner does not match the turn")
-        if self.checkpoint is not None and _turn_owner_tuple(self.checkpoint) != owner:
-            raise ValueError("checkpoint owner does not match the turn")
         for proposal in self.proposals:
             if not _proposal_owner_matches_turn(proposal.owner, owner):
                 raise ValueError("proposal owner does not match the turn")
@@ -613,16 +577,12 @@ def _candidate_artifact_references(
 
 
 ProposalId = NonBlankText
-Checkpoint = CheckpointWrite
 
 
 __all__ = [
     "ApprovalContext",
     "ApprovalDecision",
     "ArtifactReference",
-    "Checkpoint",
-    "CheckpointRecord",
-    "CheckpointWrite",
     "ConversationMemoryContent",
     "ConversationMemoryOwner",
     "ConversationRecord",

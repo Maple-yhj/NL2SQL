@@ -1,5 +1,7 @@
 # Olist 前端对话测试与修复复测报告
 
+> **Historical test evidence:** This report records the retired fixed OList workflow. Its scripts, Pack runtime and generated fixtures are no longer current product entrypoints; native Agent coverage lives in `tests/integration/test_analysis_agent_trajectory.py` and `test_analysis_agent_security.py`.
+
 ## 0. 修复复测摘要
 
 复测日期：2026-07-30<br>

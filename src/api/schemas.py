@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from data_agent.analysis_agent.runtime import AgentResumeRequest
 from data_agent.runtime.models import (
     AgentRequest,
     AgentResponse,
@@ -253,6 +254,24 @@ class ConversationDataSourceBindingResponse(StrictApiModel):
 class RunCancelResponse(StrictApiModel):
     run_id: str
     cancelled: bool
+
+
+class RunResumeRequest(AgentResumeRequest):
+    """Strict public body for both normal and streaming resume endpoints."""
+
+
+class RunWaitingResponse(StrictApiModel):
+    status: Literal["waiting"] = "waiting"
+    run_id: str = Field(min_length=1)
+    event: AgentEvent
+
+    @model_validator(mode="after")
+    def validate_waiting_event(self) -> "RunWaitingResponse":
+        if self.event.type.value != "run_waiting":
+            raise ValueError("waiting response requires a run_waiting event")
+        if self.event.run_id != self.run_id:
+            raise ValueError("waiting response run_id must match its event")
+        return self
 
 
 class RunEventListResponse(StrictApiModel):

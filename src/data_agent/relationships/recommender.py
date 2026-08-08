@@ -7,7 +7,7 @@ from dataclasses import asdict
 
 from pydantic import Field
 
-from data_agent.runtime.dependencies import ModelClient
+from data_agent.model_client import ModelClient
 from data_agent.tools.schemas import CatalogSnapshot, NonBlankText
 
 from .candidates import RelationshipCandidate, prefilter_candidates

@@ -1,5 +1,7 @@
 # Data Agent OList Commerce Platform Migration Implementation Plan
 
+> **Historical / superseded:** Retained as Pack-platform provenance. The fixed Commerce/OList Pack runtime and assets were retired after the 2026-08-08 reachability and wheel audit.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** 将当前 NL2SQL Agent 一次性升级为配置驱动的 Data Agent 平台。首个版本只实现 Commerce 领域、OList PostgreSQL Enterprise Data Binding，并允许不兼容旧行为及调整目录结构。

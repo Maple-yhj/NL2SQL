@@ -13,6 +13,7 @@ from data_agent.runtime import (
     USER_DATASET_DOMAIN_ID,
     UploadDatasetRuntime,
 )
+from data_agent.runtime.upload_runtime import SQLiteConversationRepository
 from data_agent.runtime.models import AgentRow, ChartSpec
 from data_agent.runtime.composition_root import build_upload_runtime
 from data_agent.runtime.errors import ErrorCode
@@ -89,6 +90,7 @@ class UploadDatasetRuntimeTests(unittest.IsolatedAsyncioTestCase):
             binding_version=1,
         )
         await self.runtime.record_conversation_turn(
+            run_id="run-orders-1",
             request=request,
             principal=self.principal,
             response=AgentResponse(
@@ -168,6 +170,93 @@ class UploadDatasetRuntimeTests(unittest.IsolatedAsyncioTestCase):
             "aggregate",
         )
         self.assertIsNone(stranger)
+
+    async def test_conversation_repository_is_separate_and_turn_writes_are_idempotent(self) -> None:
+        self.assertIsInstance(self.runtime.repository, SQLiteConversationRepository)
+        conversation = await self.runtime.create_conversation(
+            principal=self.principal,
+            domain_id=USER_DATASET_DOMAIN_ID,
+            title="Idempotency",
+        )
+        request = AgentRequest(
+            question="summarize revenue",
+            conversation_id=conversation.conversation_id,
+            source_id="orders",
+            source_version=1,
+            binding_id="orders-binding",
+            binding_version=1,
+        )
+        response = AgentResponse(
+            ok=True,
+            question=request.question,
+            conversation_id=conversation.conversation_id,
+            answer="Revenue is 42.",
+            analysis_plan={
+                "plan_id": "plan-1",
+                "revision": 1,
+                "steps": [
+                    {
+                        "step_id": "step-1",
+                        "objective": "Aggregate revenue",
+                        "status": "completed",
+                        "depends_on": [],
+                        "expected_evidence": ["aggregated revenue"],
+                    }
+                ],
+                "completion_criteria": ["Revenue is calculated"],
+            },
+            analysis_steps=(
+                {
+                    "step_id": "step-1",
+                    "objective": "Aggregate revenue",
+                    "status": "completed",
+                    "tool_names": ("dataset_query",),
+                    "evidence_ids": (),
+                },
+            ),
+            limitations=("Preview only.",),
+        )
+        await self.runtime.record_conversation_turn(
+            run_id="run-idempotent",
+            request=request,
+            principal=self.principal,
+            response=response,
+        )
+        await self.runtime.record_conversation_turn(
+            run_id="run-idempotent",
+            request=request,
+            principal=self.principal,
+            response=response,
+        )
+
+        messages = await self.runtime.list_conversation_messages(
+            principal=self.principal,
+            domain_id=USER_DATASET_DOMAIN_ID,
+            conversation_id=conversation.conversation_id,
+            limit=10,
+        )
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[-1].metadata.analysis_plan.plan_id, "plan-1")
+        self.assertEqual(messages[-1].metadata.analysis_steps[0].step_id, "step-1")
+        self.assertEqual(messages[-1].metadata.limitations, ("Preview only.",))
+
+        summary = await self.runtime.load_context_summary(
+            request=request,
+            principal=self.principal,
+            max_messages=4,
+            max_characters=500,
+        )
+        self.assertIn("summarize revenue", summary)
+        self.assertIn("Revenue is 42", summary)
+        self.assertNotIn("dataset_query", summary)
+
+        with self.assertRaises(RuntimeError):
+            await self.runtime.record_conversation_turn(
+                run_id="run-idempotent",
+                request=request,
+                principal=self.principal,
+                response=response.model_copy(update={"answer": "conflicting"}),
+            )
 
     async def test_archived_rows_do_not_consume_the_active_list_limit(self) -> None:
         archived = await self.runtime.create_conversation(

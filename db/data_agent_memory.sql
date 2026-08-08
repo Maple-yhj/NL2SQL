@@ -211,31 +211,4 @@ ALTER TABLE data_agent_memory_proposals
     ON DELETE SET NULL
     DEFERRABLE INITIALLY DEFERRED;
 
-CREATE TABLE IF NOT EXISTS data_agent_checkpoints (
-    tenant_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    domain_id TEXT NOT NULL,
-    conversation_id TEXT NOT NULL,
-    run_id TEXT NOT NULL,
-    owner_key TEXT NOT NULL,
-    checkpoint_id TEXT NOT NULL,
-    checkpoint_digest TEXT NOT NULL,
-    checkpoint_json JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (tenant_id, user_id, domain_id, conversation_id, run_id),
-    FOREIGN KEY (tenant_id, user_id, domain_id, conversation_id)
-        REFERENCES data_agent_conversations
-            (tenant_id, user_id, domain_id, conversation_id)
-        ON DELETE CASCADE,
-    UNIQUE (tenant_id, user_id, domain_id, conversation_id, checkpoint_id),
-    UNIQUE (owner_key),
-    CHECK (checkpoint_digest ~ '^[0-9a-f]{64}$'),
-    CHECK (jsonb_typeof(checkpoint_json) = 'object')
-);
-
-CREATE INDEX IF NOT EXISTS idx_data_agent_checkpoints_owner_updated
-    ON data_agent_checkpoints
-       (tenant_id, user_id, domain_id, conversation_id, updated_at DESC);
-
 COMMIT;

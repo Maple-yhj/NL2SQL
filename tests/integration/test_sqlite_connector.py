@@ -6,14 +6,6 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from data_agent.runtime import (
-    load_bundle_manifest,
-    load_domain_pack,
-    load_enterprise_binding,
-)
-from data_agent.runtime.binding import BindingCompiler
-from data_agent.runtime.models import PrincipalContext
-from data_agent.skills import logical_plan_from_eval_case
 from data_agent.tools import AccessGrant, CredentialLease
 from data_agent.tools.connectors import (
     ConnectorError,
@@ -21,50 +13,23 @@ from data_agent.tools.connectors import (
     DataSourceConnector,
     SQLiteConnector,
 )
-
-
-ROOT = Path(__file__).resolve().parents[2]
+from tests.support.connector_query import (
+    ALLOWED_RELATIONS,
+    BINDING_DIGEST,
+    CONNECTION_REF,
+    SCHEMA_FINGERPRINT,
+    SOURCE,
+    TENANT_ID,
+    governed_sales_query,
+)
 
 
 class SQLiteConnectorTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.domain = load_domain_pack(ROOT / "packs" / "domains" / "commerce")
-        cls.enterprise = load_enterprise_binding(
-            ROOT / "packs" / "enterprises" / "olist"
-        )
-        cls.bundle = load_bundle_manifest(
-            ROOT / "generated" / "bundles" / "olist-local.json",
-            pack_lock=ROOT / "packs" / "enterprises" / "olist" / "pack.lock",
-            schema_catalog=ROOT / "schema_catalog.json",
-        )
-        case = next(
-            item
-            for item in cls.domain.spec.evals
-            if item.id == "commerce.metric_002"
-        )
-        cls.principal = PrincipalContext(
-            tenant_id="seller-42",
-            user_id="sqlite-user",
-            roles=("seller",),
-        )
-        compiler = BindingCompiler(
-            cls.domain,
-            cls.enterprise,
-            cls.bundle,
-            dialect="sqlite",
-        )
-        cls.prepared = compiler.compile(
-            compiler.bind(
-                logical_plan_from_eval_case(case, cls.domain),
-                cls.principal,
-            ),
-            cls.principal,
-        )
-        cls.allowed_relations = tuple(
-            cls.enterprise.spec.policies.relation_allowlist
-        )
-        cls.connection_ref = cls.enterprise.spec.sources["sales"].connection_ref
+        cls.prepared = governed_sales_query("sqlite")
+        cls.allowed_relations = ALLOWED_RELATIONS
+        cls.connection_ref = CONNECTION_REF
 
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
@@ -98,10 +63,10 @@ class SQLiteConnectorTests(unittest.IsolatedAsyncioTestCase):
         self.connector = SQLiteConnector(
             self.database_path,
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
-            source="sales",
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
             connection_ref=self.connection_ref,
-            bundle_digest=self.bundle.digest,
+            bundle_digest=BINDING_DIGEST,
         )
 
     def tearDown(self) -> None:
@@ -114,12 +79,12 @@ class SQLiteConnectorTests(unittest.IsolatedAsyncioTestCase):
             "tool_name": "query.execute",
             "tool_version": "1.0.0",
             "skill_id": "commerce.analytics",
-            "bundle_digest": self.bundle.digest,
-            "schema_fingerprint": self.bundle.schema_fingerprint,
-            "source": "sales",
+            "bundle_digest": BINDING_DIGEST,
+            "schema_fingerprint": SCHEMA_FINGERPRINT,
+            "source": SOURCE,
             "read_only": True,
-            "principal_user_id": self.principal.user_id,
-            "tenant_id": self.principal.tenant_id,
+            "principal_user_id": "sqlite-user",
+            "tenant_id": TENANT_ID,
             "admin_bypass": False,
             "allowed_relations": self.allowed_relations,
             "max_rows": 100,
@@ -138,8 +103,8 @@ class SQLiteConnectorTests(unittest.IsolatedAsyncioTestCase):
         values = {
             "credential_id": "sqlite-lease",
             "grant_id": "sqlite-grant",
-            "bundle_digest": self.bundle.digest,
-            "source": "sales",
+            "bundle_digest": BINDING_DIGEST,
+            "source": SOURCE,
             "connection_ref": self.connection_ref,
             "capabilities": ("data.inspect", "query.execute"),
             "secret": "snapshot://tenant-a/olist/v1",
@@ -202,18 +167,7 @@ class SQLiteConnectorTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_rejects_postgres_query_before_opening_database(self) -> None:
-        postgres_compiler = BindingCompiler(
-            self.domain,
-            self.enterprise,
-            self.bundle,
-        )
-        postgres_prepared = postgres_compiler.compile(
-            postgres_compiler.bind(
-                self.prepared.logical_plan,
-                self.principal,
-            ),
-            self.principal,
-        )
+        postgres_prepared = governed_sales_query("postgres")
         with self.assertRaises(ConnectorError) as captured:
             await self.connector.execute_readonly(
                 postgres_prepared,

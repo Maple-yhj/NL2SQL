@@ -1,5 +1,7 @@
 # Data Agent 平台架构设计
 
+> **Historical / partially superseded:** Retained for governance and datasource platform decisions. Fixed Commerce/OList Pack composition was replaced by the 2026-08-08 native dataset Analysis Agent design.
+
 **状态：** 已批准设计，待实施计划
 **日期：** 2026-07-10
 **迁移方式：** 一次性破坏性迁移，不保留旧 Python import、旧 `graph/engine` 目录或 Fixed/Dynamic 双轨兼容层

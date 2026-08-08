@@ -1,5 +1,7 @@
 # Database User Table JWT Auth Design
 
+> **Retained subsystem:** Authentication and server-owned principal identity remain current security boundaries for the native Analysis Agent.
+
 ## Problem
 
 The current FastAPI API trusts `tenant_id` and `user_id` values supplied by each request. That is acceptable only behind a trusted caller. Once the API is exposed to real users, any client can impersonate another tenant or user by changing request JSON or query parameters.

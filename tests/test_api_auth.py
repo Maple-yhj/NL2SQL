@@ -366,36 +366,5 @@ class CreateAuthUserScriptTests(unittest.TestCase):
         self.assertNotEqual(payload["password_hash"], "secret")
         self.assertTrue(verify_password("secret", payload["password_hash"]))
 
-    def test_olist_eval_seed_requires_external_password_and_builds_admin_and_seller(self):
-        from scripts.seed_olist_eval_auth import build_olist_eval_user_payloads
-
-        with mock.patch.dict("os.environ", {}, clear=True):
-            with self.assertRaisesRegex(ValueError, "EVAL_PASSWORD"):
-                build_olist_eval_user_payloads()
-
-        admin, seller = build_olist_eval_user_payloads(
-            username="eval-runner",
-            password="test-only-secret",
-        )
-
-        self.assertEqual(admin["tenant_id"], "admin")
-        self.assertEqual(admin["user_id"], "olist-admin")
-        self.assertEqual(admin["username"], "eval-runner")
-        self.assertEqual(admin["roles"], ["admin", "user"])
-        self.assertTrue(
-            verify_password("test-only-secret", admin["password_hash"])
-        )
-        self.assertEqual(seller["tenant_id"], "3442f8959a84dea7ee197c632cb2df15")
-        self.assertEqual(
-            seller["user_id"],
-            "olist-seller-3442f8959a84dea7ee197c632cb2df15",
-        )
-        self.assertEqual(seller["username"], "eval-runner")
-        self.assertEqual(seller["roles"], ["user"])
-        self.assertTrue(
-            verify_password("test-only-secret", seller["password_hash"])
-        )
-
-
 if __name__ == "__main__":
     unittest.main()

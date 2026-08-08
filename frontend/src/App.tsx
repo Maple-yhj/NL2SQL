@@ -37,6 +37,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -44,6 +45,7 @@ import { ApiClient, ApiError } from "./api";
 import { DataSourcePanel } from "./DataSourcePanel";
 import type {
   AgentMode,
+  AgentRunResult,
   ApiConversationMessage,
   ChatMessage,
   ChartSpec,
@@ -56,6 +58,12 @@ import type {
   AnySemanticBinding,
   StoredSession,
 } from "./types";
+import { AgentRunPanel } from "./agent/AgentRunPanel";
+import {
+  agentRunReducer,
+  createAgentRunState,
+  hydrateAgentRun,
+} from "./agent/agentRunState";
 import {
   applyConversationUpdate,
   removeConversationFromList,
@@ -79,6 +87,7 @@ import {
 
 const SESSION_KEY = "nl2sql.session";
 const SIDEBAR_KEY = "nl2sql.sidebarCollapsed";
+const ACTIVE_RUN_KEY_PREFIX = "nl2sql.activeRun.";
 
 export function App() {
   const [session, setSessionState] = useState<StoredSession | null>(() => readSession());
@@ -108,6 +117,11 @@ export function App() {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [conversationQuery, setConversationQuery] = useState("");
   const [runStage, setRunStage] = useState<RunStage>("idle");
+  const [agentRun, dispatchAgentRun] = useReducer(
+    agentRunReducer,
+    undefined,
+    createAgentRunState,
+  );
   const [evidenceMessageId, setEvidenceMessageId] = useState("");
   const threadEndRef = useRef<HTMLDivElement | null>(null);
   const skipRenameBlurRef = useRef(false);
@@ -132,6 +146,7 @@ export function App() {
     setActiveDataBinding(null);
     setActiveRunId("");
     setRunStage("idle");
+    dispatchAgentRun({ type: "reset" });
     setEvidenceMessageId("");
     setMobileNavigationOpen(false);
   }, [commitSession]);
@@ -179,6 +194,8 @@ export function App() {
   }, [conversationQuery, conversations]);
   const evidenceMessage =
     messages.find((message) => message.id === evidenceMessageId) ?? latestAssistant;
+  const runBlocksNewMessage =
+    loading || ["running", "resuming", "waiting"].includes(agentRun.status);
 
   const loadConversations = useCallback(async () => {
     const payload = await api.listConversations();
@@ -209,6 +226,37 @@ export function App() {
     [api],
   );
 
+  const recoverConversationRun = useCallback(
+    async (conversationId: string) => {
+      const runId = localStorage.getItem(ACTIVE_RUN_KEY_PREFIX + conversationId);
+      if (!runId) {
+        dispatchAgentRun({ type: "reset" });
+        setActiveRunId("");
+        return;
+      }
+      try {
+        const payload = await api.listRunEvents(runId);
+        const restored = hydrateAgentRun(payload.items);
+        dispatchAgentRun({ type: "hydrate", events: payload.items });
+        if (["running", "waiting", "resuming"].includes(restored.status)) {
+          setActiveRunId(runId);
+        } else {
+          localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + conversationId);
+          setActiveRunId("");
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + conversationId);
+          dispatchAgentRun({ type: "reset" });
+          setActiveRunId("");
+          return;
+        }
+        throw err;
+      }
+    },
+    [api],
+  );
+
   const bootstrap = useCallback(async () => {
     setBooting(true);
     setError("");
@@ -225,6 +273,7 @@ export function App() {
           await Promise.all([
             loadMessages(items[0].conversation_id),
             loadConversationBinding(items[0].conversation_id),
+            recoverConversationRun(items[0].conversation_id),
           ]);
         }
       }
@@ -240,6 +289,7 @@ export function App() {
     loadConversations,
     loadDataSources,
     loadMessages,
+    recoverConversationRun,
   ]);
 
   useEffect(() => {
@@ -295,6 +345,7 @@ export function App() {
         await Promise.all([
           loadMessages(conversationList.items[0].conversation_id),
           loadConversationBinding(conversationList.items[0].conversation_id),
+          recoverConversationRun(conversationList.items[0].conversation_id),
         ]);
       }
     } catch (err) {
@@ -308,12 +359,14 @@ export function App() {
     setActiveConversationId(conversationId);
     setError("");
     setRunStage("idle");
+    dispatchAgentRun({ type: "reset" });
     setEvidenceMessageId("");
     setMobileNavigationOpen(false);
     try {
       await Promise.all([
         loadMessages(conversationId),
         loadConversationBinding(conversationId),
+        recoverConversationRun(conversationId),
       ]);
     } catch (err) {
       handleAuthOrError(err, clearSession, setError);
@@ -329,6 +382,7 @@ export function App() {
       setActiveConversationId(conversation.conversation_id);
       setMessages([]);
       setRunStage("idle");
+      dispatchAgentRun({ type: "reset" });
       setEvidenceMessageId("");
       setMobileNavigationOpen(false);
     } catch (err) {
@@ -435,7 +489,11 @@ export function App() {
 
   async function handleSend() {
     const question = input.trim();
-    if (!question || loading) {
+    if (
+      !question ||
+      loading ||
+      ["running", "resuming", "waiting"].includes(agentRun.status)
+    ) {
       return;
     }
     if (!activeDataBinding) {
@@ -448,6 +506,7 @@ export function App() {
     setLoading(true);
     setError("");
     setRunStage("started");
+    dispatchAgentRun({ type: "reset" });
     setEvidenceMessageId("");
 
     const userMessage: ChatMessage = {
@@ -466,6 +525,7 @@ export function App() {
     };
     setMessages((items) => [...items, userMessage, thinkingMessage]);
 
+    let remainsWaiting = false;
     try {
       let conversationId = activeConversationId;
       if (!conversationId) {
@@ -479,26 +539,38 @@ export function App() {
         conversationId,
         createSendMessagePayload(question, activeDataBinding, mode),
         (event) => {
+          dispatchAgentRun({ type: "event", event });
           if (event.type === "run_started") {
             setActiveRunId(event.run_id);
+            localStorage.setItem(ACTIVE_RUN_KEY_PREFIX + conversationId, event.run_id);
             setRunStage("started");
           }
           if (event.type === "progress") {
             setRunStage("pinned");
           }
           if (event.type === "run_completed") {
+            localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + conversationId);
             setRunStage("complete");
           }
           if (event.type === "run_failed") {
+            localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + conversationId);
             setRunStage("failed");
           }
         },
       );
-      setMessages((items) =>
-        items.map((item) =>
-          item.id === thinkingMessage.id ? responseToAssistantMessage(response, item.id) : item,
-        ),
-      );
+      if (isWaitingResult(response)) {
+        remainsWaiting = true;
+        setActiveRunId(response.run_id);
+        setMessages((items) => items.filter((item) => item.id !== thinkingMessage.id));
+      } else {
+        setMessages((items) =>
+          items.map((item) =>
+            item.id === thinkingMessage.id
+              ? responseToAssistantMessage(response, item.id)
+              : item,
+          ),
+        );
+      }
       const refreshed = await loadConversations();
       setConversations(refreshed);
     } catch (err) {
@@ -527,17 +599,62 @@ export function App() {
         ),
       );
     } finally {
-      setActiveRunId("");
+      if (!remainsWaiting) setActiveRunId("");
+      setLoading(false);
+    }
+  }
+
+  async function handleResumeRun(message: string, selectedChoice?: string) {
+    const inputRequest = agentRun.inputRequest;
+    if (!agentRun.runId || !inputRequest || loading) return;
+    setLoading(true);
+    setError("");
+    dispatchAgentRun({ type: "resume_requested" });
+    let remainsWaiting = false;
+    try {
+      const response = await api.streamResumeRun(
+        agentRun.runId,
+        {
+          interrupt_id: inputRequest.interrupt_id,
+          message,
+          ...(selectedChoice ? { selected_choice: selectedChoice } : {}),
+        },
+        (event) => {
+          dispatchAgentRun({ type: "event", event });
+          if (event.type === "run_waiting") remainsWaiting = true;
+          if (event.type === "run_completed" || event.type === "run_failed") {
+            localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + activeConversationId);
+          }
+        },
+      );
+      if (isWaitingResult(response)) {
+        remainsWaiting = true;
+      } else if (activeConversationId) {
+        await loadMessages(activeConversationId);
+        setRunStage(response.ok ? "complete" : "failed");
+      }
+    } catch (err) {
+      handleAuthOrError(err, clearSession, setError);
+      await recoverConversationRun(activeConversationId);
+    } finally {
+      if (!remainsWaiting) setActiveRunId("");
       setLoading(false);
     }
   }
 
   async function handleCancelRun() {
-    if (!activeRunId) {
+    const runId = activeRunId || agentRun.runId;
+    if (!runId) {
       return;
     }
     try {
-      await api.cancelRun(activeRunId);
+      const cancelled = await api.cancelRun(runId);
+      if (cancelled.cancelled) {
+        dispatchAgentRun({ type: "cancelled" });
+        localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + activeConversationId);
+        setActiveRunId("");
+        setLoading(false);
+      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         return;
@@ -943,6 +1060,14 @@ export function App() {
                         />
                       ),
                     )}
+                    <AgentRunPanel
+                      state={agentRun}
+                      busy={loading}
+                      onResume={(message, selectedChoice) =>
+                        void handleResumeRun(message, selectedChoice)
+                      }
+                      onCancel={() => void handleCancelRun()}
+                    />
                     {!messages.length && (
                       <div className="empty-thread">
                         <div className="empty-route-mark" aria-hidden="true">
@@ -1022,13 +1147,17 @@ export function App() {
                       ? "输入你的业务问题"
                       : "请先连接并激活数据源"
                   }
-                  disabled={loading}
+                  disabled={runBlocksNewMessage}
                   aria-label="分析问题"
                 />
                 <button
                   className={`send-button ${loading ? "cancel-run" : ""}`}
                   type={loading ? "button" : "submit"}
-                  disabled={loading ? !activeRunId : !input.trim() || !activeDataBinding}
+                  disabled={
+                    loading
+                      ? !activeRunId
+                      : runBlocksNewMessage || !input.trim() || !activeDataBinding
+                  }
                   onClick={loading ? () => void handleCancelRun() : undefined}
                   aria-label={loading ? "Cancel active run" : "Send message"}
                   title={loading ? "取消当前运行" : "发送问题"}
@@ -1218,6 +1347,44 @@ function EvidenceDrawer({
             </section>
           )}
 
+          {(message.metadata.artifacts?.length ?? 0) > 0 && (
+            <section className="evidence-section">
+              <div className="evidence-section-heading">
+                <Layers3 size={16} />
+                <h3>分析产物</h3>
+                <span>{message.metadata.artifacts?.length}</span>
+              </div>
+              <ul className="agent-artifact-list">
+                {message.metadata.artifacts?.map((artifact) => (
+                  <li key={artifact.artifact_id}>
+                    <strong>{artifact.kind}</strong>
+                    <span>{artifact.row_count === null ? "—" : `${artifact.row_count} 行`}</span>
+                    <code>{artifact.digest.slice(0, 12)}</code>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {(message.metadata.evidence?.length ?? 0) > 0 && (
+            <section className="evidence-section">
+              <div className="evidence-section-heading">
+                <ShieldCheck size={16} />
+                <h3>证据引用</h3>
+                <span>{message.metadata.evidence?.length}</span>
+              </div>
+              <ul className="agent-evidence-list">
+                {message.metadata.evidence?.map((evidence) => (
+                  <li key={evidence.evidence_id}>
+                    <strong>{evidence.claim_key}</strong>
+                    <span>{evidence.field_refs.join(" · ")}</span>
+                    <small>{evidence.artifact_id}</small>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           <section className="evidence-section">
             <div className="evidence-section-heading">
               <Table2 size={16} />
@@ -1239,7 +1406,7 @@ function EvidenceDrawer({
               </summary>
               <dl className="version-list">
                 <div><dt>运行时</dt><dd>{pins.runtime_version}</dd></div>
-                <div><dt>技能</dt><dd>{pins.skill_version}</dd></div>
+                <div><dt>绑定</dt><dd>{pins.binding_id} · v{pins.binding_version}</dd></div>
                 <div><dt>执行图</dt><dd>{pins.graph_version}</dd></div>
                 <div><dt>Schema</dt><dd>{pins.schema_fingerprint}</dd></div>
               </dl>
@@ -1680,8 +1847,17 @@ export function responseToAssistantMessage(
       sql: response.sql,
       pending_memory_updates: response.pending_memory_updates,
       version_pins: response.version_pins,
+      analysis_plan: response.analysis_plan,
+      analysis_steps: response.analysis_steps,
+      artifacts: response.artifacts,
+      evidence: response.evidence,
+      limitations: response.limitations,
     },
   };
+}
+
+function isWaitingResult(result: AgentRunResult): result is Extract<AgentRunResult, { kind: "waiting" }> {
+  return "kind" in result && result.kind === "waiting";
 }
 
 function toChatMessage(message: ApiConversationMessage, index: number): ChatMessage {

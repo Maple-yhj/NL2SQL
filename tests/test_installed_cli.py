@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -17,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SMOKE_PARENT = Path(
     os.environ.get("DATA_AGENT_WHEEL_SMOKE_PARENT", tempfile.gettempdir())
 )
-SMOKE_ROOT = SMOKE_PARENT / f"data-agent-task9-wheel-smoke-{uuid.uuid4().hex}"
+SMOKE_ROOT = SMOKE_PARENT / f"data-agent-wheel-smoke-{uuid.uuid4().hex}"
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -42,19 +41,9 @@ class InstalledCliSmokeTests(unittest.TestCase):
         for path in (cls.source, cls.wheels, cls.outside):
             path.mkdir(parents=True, exist_ok=True)
 
-        for name in ("pyproject.toml", "README.md", "schema_catalog.json"):
+        for name in ("pyproject.toml", "README.md"):
             shutil.copy2(ROOT / name, cls.source / name)
         shutil.copytree(ROOT / "src", cls.source / "src")
-        shutil.copytree(ROOT / "packs", cls.source / "packs")
-        (cls.source / "generated").mkdir()
-        shutil.copytree(
-            ROOT / "generated" / "bundles",
-            cls.source / "generated" / "bundles",
-        )
-        shutil.copytree(
-            ROOT / "generated" / "semantic",
-            cls.source / "generated" / "semantic",
-        )
 
         cls.env = dict(os.environ)
         cls.env.pop("PYTHONPATH", None)
@@ -136,32 +125,30 @@ class InstalledCliSmokeTests(unittest.TestCase):
             self.install.stderr or self.install.stdout,
         )
 
-    def test_wheel_contains_every_runtime_resource_and_no_top_level_script_dependency(self) -> None:
+    def test_wheel_contains_current_runtime_and_no_retired_pack_assets(self) -> None:
         self.assertEqual(self.build.returncode, 0, self.build.stderr or self.build.stdout)
         self.assertIsNotNone(self.wheel, self.build.stdout)
         with zipfile.ZipFile(self.wheel) as archive:
             names = set(archive.namelist())
-        data_prefix = "data_agent-0.1.0.data/data/share/data-agent/"
         expected = {
-            *(data_prefix + "packs/domains/commerce/" + name for name in (
-                "pack.yaml",
-                "semantic-model.yaml",
-                "metrics.yaml",
-                "vocabulary.zh-CN.yaml",
-                "policies.yaml",
-                "evals.yaml",
-            )),
-            data_prefix + "packs/enterprises/olist/pack.yaml",
-            data_prefix + "packs/enterprises/olist/pack.lock",
-            data_prefix + "packs/deployments/olist-local.yaml",
-            data_prefix + "schema_catalog.json",
-            data_prefix + "generated/bundles/olist-local.json",
-            data_prefix + "generated/semantic/commerce.json",
-            "data_agent/runtime/maintenance.py",
-            "data_agent/runtime/paths.py",
+            "data_agent/analysis_agent/graph.py",
+            "data_agent/analysis_agent/runtime.py",
+            "data_agent/dataset_query/contracts.py",
+            "data_agent/runtime/composition_root.py",
+            "data_agent/tools/providers/dataset/query.py",
         }
         self.assertLessEqual(expected, names)
-        self.assertNotIn("scripts/compile_packs.py", names)
+        retired_fragments = (
+            "/packs/",
+            "/generated/bundles/",
+            "data_agent/execution/",
+            "data_agent/skills/",
+            "data_agent/runtime/maintenance.py",
+            "dataset_query_service.py",
+        )
+        self.assertFalse(
+            [name for name in names if any(item in name for item in retired_fragments)]
+        )
 
     def test_installed_cli_works_from_non_project_cwd_without_source_imports(self) -> None:
         self.assert_setup_succeeded()
@@ -172,12 +159,12 @@ class InstalledCliSmokeTests(unittest.TestCase):
                 (
                     "import api, data_agent; "
                     "from api.app import create_app; "
-                    "from data_agent.runtime.composition_root import build_olist_runtime; "
-                    "from data_agent.runtime.paths import resolve_project_root; "
+                    "from data_agent.analysis_agent.graph import build_analysis_agent_graph; "
+                    "from data_agent.runtime.composition_root import build_analysis_agent_runtime; "
                     "print(api.__file__); print(data_agent.__file__); "
                     "print(create_app().openapi()['info']['title']); "
-                    "print(build_olist_runtime.__name__); "
-                    "print(resolve_project_root())"
+                    "print(build_analysis_agent_graph.__name__); "
+                    "print(build_analysis_agent_runtime.__name__)"
                 ),
             ],
             cwd=self.outside,
@@ -186,35 +173,12 @@ class InstalledCliSmokeTests(unittest.TestCase):
         self.assertEqual(imported.returncode, 0, imported.stderr)
         self.assertNotIn(str(self.source), imported.stdout)
         self.assertIn(str(self.venv), imported.stdout)
-        self.assertIn(str(Path("share") / "data-agent"), imported.stdout)
 
         help_result = _run([str(self.command), "--help"], cwd=self.outside, env=self.env)
         self.assertEqual(help_result.returncode, 0, help_result.stderr)
-        validate = _run(
-            [str(self.command), "validate-config"],
-            cwd=self.outside,
-            env=self.env,
-        )
-        self.assertEqual(validate.returncode, 0, validate.stderr)
-        self.assertTrue(json.loads(validate.stdout)["valid"])
-
-        compiled = self.outside / "compiled-bundle.json"
-        compile_result = _run(
-            [str(self.command), "compile-packs", "--output", str(compiled)],
-            cwd=self.outside,
-            env=self.env,
-        )
-        self.assertEqual(compile_result.returncode, 0, compile_result.stderr)
-        self.assertTrue(compiled.is_file())
-
-        index = self.outside / "semantic-index.json"
-        rebuild_result = _run(
-            [str(self.command), "rebuild-index", "--output", str(index)],
-            cwd=self.outside,
-            env=self.env,
-        )
-        self.assertEqual(rebuild_result.returncode, 0, rebuild_result.stderr)
-        self.assertTrue(index.is_file())
+        self.assertIn("ask", help_result.stdout)
+        self.assertNotIn("compile-packs", help_result.stdout)
+        self.assertNotIn("validate-config", help_result.stdout)
 
 
 if __name__ == "__main__":

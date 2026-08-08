@@ -1,5 +1,7 @@
 # LangGraph Runtime Dotenv Blocking Implementation Plan
 
+> **Historical / retained decision:** Import-time and async-runtime environment isolation remains applicable; current graph/runtime structure is documented by the 2026-08-08 plan.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prevent LangGraph Studio/runtime runs from calling `load_dotenv()` inside BlockBuster-monitored async execution.

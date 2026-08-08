@@ -1,5 +1,7 @@
 # Plan DSL Planner Layer Implementation Plan
 
+> **Historical / superseded:** Retained for deterministic compilation and SQL-safety decisions. The fixed Pack planner was replaced by the native dataset Analysis Agent and dataset-query contracts.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a Plan DSL planner layer between intent parsing and SQL generation while keeping all existing public APIs and SQL safety tools compatible.

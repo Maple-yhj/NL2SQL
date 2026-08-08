@@ -1,5 +1,8 @@
 {
+  "analysis_plan": null,
+  "analysis_steps": [],
   "answer": null,
+  "artifacts": [],
   "chart": null,
   "contextualized_question": "show governed gmv",
   "conversation_id": "conv-1",
@@ -9,6 +12,8 @@
     "message": "The governed run failed safely.",
     "retryable": false
   },
+  "evidence": [],
+  "limitations": [],
   "logical_plan": {
     "analysisType": "metric",
     "assumptions": [],
@@ -67,29 +72,23 @@
     }
   ],
   "version_pins": {
-    "bundle_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "deployment_profile_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "domain_pack_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "enterprise_binding_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "binding_id": "sales-binding",
+    "binding_version": 1,
     "graph_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "graph_id": "commerce.analysis",
+    "graph_id": "dataset.analysis-agent",
     "graph_version": "1.0.0",
+    "kind": "dataset",
     "model_versions": [
       {
         "component": "planner",
         "version": "model-v1"
       }
     ],
+    "relationship_graph_digest": null,
     "runtime_version": "1.0.0",
     "schema_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-    "skill_id": "commerce.analytics",
-    "skill_version": "1.0.0",
-    "tool_registry_version": "1.0.0",
-    "tool_versions": [
-      {
-        "component": "query.execute",
-        "version": "1.0.0"
-      }
-    ]
+    "source_id": "sales",
+    "source_version": 1,
+    "tool_registry_version": "dataset-v1"
   }
 }

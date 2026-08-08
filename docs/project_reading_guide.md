@@ -1,100 +1,90 @@
 # Project Reading Guide
 
-## Start with the product boundary
+This is the only recommended entry point for the current architecture.
 
-Read these files first:
+## Start with the native Agent Runtime
 
-1. `src/data_agent/runtime/contracts.py` — public `DataAgentRuntime.run()`.
-2. `src/data_agent/runtime/models.py` and `events.py` — request, response,
-   principal, modes, trace, version pins, and terminal-event invariants.
-3. `src/data_agent/runtime/upload_runtime.py` — the default upload-only
-   conversation boundary.
-4. `src/data_agent/runtime/service.py` — the optional governed-pack runtime.
-5. `src/data_agent/runtime/composition_root.py` — the default upload-only
-   composition plus explicit pack/OList compatibility composition.
+Read these files in order:
 
-Product adapters are `src/data_agent/cli.py`, `src/api/`, `main.py`, and
-`src/data_agent/execution/langgraph_adapter.py`. They must not construct a
-Skill, Tool, Memory provider, or database connector directly.
+1. `src/data_agent/analysis_agent/runtime.py` — public run, resume, cancel and checkpoint-owner boundary.
+2. `src/data_agent/analysis_agent/graph.py` and `nodes.py` — the native LangGraph plan → guard → tool → observe → evaluate → replan loop.
+3. `src/data_agent/analysis_agent/models.py` and `state.py` — immutable authority, plan, artifact/evidence and bounded checkpoint state.
+4. `src/data_agent/analysis_agent/composition.py` — active datasource resolution, tool context, Artifact Store, version pins and final response construction.
+5. `src/data_agent/runtime/models.py` and `events.py` — public request/response and typed SSE contracts.
 
-## Follow the six layers
+The production adapters are `src/api/`, `src/data_agent/cli.py`, and
+`src/data_agent/adapters/studio.py`. API and CLI call the same
+`DataAnalysisAgentRuntime`. Studio exports the same compiled graph directly and
+binds a deterministic offline plan-mode context, so its example is directly
+runnable without connecting to a model or production datasource at import time.
 
-### 1. Runtime
+## Follow the current layers
 
-The default runtime persists identity-scoped conversations and rejects
-questions without an activated user datasource. The optional pack runtime
-loads and pins a resolved bundle, enforces deadline/budget, drives the graph,
-persists a safe turn, and emits exactly one terminal event.
+### 1. Datasource authority
 
-### 2. Skill System
+`src/api/datasource_service.py` and `src/data_agent/datasources/` own immutable
+file/PostgreSQL snapshots, catalogs, semantic bindings, relationship graphs and
+conversation pins. A run must supply the complete source/binding version tuple.
 
-`src/data_agent/skills/` defines typed logical analytics models and the
-Commerce validator. Start at `skills/models.py` and
-`skills/commerce/analytics.py`. Logical plans use `commerce.*` references and
-must not contain database identifiers.
+### 2. Agent orchestration
 
-### 3. Execution Graph
+`analysis_agent/graph.py` is the only default orchestration path. Planner,
+Evaluator and Synthesizer receive bounded untrusted data and strict schemas.
+Every model action passes `guard_decision`; only the guarded path reaches a
+tool. The graph supports multiple tools, replan, typed interrupt and durable
+resume.
 
-`src/data_agent/execution/` owns the single bounded graph specification,
-compiler, executor, artifacts, checkpoints, retry routes, and LangGraph
-adapter. `executor.py` is the easiest place to follow the node sequence.
+### 3. Governed tools and deterministic queries
 
-### 4. Tool Registry and Connector
+`src/data_agent/tools/providers/dataset/` defines the independent 12-tool
+dataset registry. `ToolInvoker` enforces mode, authority, budget, grants,
+credentials and redaction. `src/data_agent/dataset_query/` owns structured
+query planning, SQLGlot compilation, read-only execution and safe result/chart
+rendering. The model never supplies SQL or code.
 
-`src/data_agent/tools/registry.py` and `invoker.py` enforce manifests,
-capabilities, grants, budgets, retries, and redacted trace. The six providers
-are composed in `tools/providers/registry.py`. PostgreSQL execution lives in
-`tools/connectors/postgres.py` and accepts only compiler-created prepared
-queries.
+### 4. Artifact and evidence authority
 
-### 5. Memory
+`analysis_agent/artifacts.py` stores result payloads outside checkpoints and
+returns owner/run-scoped references. Evidence binds claims to artifacts and to
+the exact source/binding/schema pins. Final answers can cite only validated
+evidence from the current run.
 
-`src/data_agent/memory/` defines the provider contract, null/PostgreSQL/graph
-providers, policy, conversation writes, approved recall, proposals, and
-checkpoints. Memory is context, never configuration authority.
+### 5. Checkpoints, conversations and Memory
 
-### 6. Enterprise Data Binding
+- LangGraph Checkpointer: short-lived current-run state for pause/restart/resume.
+- `SQLiteConversationRepository`: user-visible conversation history and one
+  idempotent final turn per run.
+- `data_agent/memory/`: separately approved long-term Memory. The Agent may
+  propose; it cannot approve or commit its own proposal.
 
-`runtime/binding.py` maps a validated logical plan to OList relations, join
-paths, typed parameters, required access, and PostgreSQL SQL AST. Seller scope
-is injected deterministically at this layer; admin bypass is configured in the
-enterprise pack.
-
-## Read configuration separately from code
-
-- `packs/domains/commerce/`: canonical semantics and 48 evals.
-- `packs/enterprises/olist/`: nine physical bindings and access policy.
-- `packs/deployments/olist-local.yaml`: selected packs and runtime limits.
-- `schema_catalog.json`: physical schema attestation.
-- `generated/bundles/olist-local.json`: immutable resolved bundle.
-- `generated/semantic/commerce.json`: reproducible offline semantic index.
-
-This separation is the core extension rule: a new enterprise adds a binding;
-a new domain adds a domain pack and skill; a new database adds a Connector.
+These stores are intentionally separate. Connectors, credentials, clients,
+large rows, prompts and private reasoning never enter checkpoint state.
 
 ## Trace one request
 
-1. CLI/API creates `AgentRequest` and `PrincipalContext`.
-2. Runtime snapshots the active bundle and pins all component versions.
-3. Context resolver recalls approved, scoped Memory.
-4. `commerce.analytics` produces and validates a `LogicalQueryPlan`.
-5. Binding creates `BoundQueryPlan`, required access, and `PreparedQuery`.
-6. Tool Invoker grants the exact relation/operation capabilities.
-7. Connector performs EXPLAIN/preview/execute according to mode.
-8. Evidence is profiled, validated, rendered, and persisted with safe trace.
-9. Runtime emits `run_completed` or a safe `run_failed` terminal.
+1. API/CLI validates `AgentRequest` and authenticated `PrincipalContext`.
+2. Resolver loads the exact active datasource/binding and creates immutable authority pins.
+3. Context loader adds bounded conversation history and committed Memory.
+4. Planner creates or revises an `AnalysisPlan` using the allowed registry view.
+5. Guard validates mode, budget and strict tool input before `ToolInvoker`.
+6. Tools create owner-scoped artifacts and evidence; Evaluator decides continue, replan, clarify or finish.
+7. Synthesizer creates an evidence-grounded answer and the graph validates it.
+8. `persist_turn` atomically records one complete final turn; waiting runs record only checkpoint/events.
+9. Runtime emits exactly one `run_completed`, `run_failed`, or `run_waiting` closing event.
 
 ## Tests to read
 
-- `tests/contract/`: pack and public contract boundaries.
-- `tests/unit/runtime/`, `unit/skills/`, `unit/execution/`, `unit/tools/`, and
-  `unit/memory/`: layer behavior.
-- `tests/integration/test_data_agent_runtime.py`: three modes through the real
-  graph.
-- `tests/e2e/test_olist_golden_runtime.py`: all 48 evals through the same public
-  Runtime for seller/admin scope.
-- API/OpenAPI/frontend schema tests at `tests/test_*contract.py` and
-  `frontend/src/*.test.js`.
+- `tests/unit/analysis_agent/`: strict models, graph, guards and model components.
+- `tests/unit/tools/dataset/`: dataset registry/provider authority.
+- `tests/integration/test_analysis_agent_runtime.py` and `_resume.py`: runtime/checkpointer behavior.
+- `tests/integration/test_analysis_agent_trajectory.py`: multi-step result invariants.
+- `tests/integration/test_analysis_agent_security.py`: adversarial gates.
+- `tests/test_api_resume.py` and `frontend/src/agent/`: API and browser waiting/resume/replay behavior.
 
-Run pack compilation and freshness checks whenever a pack, schema, public API,
-or generated frontend contract changes.
+## Legacy status
+
+The fixed Commerce/OList Pack runtime and its orchestration facade were retired
+after the Task 14 reachability audit. Historical plans remain decision records,
+not implementation entrypoints. New work should use the native Analysis Agent,
+the dataset query contracts/providers, and the datasource control plane listed
+above.

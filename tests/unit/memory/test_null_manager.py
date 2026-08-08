@@ -79,6 +79,53 @@ class NullMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         self.manager = NullMemoryManager(clock=lambda: NOW)
 
+    async def test_save_turn_is_exactly_idempotent_per_owned_run(self) -> None:
+        conversation = await self.manager.create_conversation(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            domain_id="commerce",
+            title="Idempotent",
+        )
+
+        def batch(assistant_content: str = "Revenue is 42.") -> ConversationWriteBatch:
+            owner = {
+                "tenant_id": "tenant-a",
+                "user_id": "user-a",
+                "domain_id": "commerce",
+                "conversation_id": conversation.conversation_id,
+                "run_id": "run-idempotent",
+            }
+            return ConversationWriteBatch(
+                **owner,
+                user_message=MessageWrite(
+                    **owner,
+                    role=MessageRole.USER,
+                    content="What is revenue?",
+                ),
+                assistant_message=MessageWrite(
+                    **owner,
+                    role=MessageRole.ASSISTANT,
+                    content=assistant_content,
+                ),
+                conversation_summary=ConversationSummaryWrite(
+                    **owner,
+                    summary="Revenue analysis completed.",
+                ),
+            )
+
+        await self.manager.save_turn(batch())
+        await self.manager.save_turn(batch())
+        messages = await self.manager.list_messages(
+            tenant_id="tenant-a",
+            user_id="user-a",
+            domain_id="commerce",
+            conversation_id=conversation.conversation_id,
+            limit=10,
+        )
+        self.assertEqual(len(messages), 2)
+        with self.assertRaises(MemoryConflictError):
+            await self.manager.save_turn(batch("Revenue is 43."))
+
     async def test_is_protocol_complete_and_deduplicates_deterministically(self) -> None:
         self.assertIsInstance(self.manager, MemoryManager)
 

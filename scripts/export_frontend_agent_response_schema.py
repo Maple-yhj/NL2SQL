@@ -37,7 +37,7 @@ FIXTURE_PATH = (
 ROOT_SCHEMA = "AgentResponse"
 _ANNOTATION_KEYS = frozenset({"default", "description", "title"})
 _SCALAR_KEYS = frozenset(
-    {"$ref", "const", "enum", "maxItems", "minItems", "minLength", "minimum", "pattern", "required", "type"}
+    {"$ref", "const", "enum", "format", "maxItems", "maxLength", "minItems", "minLength", "minimum", "pattern", "required", "type"}
 )
 _NESTED_KEYS = frozenset({"additionalProperties", "anyOf", "items", "prefixItems", "properties", "propertyNames"})
 
@@ -142,8 +142,12 @@ def _normalize_schema(schema: dict[str, Any]) -> dict[str, Any]:
                 for name, nested in sorted(value.items())
             }
             continue
-        if key == "anyOf":
-            normalized[key] = [_normalize_schema(nested) for nested in value]
+        if key in {"anyOf", "oneOf"}:
+            normalized["anyOf"] = [_normalize_schema(nested) for nested in value]
+            continue
+        if key == "discriminator":
+            # Backend Pydantic validation enforces the discriminator. The browser
+            # validator evaluates the normalized alternatives and their const kind.
             continue
         if key == "prefixItems":
             normalized[key] = [_normalize_schema(nested) for nested in value]

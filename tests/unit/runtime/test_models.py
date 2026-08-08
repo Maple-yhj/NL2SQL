@@ -117,7 +117,7 @@ class RuntimePublicModelTests(unittest.TestCase):
                 ),
             )
 
-    def test_runtime_package_reexports_the_public_task_one_contract(self) -> None:
+    def test_runtime_package_reexports_the_current_product_contract(self) -> None:
         runtime = importlib.import_module("data_agent.runtime")
         expected_exports = {
             "AgentRequest",
@@ -127,15 +127,21 @@ class RuntimePublicModelTests(unittest.TestCase):
             "AgentResponse",
             "ErrorCode",
             "DataAgentRuntime",
+            "DatasetRuntimeVersionPins",
+            "UploadDatasetRuntime",
+            "build_analysis_agent_runtime",
+            "build_upload_runtime",
+        }
+        self.assertLessEqual(expected_exports, set(getattr(runtime, "__all__", ())))
+        retired = {
             "DomainPack",
             "EnterpriseDataBinding",
             "DeploymentProfile",
             "ResolvedRuntimeBundle",
             "compile_runtime_bundle",
-            "export_pack_schemas",
             "load_pack_yaml",
         }
-        self.assertLessEqual(expected_exports, set(getattr(runtime, "__all__", ())))
+        self.assertTrue(retired.isdisjoint(getattr(runtime, "__all__", ())))
 
 
 if __name__ == "__main__":

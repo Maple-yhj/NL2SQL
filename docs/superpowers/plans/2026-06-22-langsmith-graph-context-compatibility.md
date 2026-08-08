@@ -1,5 +1,7 @@
 # LangSmith Studio GraphContext Compatibility Implementation Plan
 
+> **Historical / superseded:** Retained for the Studio schema compatibility decision. The current Studio entrypoint exports the native Analysis Agent graph directly.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the compiled NL2SQL graph constructible from LangSmith Studio runtime context without exposing Python service objects in JSON Schema or rejecting Studio-owned metadata such as `thread_id`.

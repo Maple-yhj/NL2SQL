@@ -26,7 +26,9 @@ class SrcPackagingContractTests(unittest.TestCase):
         dependencies = document["project"]["dependencies"]
         normalized = {dependency.lower() for dependency in dependencies}
         self.assertTrue(any(item.startswith("pydantic>=2") for item in normalized))
-        self.assertTrue(any(item.startswith("pyyaml>=") for item in normalized))
+        self.assertTrue(any(item.startswith("langgraph>=") for item in normalized))
+        self.assertFalse(any(item.startswith("pyyaml>=") for item in normalized))
+        self.assertFalse(any(item.startswith("psycopg2") for item in normalized))
         self.assertEqual(document["project"]["name"], "data-agent")
 
         setuptools = document["tool"]["setuptools"]
@@ -39,42 +41,13 @@ class SrcPackagingContractTests(unittest.TestCase):
             {"data-agent": "data_agent.cli:main"},
         )
 
-        data_files = setuptools["data-files"]
-        self.assertEqual(
-            set(data_files["share/data-agent/packs/domains/commerce"]),
-            {
-                "packs/domains/commerce/pack.yaml",
-                "packs/domains/commerce/semantic-model.yaml",
-                "packs/domains/commerce/metrics.yaml",
-                "packs/domains/commerce/vocabulary.zh-CN.yaml",
-                "packs/domains/commerce/policies.yaml",
-                "packs/domains/commerce/evals.yaml",
-            },
-        )
-        self.assertEqual(
-            set(data_files["share/data-agent/packs/enterprises/olist"]),
-            {
-                "packs/enterprises/olist/pack.yaml",
-                "packs/enterprises/olist/pack.lock",
-            },
-        )
-        self.assertEqual(
-            data_files["share/data-agent/packs/deployments"],
-            ["packs/deployments/olist-local.yaml"],
-        )
-        self.assertEqual(data_files["share/data-agent"], ["schema_catalog.json"])
-        self.assertEqual(
-            data_files["share/data-agent/generated/bundles"],
-            ["generated/bundles/olist-local.json"],
-        )
+        self.assertNotIn("data-files", setuptools)
 
         dev_dependencies = {
             dependency.lower()
             for dependency in document["project"]["optional-dependencies"]["dev"]
         }
-        self.assertTrue(
-            any(item.startswith("jsonschema>=") for item in dev_dependencies)
-        )
+        self.assertFalse(any(item.startswith("jsonschema>=") for item in dev_dependencies))
 
 
 if __name__ == "__main__":

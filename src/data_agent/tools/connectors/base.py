@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from enum import StrEnum
 from typing import Protocol, runtime_checkable
 
-from data_agent.runtime.binding import PreparedQuery
+from data_agent.dataset_query.contracts import PreparedQuery
 
 from ..models import AccessGrant, CredentialLease
 from ..schemas import CatalogSnapshot, ConnectorCapabilities, ExplainResult, TabularResult

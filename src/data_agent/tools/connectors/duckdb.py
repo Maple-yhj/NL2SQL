@@ -12,7 +12,7 @@ from typing import TypeVar
 
 import duckdb
 
-from data_agent.runtime.binding import PreparedQuery
+from data_agent.dataset_query.contracts import PreparedQuery
 
 from ..models import AccessGrant, CredentialLease
 from ..schemas import (

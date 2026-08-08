@@ -168,7 +168,7 @@ describe("ApiClient", () => {
       type: "run_failed",
       run_id: "run 1",
       sequence: 1,
-      data: { kind: "run_failed", error_code: "CANCELLED" },
+      data: { kind: "run_failed", error_code: failure.error?.code },
       response: failure,
     };
     const stream = [
@@ -257,6 +257,82 @@ describe("ApiClient", () => {
     expect(events).toEqual(["run_started", "run_completed"]);
   });
 
+  it("returns a waiting result and resumes with the typed stream endpoint", async () => {
+    const waitingEvent = {
+      type: "run_waiting",
+      run_id: "run waiting",
+      sequence: 4,
+      data: {
+        kind: "run_waiting",
+        input_request: {
+          interrupt_id: "interrupt-1",
+          reason: "clarification",
+          prompt: "Which date range?",
+          choices: [],
+          allow_free_text: true,
+          action_id: null,
+        },
+      },
+      response: null,
+    };
+    const resumedEvent = {
+      type: "run_resumed",
+      run_id: "run waiting",
+      sequence: 5,
+      data: { kind: "run_resumed", interrupt_id: "interrupt-1" },
+      response: null,
+    };
+    const completed = {
+      type: "run_completed",
+      run_id: "run waiting",
+      sequence: 6,
+      data: { kind: "run_completed" },
+      response: { ...agentFailure(), ok: true, error: null, answer: "done" },
+    };
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(sse(waitingEvent))
+      .mockResolvedValueOnce(sse(resumedEvent, completed));
+    const api = createApi();
+
+    await expect(api.streamMessage("conv-1", payload(), vi.fn())).resolves.toMatchObject({
+      kind: "waiting",
+      run_id: "run waiting",
+    });
+    await expect(
+      api.streamResumeRun(
+        "run waiting",
+        { interrupt_id: "interrupt-1", message: "Last 30 days" },
+        vi.fn(),
+      ),
+    ).resolves.toMatchObject({ ok: true, answer: "done" });
+    expect(globalThis.fetch).toHaveBeenLastCalledWith(
+      "/api/runs/run%20waiting/resume/stream",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("supports the non-stream resume endpoint", async () => {
+    const response = { ...agentFailure(), ok: true, error: null, answer: "done" };
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => response,
+    } as Response);
+
+    await expect(
+      createApi().resumeRun("run 1", {
+        interrupt_id: "interrupt-1",
+        message: "Use fiscal year 2025",
+      }),
+    ).resolves.toEqual(response);
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/api/runs/run%201/resume");
+    expect(JSON.parse(String(init.body))).toEqual({
+      interrupt_id: "interrupt-1",
+      message: "Use fiscal year 2025",
+    });
+  });
+
   it.each([422, 403, 500])(
     "returns a complete typed AgentResponse for HTTP %i Runtime failures",
     async (status) => {
@@ -303,6 +379,11 @@ describe("ApiClient", () => {
         sql: failure.sql,
         pending_memory_updates: failure.pending_memory_updates,
         version_pins: failure.version_pins,
+        analysis_plan: failure.analysis_plan,
+        analysis_steps: failure.analysis_steps,
+        artifacts: failure.artifacts,
+        evidence: failure.evidence,
+        limitations: failure.limitations,
       },
     });
     expect(viewModel.answer).toBe(failure.error?.message);
@@ -541,6 +622,19 @@ function createApi(): ApiClient {
     getSession: () => session(),
     setSession: vi.fn(),
     clearSession: vi.fn(),
+  });
+}
+
+function sse(...events: Array<Record<string, unknown>>): Response {
+  const stream = events
+    .map(
+      (event) =>
+        `id: ${String(event.sequence)}\nevent: ${String(event.type)}\ndata: ${JSON.stringify(event)}\n\n`,
+    )
+    .join("");
+  return new Response(stream, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream; charset=utf-8" },
   });
 }
 

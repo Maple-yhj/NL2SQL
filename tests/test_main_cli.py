@@ -62,6 +62,15 @@ class _Composition:
         self.close_calls += 1
 
 
+class _NativeComposition:
+    def __init__(self, runtime: _Runtime) -> None:
+        self.analysis_runtime = runtime
+        self.close_calls = 0
+
+    async def close(self) -> None:
+        self.close_calls += 1
+
+
 class DataAgentCliTests(unittest.TestCase):
     def _cli(self):
         self.assertIsNotNone(importlib.util.find_spec("data_agent.cli"))
@@ -75,8 +84,9 @@ class DataAgentCliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 0)
         help_text = output.getvalue()
-        for command in ("ask", "validate-config", "compile-packs", "rebuild-index"):
-            self.assertIn(command, help_text)
+        self.assertIn("ask", help_text)
+        for retired in ("validate-config", "compile-packs", "rebuild-index"):
+            self.assertNotIn(retired, help_text)
 
     def test_ask_forwards_all_modes_and_always_closes_runtime(self):
         cli = self._cli()
@@ -99,6 +109,14 @@ class DataAgentCliTests(unittest.TestCase):
                             "user-cli",
                             "--conversation-id",
                             "conv-cli",
+                            "--source-id",
+                            "orders",
+                            "--source-version",
+                            "2",
+                            "--binding-id",
+                            "orders-binding",
+                            "--binding-version",
+                            "3",
                             "--include-trace",
                         ],
                         runtime_factory=factory,
@@ -111,6 +129,10 @@ class DataAgentCliTests(unittest.TestCase):
                 self.assertEqual(request.mode.value, mode)
                 self.assertEqual(request.enterprise_id, "user-dataset")
                 self.assertEqual(request.domain_id, "dataset")
+                self.assertEqual(request.source_id, "orders")
+                self.assertEqual(request.source_version, 2)
+                self.assertEqual(request.binding_id, "orders-binding")
+                self.assertEqual(request.binding_version, 3)
                 self.assertTrue(request.include_trace)
                 self.assertEqual(principal.tenant_id, "tenant-cli")
                 self.assertEqual(principal.user_id, "user-cli")
@@ -132,46 +154,20 @@ class DataAgentCliTests(unittest.TestCase):
         self.assertIn("Data Agent command failed safely.", stderr.getvalue())
         self.assertNotIn("password", stderr.getvalue())
 
-    def test_validate_config_is_offline_and_never_builds_runtime_or_pool(self):
-        cli = self._cli()
-        runtime_factory = mock.AsyncMock(side_effect=AssertionError("must stay offline"))
+    def test_ask_accepts_native_composition_without_legacy_runtime_attribute(self):
+        runtime = _Runtime()
+        composition = _NativeComposition(runtime)
         output = io.StringIO()
-        with mock.patch("asyncpg.create_pool", new=mock.AsyncMock()) as create_pool, contextlib.redirect_stdout(
-            output
-        ):
-            code = cli.main(
-                ["validate-config", "--project-root", str(ROOT)],
-                runtime_factory=runtime_factory,
+
+        with contextlib.redirect_stdout(output):
+            code = self._cli().main(
+                ["ask", "show gmv", "--mode", "plan"],
+                runtime_factory=mock.AsyncMock(return_value=composition),
             )
 
         self.assertEqual(code, 0)
-        self.assertEqual(json.loads(output.getvalue())["valid"], True)
-        runtime_factory.assert_not_awaited()
-        create_pool.assert_not_awaited()
-
-    def test_maintenance_commands_delegate_to_deterministic_builders(self):
-        cli = self._cli()
-        bundle = ROOT / "generated" / "bundle.json"
-        index = ROOT / "generated" / "index.json"
-        with mock.patch(
-            "data_agent.runtime.maintenance.compile_packs",
-            return_value=bundle,
-        ) as compile_packs, mock.patch(
-            "data_agent.runtime.maintenance.rebuild_semantic_index",
-            return_value=index,
-        ) as rebuild_index:
-            with contextlib.redirect_stdout(io.StringIO()):
-                self.assertEqual(
-                    cli.main(["compile-packs", "--project-root", str(ROOT)]),
-                    0,
-                )
-                self.assertEqual(
-                    cli.main(["rebuild-index", "--project-root", str(ROOT)]),
-                    0,
-                )
-
-        compile_packs.assert_called_once_with(project_root=ROOT, output_path=None)
-        rebuild_index.assert_called_once_with(project_root=ROOT, output_path=None)
+        self.assertEqual(len(runtime.calls), 1)
+        self.assertEqual(composition.close_calls, 1)
 
     def test_main_module_is_a_thin_cli_forwarder(self):
         source = (ROOT / "main.py").read_text(encoding="utf-8")
@@ -179,6 +175,11 @@ class DataAgentCliTests(unittest.TestCase):
         self.assertNotIn("graph.pipeline", source)
         self.assertNotIn("run_nl2sql", source)
         self.assertIn("data_agent.cli", source)
+
+    def test_default_cli_factory_selects_native_analysis_runtime(self):
+        source = (ROOT / "src" / "data_agent" / "cli.py").read_text(encoding="utf-8")
+        self.assertIn("analysis_runtime", source)
+        self.assertNotIn("build_upload_runtime", source)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import unittest
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest import mock
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
@@ -30,7 +31,7 @@ from data_agent.runtime import (
     ConversationMessageMetadata,
     PrincipalContext,
 )
-from data_agent.runtime.events import RunCompletedPayload
+from data_agent.runtime.events import RunCompletedPayload, RunStartedPayload
 from data_agent.runtime.models import AgentTraceEntry
 
 
@@ -63,6 +64,7 @@ class _RecordingRuntime:
         self.recorded_turns: list[
             tuple[AgentRequest, PrincipalContext, AgentResponse]
         ] = []
+        self.run_ids: list[str] = []
 
     async def run(
         self,
@@ -70,6 +72,8 @@ class _RecordingRuntime:
         principal: PrincipalContext,
     ) -> AsyncIterator[AgentEvent]:
         self.calls.append((request, principal))
+        run_id = "run-" + uuid4().hex
+        self.run_ids.append(run_id)
         response = AgentResponse(
             ok=True,
             question=request.question,
@@ -85,9 +89,19 @@ class _RecordingRuntime:
             else (),
         )
         yield AgentEvent(
-            type=AgentEventType.RUN_COMPLETED,
-            run_id="run-1",
+            type=AgentEventType.RUN_STARTED,
+            run_id=run_id,
             sequence=0,
+            data=RunStartedPayload(
+                mode=request.mode,
+                enterprise_id=request.enterprise_id,
+                domain_id=request.domain_id,
+            ),
+        )
+        yield AgentEvent(
+            type=AgentEventType.RUN_COMPLETED,
+            run_id=run_id,
+            sequence=1,
             data=RunCompletedPayload(),
             response=response,
         )
@@ -128,6 +142,36 @@ class _RecordingComposition:
 class ApiRuntimeContractTests(unittest.TestCase):
     def test_create_app_supports_an_injected_runtime_factory(self):
         self.assertIn("runtime_factory", inspect.signature(create_app).parameters)
+
+    def test_default_factory_streams_through_native_analysis_agent(self):
+        class Model:
+            model_id = "default-test-model"
+            version = "test"
+
+            async def complete(self, *args, **kwargs):  # pragma: no cover
+                del args, kwargs
+                raise AssertionError("unpinned request must fail before model use")
+
+        with tempfile.TemporaryDirectory() as state_root, mock.patch(
+            "data_agent.runtime.composition_root._default_model_client_factory",
+            return_value=Model(),
+        ), mock.patch.dict(
+            "os.environ",
+            {
+                "JWT_SECRET_KEY": TEST_JWT_SECRET,
+                "DATA_AGENT_STATE_DIR": state_root,
+            },
+        ), TestClient(create_app()) as client:
+            response = client.post(
+                "/api/nl2sql/stream",
+                headers=_auth_headers(),
+                json={"question": "show revenue"},
+            )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('"run_id":"analysis-run-', response.text)
+        self.assertIn("event: run_started", response.text)
+        self.assertIn("event: run_failed", response.text)
 
     def test_request_schema_is_strict_and_matches_agent_request_fields(self):
         self.assertEqual(
@@ -199,7 +243,7 @@ class ApiRuntimeContractTests(unittest.TestCase):
         self.assertEqual(principal.user_id, "user-from-token")
         self.assertEqual(principal.roles, ("analyst",))
 
-    def test_pinned_datasource_message_routes_to_dataset_query_service(self):
+    def test_pinned_datasource_message_routes_only_to_agent_runtime(self):
         composition = _RecordingComposition()
         composition.runtime.get_conversation = mock.AsyncMock(  # type: ignore[attr-defined]
             return_value=object()
@@ -231,18 +275,8 @@ class ApiRuntimeContractTests(unittest.TestCase):
                 ),
             )
         )
-        data_query = mock.AsyncMock()
-        data_query.run.return_value = AgentResponse(
-            ok=True,
-            question="show rows",
-            contextualized_question="show rows",
-            conversation_id="conv-dataset",
-            tenant_id="tenant-from-token",
-            answer="dataset done",
-        )
         app = create_app(
             runtime_factory=mock.AsyncMock(return_value=composition),
-            data_source_query_service=data_query,
         )
 
         with mock.patch.dict(
@@ -267,27 +301,17 @@ class ApiRuntimeContractTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["answer"], "dataset done")
-        self.assertEqual(composition.runtime.calls, [])
-        data_query.run.assert_awaited_once()
-        routed_request, routed_principal = data_query.run.await_args.args
-        routed_context = data_query.run.await_args.kwargs[
-            "conversation_context"
-        ]
+        self.assertEqual(response.json()["answer"], "done")
+        self.assertEqual(len(composition.runtime.calls), 1)
+        routed_request, routed_principal = composition.runtime.calls[0]
         self.assertEqual(routed_request.source_id, "orders")
         self.assertEqual(routed_request.conversation_id, "conv-dataset")
         self.assertEqual(routed_principal.tenant_id, "tenant-from-token")
         self.assertEqual(
-            routed_context.prior_plan.group_by,
-            ("dataset.Customers.state",),
+            composition.runtime.recorded_turns,
+            [],
+            "the API must not persist turns outside the Agent transaction",
         )
-        self.assertEqual(len(composition.runtime.recorded_turns), 1)
-        recorded_request, recorded_principal, recorded_response = (
-            composition.runtime.recorded_turns[0]
-        )
-        self.assertEqual(recorded_request, routed_request)
-        self.assertEqual(recorded_principal, routed_principal)
-        self.assertEqual(recorded_response.answer, "dataset done")
 
     def test_strict_http_body_cannot_override_authenticated_principal(self):
         composition = _RecordingComposition()
@@ -322,16 +346,17 @@ class ApiRuntimeContractTests(unittest.TestCase):
                     headers=_auth_headers(),
                     json={"question": "show gmv"},
                 )
+                run_id = composition.runtime.run_ids[-1]
                 replay = client.get(
-                    "/api/runs/run-1/events",
+                    f"/api/runs/{run_id}/events",
                     headers=_auth_headers(),
                 )
                 exhausted_replay = client.get(
-                    "/api/runs/run-1/events?after_sequence=0",
+                    f"/api/runs/{run_id}/events?after_sequence=0",
                     headers=_auth_headers(),
                 )
                 other_user = client.get(
-                    "/api/runs/run-1/events",
+                    f"/api/runs/{run_id}/events",
                     headers=_auth_headers(user_id="other-user"),
                 )
 
@@ -340,12 +365,12 @@ class ApiRuntimeContractTests(unittest.TestCase):
             response.headers["content-type"].startswith("text/event-stream")
         )
         self.assertIn("event: run_completed", response.text)
-        self.assertIn('"run_id":"run-1"', response.text)
+        self.assertIn(f'"run_id":"{run_id}"', response.text)
         self.assertEqual(replay.status_code, 200, replay.text)
-        self.assertEqual(len(replay.json()["items"]), 1)
-        self.assertEqual(replay.json()["items"][0]["run_id"], "run-1")
+        self.assertEqual(len(replay.json()["items"]), 2)
+        self.assertEqual(replay.json()["items"][0]["run_id"], run_id)
         self.assertEqual(exhausted_replay.status_code, 200)
-        self.assertEqual(exhausted_replay.json()["items"], [])
+        self.assertEqual(len(exhausted_replay.json()["items"]), 1)
         self.assertEqual(other_user.status_code, 404)
 
     def test_memory_proposals_are_listed_and_decided_with_owner_authority(

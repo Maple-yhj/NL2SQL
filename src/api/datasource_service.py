@@ -60,7 +60,7 @@ from data_agent.relationships.models import (
 from data_agent.relationships.recommender import RelationshipRecommender
 from data_agent.relationships.models import ActivatedRelationshipGraph, validate_graph_catalog
 from data_agent.relationships.validator import validate_graph
-from data_agent.runtime.dependencies import ModelClient
+from data_agent.model_client import ModelClient
 
 
 _SOURCE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")

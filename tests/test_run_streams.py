@@ -6,7 +6,7 @@ import unittest
 from collections.abc import AsyncIterator
 from pathlib import Path
 
-from api.run_streams import RunCoordinator, RunEventStore
+from api.run_streams import RunConflictError, RunCoordinator, RunEventStore
 from data_agent.runtime import (
     AgentEvent,
     AgentEventType,
@@ -15,6 +15,8 @@ from data_agent.runtime import (
 )
 from data_agent.runtime.errors import AgentError, ErrorCode
 from data_agent.runtime.events import RunFailedPayload, RunStartedPayload
+from data_agent.analysis_agent.models import AgentInputRequest
+from data_agent.runtime.events import RunResumedPayload, RunWaitingPayload
 
 
 def _started(run_id: str = "run-1") -> AgentEvent:
@@ -168,4 +170,127 @@ class RunEventStoreTests(unittest.IsolatedAsyncioTestCase):
                 user_id="analyst-a",
                 run_id="run-1",
             )
+        )
+
+    async def test_waiting_is_persisted_and_can_transition_to_resumed(self) -> None:
+        store = RunEventStore(self.path)
+        await store.append(self.principal, _started())
+        waiting = AgentEvent(
+            type=AgentEventType.RUN_WAITING,
+            run_id="run-1",
+            sequence=1,
+            data=RunWaitingPayload(
+                input_request=AgentInputRequest(
+                    interrupt_id="interrupt-1",
+                    reason="clarification",
+                    prompt="Choose a date field",
+                )
+            ),
+        )
+        await store.append(self.principal, waiting)
+        await store.append(self.principal, waiting)
+        self.assertEqual(
+            await store.status(
+                tenant_id="tenant-a",
+                user_id="analyst-a",
+                run_id="run-1",
+            ),
+            "waiting",
+        )
+
+        resumed = AgentEvent(
+            type=AgentEventType.RUN_RESUMED,
+            run_id="run-1",
+            sequence=2,
+            data=RunResumedPayload(interrupt_id="interrupt-1"),
+        )
+        await store.append(self.principal, resumed)
+        self.assertEqual(
+            await store.status(
+                tenant_id="tenant-a",
+                user_id="analyst-a",
+                run_id="run-1",
+            ),
+            "running",
+        )
+        replayed = await store.replay(
+            tenant_id="tenant-a",
+            user_id="analyst-a",
+            run_id="run-1",
+        )
+        self.assertEqual([event.sequence for event in replayed], [0, 1, 2])
+
+    async def test_event_sequences_are_monotonic_and_terminal_runs_are_closed(self) -> None:
+        store = RunEventStore(self.path)
+        await store.append(self.principal, _started())
+        with self.assertRaisesRegex(ValueError, "monotonic"):
+            await store.append(
+                self.principal,
+                AgentEvent(
+                    type=AgentEventType.RUN_STARTED,
+                    run_id="run-1",
+                    sequence=2,
+                    data=RunStartedPayload(
+                        mode="execute",
+                        enterprise_id="olist",
+                        domain_id="commerce",
+                    ),
+                ),
+            )
+        await store.append(self.principal, _cancelled())
+        with self.assertRaisesRegex(ValueError, "terminal"):
+            await store.append(
+                self.principal,
+                AgentEvent(
+                    type=AgentEventType.RUN_RESUMED,
+                    run_id="run-1",
+                    sequence=2,
+                    data=RunResumedPayload(interrupt_id="interrupt-1"),
+                ),
+            )
+
+    async def test_one_active_or_waiting_run_is_allowed_per_conversation(self) -> None:
+        store = RunEventStore(self.path)
+        await store.append(
+            self.principal,
+            _started("run-conversation-1"),
+            conversation_id="conversation-1",
+        )
+        await store.append(
+            self.principal,
+            AgentEvent(
+                type=AgentEventType.RUN_WAITING,
+                run_id="run-conversation-1",
+                sequence=1,
+                data=RunWaitingPayload(
+                    input_request=AgentInputRequest(
+                        interrupt_id="interrupt-conversation",
+                        reason="clarification",
+                        prompt="Choose a date field",
+                    )
+                ),
+            ),
+        )
+        with self.assertRaises(RunConflictError):
+            await store.append(
+                self.principal,
+                _started("run-conversation-2"),
+                conversation_id="conversation-1",
+            )
+        cancelled = _cancelled("run-conversation-1").model_copy(
+            update={"sequence": 2}
+        )
+        await store.append(self.principal, cancelled)
+        self.assertEqual(
+            await store.status(
+                tenant_id=self.principal.tenant_id,
+                user_id=self.principal.user_id,
+                run_id="run-conversation-1",
+            ),
+            "cancelled",
+        )
+        await store.append(
+            self.principal,
+            _started("run-conversation-2"),
+            conversation_id="conversation-1",
         )

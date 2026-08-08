@@ -1,5 +1,7 @@
 # LangChain and LangGraph Migration Implementation Plan
 
+> **Historical / superseded:** Retained as migration provenance. The fixed workflow described here was replaced by the native Data Analysis Agent design dated 2026-08-08; do not use this as the current implementation guide.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the legacy engine and hand-written ReAct orchestration with one tested LangChain-backed LangGraph workflow, remove duplicate and obsolete code, and publish the result on the `langgraph` branch.

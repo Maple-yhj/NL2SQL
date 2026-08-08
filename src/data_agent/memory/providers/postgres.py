@@ -1,4 +1,4 @@
-"""PostgreSQL authority for memory, conversations, and checkpoints."""
+"""PostgreSQL authority for approved memory and conversation records."""
 
 from __future__ import annotations
 
@@ -8,8 +8,6 @@ from collections.abc import Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from datetime import UTC, datetime
 from typing import Any, Protocol
-
-from data_agent.execution.contracts import ExecutionCheckpoint
 
 from ..contracts import MemoryManager
 from ..manager import (
@@ -30,7 +28,6 @@ from ..models import (
     ApprovalContext,
     ApprovalDecision,
     ArtifactReference,
-    Checkpoint,
     ConversationMemoryContent,
     ConversationMemoryOwner,
     ConversationRecord,
@@ -355,7 +352,8 @@ class PostgresMemoryManager:
                 owner = await connection.fetchrow(
                     """
                     /* memory:lock_conversation */
-                    SELECT tenant_id, user_id, domain_id, conversation_id, owner_key
+                    SELECT tenant_id, user_id, domain_id, conversation_id, owner_key,
+                           summary, summary_run_id
                     FROM data_agent_conversations
                     WHERE tenant_id = $1
                       AND user_id = $2
@@ -372,6 +370,51 @@ class PostgresMemoryManager:
                 )
                 if owner is None:
                     raise PermissionError("conversation owner does not match")
+
+                existing_messages = await connection.fetch(
+                    """
+                    /* memory:load_turn_messages */
+                    SELECT role, content, safe_payload
+                    FROM data_agent_messages
+                    WHERE tenant_id = $1
+                      AND user_id = $2
+                      AND domain_id = $3
+                      AND conversation_id = $4
+                      AND run_id = $5
+                      AND owner_key = $6
+                    ORDER BY role
+                    """,
+                    batch.tenant_id,
+                    batch.user_id,
+                    batch.domain_id,
+                    batch.conversation_id,
+                    batch.run_id,
+                    turn_owner_key,
+                )
+                if existing_messages:
+                    expected_messages = {
+                        message.role.value: (
+                            message.content,
+                            message.payload.model_dump(mode="json"),
+                        )
+                        for message in (batch.user_message, batch.assistant_message)
+                    }
+                    actual_messages = {
+                        str(row["role"]): (
+                            str(row["content"]),
+                            _json_value(row["safe_payload"]),
+                        )
+                        for row in existing_messages
+                    }
+                    if (
+                        actual_messages == expected_messages
+                        and owner.get("summary_run_id") == batch.run_id
+                        and owner.get("summary") == batch.conversation_summary.summary
+                    ):
+                        return
+                    raise MemoryConflictError(
+                        "conversation run already has different content"
+                    )
 
                 for message in (batch.user_message, batch.assistant_message):
                     message_id = "message:" + _stable_digest(
@@ -434,14 +477,6 @@ class PostgresMemoryManager:
 
                 for memory_candidate in batch.proposals:
                     await self._propose_on_connection(connection, memory_candidate, now)
-
-                if batch.checkpoint is not None:
-                    await self._save_checkpoint_on_connection(
-                        connection,
-                        batch.run_id,
-                        batch.checkpoint,
-                        now,
-                    )
 
     async def propose(self, candidate: MemoryCandidate) -> ProposalId:
         validate_candidate_content(candidate)
@@ -1019,21 +1054,6 @@ class PostgresMemoryManager:
                     subject.run_id,
                 )
                 total += _command_count(status)
-                status = await connection.execute(
-                    """
-                    /* memory:forget_checkpoints */
-                    DELETE FROM data_agent_checkpoints
-                    WHERE tenant_id = $1 AND domain_id = $2 AND user_id = $3
-                      AND ($4::text IS NULL OR conversation_id = $4)
-                      AND ($5::text IS NULL OR run_id = $5)
-                    """,
-                    subject.tenant_id,
-                    subject.domain_id,
-                    subject.user_id,
-                    subject.conversation_id,
-                    subject.run_id,
-                )
-                total += _command_count(status)
                 if subject.run_id is not None:
                     await connection.execute(
                         """
@@ -1065,134 +1085,6 @@ class PostgresMemoryManager:
                     )
                     total += _command_count(status)
         return total
-
-    async def save_checkpoint(self, run_id: str, state: Checkpoint) -> None:
-        now = self._now()
-        conversation_owner_key = _conversation_owner_key(
-            state.tenant_id,
-            state.user_id,
-            state.domain_id,
-            state.conversation_id,
-        )
-        async with self._pool.acquire() as connection:
-            async with connection.transaction():
-                owner = await connection.fetchrow(
-                    """
-                    /* memory:lock_conversation */
-                    SELECT tenant_id, user_id, domain_id, conversation_id, owner_key
-                    FROM data_agent_conversations
-                    WHERE tenant_id = $1 AND user_id = $2
-                      AND domain_id = $3 AND conversation_id = $4
-                      AND owner_key = $5
-                    FOR UPDATE
-                    """,
-                    state.tenant_id,
-                    state.user_id,
-                    state.domain_id,
-                    state.conversation_id,
-                    conversation_owner_key,
-                )
-                if owner is None:
-                    raise PermissionError("checkpoint owner does not match")
-                await self._save_checkpoint_on_connection(
-                    connection,
-                    run_id,
-                    state,
-                    now,
-                )
-
-    async def _save_checkpoint_on_connection(
-        self,
-        connection: _ConnectionProtocol,
-        run_id: str,
-        state: Checkpoint,
-        now: datetime,
-    ) -> None:
-        if run_id != state.run_id or state.checkpoint.state.run_id != run_id:
-            raise ValueError("checkpoint run_id does not match its owner")
-        validate_candidate_content(state.checkpoint)
-        owner_key = _turn_owner_key(
-            state.tenant_id,
-            state.user_id,
-            state.domain_id,
-            state.conversation_id,
-            state.run_id,
-        )
-        await connection.execute(
-            """
-            /* memory:save_checkpoint */
-            INSERT INTO data_agent_checkpoints
-                (tenant_id, user_id, domain_id, conversation_id, run_id,
-                 owner_key, checkpoint_id, checkpoint_digest, checkpoint_json,
-                 created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $10)
-            ON CONFLICT
-                (tenant_id, user_id, domain_id, conversation_id, run_id)
-            DO UPDATE SET checkpoint_id = EXCLUDED.checkpoint_id,
-                          checkpoint_digest = EXCLUDED.checkpoint_digest,
-                          checkpoint_json = EXCLUDED.checkpoint_json,
-                          updated_at = EXCLUDED.updated_at
-            """,
-            state.tenant_id,
-            state.user_id,
-            state.domain_id,
-            state.conversation_id,
-            state.run_id,
-            owner_key,
-            state.checkpoint.checkpoint_id,
-            state.checkpoint.digest,
-            state.checkpoint.model_dump_json(),
-            now,
-        )
-
-    async def load_checkpoint(
-        self,
-        *,
-        tenant_id: str,
-        user_id: str,
-        domain_id: str,
-        conversation_id: str,
-        run_id: str,
-    ) -> ExecutionCheckpoint | None:
-        owner_key = _turn_owner_key(
-            tenant_id,
-            user_id,
-            domain_id,
-            conversation_id,
-            run_id,
-        )
-        async with self._pool.acquire() as connection:
-            row = await connection.fetchrow(
-                """
-                /* memory:load_checkpoint */
-                SELECT checkpoint_json, checkpoint_digest, checkpoint_id, owner_key
-                FROM data_agent_checkpoints
-                WHERE tenant_id = $1 AND user_id = $2
-                  AND domain_id = $3 AND conversation_id = $4
-                  AND run_id = $5 AND owner_key = $6
-                """,
-                tenant_id,
-                user_id,
-                domain_id,
-                conversation_id,
-                run_id,
-                owner_key,
-            )
-        if row is None:
-            return None
-        value = row["checkpoint_json"]
-        checkpoint = (
-            ExecutionCheckpoint.model_validate_json(value)
-            if isinstance(value, (str, bytes, bytearray))
-            else ExecutionCheckpoint.model_validate(value)
-        )
-        if (
-            checkpoint.state.run_id != run_id
-            or checkpoint.checkpoint_id != row["checkpoint_id"]
-            or checkpoint.digest != row["checkpoint_digest"]
-        ):
-            raise ValueError("persisted checkpoint metadata does not match its payload")
-        return checkpoint
 
     async def _insert_artifact(
         self,
@@ -1241,8 +1133,6 @@ class PostgresMemoryManager:
             validate_candidate_content(reference)
         for candidate in batch.proposals:
             validate_candidate_content(candidate)
-        if batch.checkpoint is not None:
-            validate_candidate_content(batch.checkpoint)
 
     def _now(self) -> datetime:
         value = self._clock()

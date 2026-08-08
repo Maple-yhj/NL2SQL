@@ -24,7 +24,7 @@ from data_agent.relationships.candidates import prefilter_candidates
 from data_agent.relationships.models import ActivatedRelationshipGraph
 from data_agent.datasources import SemanticGraphBindingRecord, SemanticGraphFieldMapping, SemanticBindingStatus
 from data_agent.tools.schemas import CatalogColumn, CatalogKey, CatalogRelation, CatalogSnapshot, catalog_schema_fingerprint
-from api.dataset_query_service import DatasetQueryCompiler, DatasetQueryPlan
+from data_agent.dataset_query import DatasetQueryCompiler, DatasetQueryPlan
 
 
 def _graph(edges: tuple[RelationshipEdge, ...]) -> RelationshipGraphDraft:

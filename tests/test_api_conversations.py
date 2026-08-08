@@ -19,7 +19,7 @@ from data_agent.runtime import (
     ConversationSummary,
     PrincipalContext,
 )
-from data_agent.runtime.events import RunCompletedPayload
+from data_agent.runtime.events import RunCompletedPayload, RunStartedPayload
 
 
 TEST_JWT_SECRET = "test-secret-key-with-at-least-32-bytes"
@@ -65,9 +65,19 @@ class _ConversationRuntime:
             answer="done",
         )
         yield AgentEvent(
-            type=AgentEventType.RUN_COMPLETED,
+            type=AgentEventType.RUN_STARTED,
             run_id="run-1",
             sequence=0,
+            data=RunStartedPayload(
+                mode=request.mode,
+                enterprise_id=request.enterprise_id,
+                domain_id=request.domain_id,
+            ),
+        )
+        yield AgentEvent(
+            type=AgentEventType.RUN_COMPLETED,
+            run_id="run-1",
+            sequence=1,
             data=RunCompletedPayload(),
             response=response,
         )

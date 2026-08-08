@@ -15,8 +15,10 @@ const supportedKeywords = new Set([
   "anyOf",
   "const",
   "enum",
+  "format",
   "items",
   "maxItems",
+  "maxLength",
   "minItems",
   "minLength",
   "minimum",
@@ -160,7 +162,16 @@ function validateString(schema: JsonSchema, value: string): boolean {
   ) {
     return false;
   }
+  if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
+    return false;
+  }
   if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) {
+    return false;
+  }
+  if (schema.format === "date-time" && !Number.isFinite(Date.parse(value))) {
+    return false;
+  }
+  if (schema.format !== undefined && schema.format !== "date-time") {
     return false;
   }
   return true;
@@ -256,8 +267,15 @@ function validatePydanticRefinements(body: Record<string, unknown>): boolean {
   if (
     body.version_pins !== null &&
     (!isRecord(body.version_pins) ||
-      !hasUniqueComponents(body.version_pins.tool_versions) ||
-      !hasUniqueComponents(body.version_pins.model_versions))
+      !validateVersionPins(body.version_pins))
+  ) {
+    return false;
+  }
+  if (
+    !hasUniqueStrings(body.limitations) ||
+    !hasUniqueObjectIds(body.analysis_steps, "step_id") ||
+    !hasUniqueObjectIds(body.artifacts, "artifact_id") ||
+    !hasUniqueObjectIds(body.evidence, "evidence_id")
   ) {
     return false;
   }
@@ -374,6 +392,27 @@ function hasUniqueComponents(value: unknown): boolean {
     isRecord(item) ? item.component : undefined,
   );
   return new Set(components).size === components.length;
+}
+
+function validateVersionPins(value: Record<string, unknown>): boolean {
+  return value.kind === "dataset" && hasUniqueComponents(value.model_versions);
+}
+
+function hasUniqueStrings(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === "string") &&
+    new Set(value).size === value.length
+  );
+}
+
+function hasUniqueObjectIds(value: unknown, field: string): boolean {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+  const identifiers = value.map((item) => isRecord(item) ? item[field] : undefined);
+  return identifiers.every((item) => typeof item === "string") &&
+    new Set(identifiers).size === identifiers.length;
 }
 
 function isJsonValue(value: unknown, seen: WeakSet<object>): boolean {

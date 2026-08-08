@@ -9,23 +9,22 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
-DOMAIN_ROOT = PROJECT_ROOT / "packs" / "domains" / "commerce"
-ENTERPRISE_ROOT = PROJECT_ROOT / "packs" / "enterprises" / "olist"
 sys.path.insert(0, str(SRC_ROOT))
 
-from data_agent.runtime import (
-    load_bundle_manifest,
-    load_domain_pack,
-    load_enterprise_binding,
-)
-from data_agent.runtime.binding import BindingCompiler
-from data_agent.runtime.models import PrincipalContext
-from data_agent.skills import logical_plan_from_eval_case
 from data_agent.tools import AccessGrant, CredentialLease
 from data_agent.tools.connectors.postgres import (
     ConnectorError,
     ConnectorErrorCode,
     PostgresConnector,
+)
+from tests.support.connector_query import (
+    ALLOWED_RELATIONS,
+    BINDING_DIGEST,
+    CONNECTION_REF,
+    SCHEMA_FINGERPRINT,
+    SOURCE,
+    TENANT_ID,
+    governed_sales_query,
 )
 
 
@@ -140,29 +139,8 @@ class _Pool:
 class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        domain = load_domain_pack(DOMAIN_ROOT)
-        enterprise = load_enterprise_binding(ENTERPRISE_ROOT)
-        bundle = load_bundle_manifest(
-            PROJECT_ROOT / "generated" / "bundles" / "olist-local.json",
-            pack_lock=ENTERPRISE_ROOT / "pack.lock",
-            schema_catalog=PROJECT_ROOT / "schema_catalog.json",
-        )
-        case = next(item for item in domain.spec.evals if item.id == "commerce.metric_002")
-        plan = logical_plan_from_eval_case(case, domain)
-        cls.principal = PrincipalContext(
-            tenant_id="seller-42",
-            user_id="user-7",
-            roles=("seller",),
-        )
-        cls.bundle = bundle
-        compiler = BindingCompiler(domain, enterprise, bundle)
-        cls.prepared = compiler.compile(
-            compiler.bind(plan, cls.principal),
-            cls.principal,
-        )
-        cls.allowed_relations = tuple(
-            enterprise.spec.policies.relation_allowlist
-        )
+        cls.prepared = governed_sales_query("postgres")
+        cls.allowed_relations = ALLOWED_RELATIONS
 
     def _grant(self, **updates: object) -> AccessGrant:
         now = datetime.now(UTC)
@@ -171,12 +149,12 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
             "tool_name": "query.execute",
             "tool_version": "1.0.0",
             "skill_id": "commerce.analytics",
-            "bundle_digest": self.bundle.digest,
-            "schema_fingerprint": self.bundle.schema_fingerprint,
-            "source": "sales",
+            "bundle_digest": BINDING_DIGEST,
+            "schema_fingerprint": SCHEMA_FINGERPRINT,
+            "source": SOURCE,
             "read_only": True,
-            "principal_user_id": self.principal.user_id,
-            "tenant_id": self.principal.tenant_id,
+            "principal_user_id": "user-7",
+            "tenant_id": TENANT_ID,
             "admin_bypass": False,
             "allowed_relations": self.allowed_relations,
             "max_rows": 100,
@@ -195,9 +173,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         values = {
             "credential_id": "lease-1",
             "grant_id": "grant-1",
-            "bundle_digest": self.bundle.digest,
-            "source": "sales",
-            "connection_ref": "secret://olist/local/database",
+            "bundle_digest": BINDING_DIGEST,
+            "source": SOURCE,
+            "connection_ref": CONNECTION_REF,
             "capabilities": ("data.inspect", "query.execute"),
             "secret": "postgresql://redacted",
             "issued_at": now,
@@ -217,7 +195,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             pool,
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
 
         result = await connector.execute_readonly(
@@ -252,7 +232,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             pool,
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
         now = datetime.now(UTC)
         cases = (
@@ -285,7 +267,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             _Pool(connection),
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
 
         with self.assertRaises(ConnectorError) as raised:
@@ -302,7 +286,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             _Pool(connection),
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
 
         explain = await connector.explain(
@@ -358,7 +344,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             _Pool(ConstraintConnection()),
             allowed_relations=allowed,
-            schema_fingerprint=self.bundle.schema_fingerprint,
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
         catalog = await connector.introspect_schema(
             self._grant(
@@ -383,7 +371,9 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             pool,
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
         task = asyncio.create_task(
             connector.execute_readonly(
@@ -409,9 +399,10 @@ class PostgresConnectorTests(unittest.IsolatedAsyncioTestCase):
         connector = PostgresConnector(
             pool,
             allowed_relations=self.allowed_relations,
-            schema_fingerprint=self.bundle.schema_fingerprint,
-            bundle_digest=self.bundle.digest,
-            connection_ref="secret://olist/local/database",
+            schema_fingerprint=SCHEMA_FINGERPRINT,
+            bundle_digest=BINDING_DIGEST,
+            source=SOURCE,
+            connection_ref=CONNECTION_REF,
         )
         lease = self._lease()
 

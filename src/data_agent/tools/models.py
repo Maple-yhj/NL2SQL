@@ -20,8 +20,8 @@ from pydantic import (
     model_validator,
 )
 
-from data_agent.runtime.composition import ResolvedRuntimeBundle
-from data_agent.runtime.models import PrincipalContext
+from data_agent.runtime.models import AgentMode, PrincipalContext
+from data_agent.analysis_agent.models import DatasetAuthority
 
 
 NonBlankText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -97,6 +97,30 @@ class ToolSpec(ToolModel):
     retry_policy: RetryPolicy = Field(default_factory=RetryPolicy)
     examples: tuple[ToolExample, ...] = ()
     eval_tags: tuple[NonBlankText, ...] = ()
+    authority_kinds: tuple[Literal["dataset"], ...] = ("dataset",)
+    allowed_modes: tuple[AgentMode, ...] = (
+        AgentMode.PLAN,
+        AgentMode.PREVIEW,
+        AgentMode.EXECUTE,
+    )
+    artifact_policy: Literal["none", "metadata", "derived", "row_data"] = "none"
+    credential_requirement: Literal["none", "required"] | None = None
+
+    @model_validator(mode="after")
+    def normalize_authority_policy(self) -> "ToolSpec":
+        if len(self.authority_kinds) != len(set(self.authority_kinds)):
+            raise ValueError("tool authority kinds must be unique")
+        if len(self.allowed_modes) != len(set(self.allowed_modes)):
+            raise ValueError("tool allowed modes must be unique")
+        if not self.authority_kinds or not self.allowed_modes:
+            raise ValueError("tool must allow at least one authority kind and mode")
+        requirement = self.credential_requirement
+        if requirement is None:
+            requirement = "required" if self.side_effects == "read" else "none"
+            object.__setattr__(self, "credential_requirement", requirement)
+        if requirement == "required" and self.side_effects != "read":
+            raise ValueError("credential tools must declare read side effects")
+        return self
 
 
 class ToolCall(ToolModel):
@@ -169,6 +193,9 @@ class ToolTrace(ToolModel):
     latency_ms: int = Field(ge=0)
     input_schema: NonBlankText
     output_schema: NonBlankText
+    safe_args_digest: NonBlankText | None = None
+    artifact_ids: tuple[NonBlankText, ...] = ()
+    evidence_ids: tuple[NonBlankText, ...] = ()
     error_code: ToolErrorCode | None = None
 
 
@@ -273,21 +300,46 @@ class ToolBudget:
             return True
 
 
+AuthorityEnvelope = DatasetAuthority
+
+
 @dataclass(frozen=True, slots=True)
 class ToolInvocationContext:
     principal: PrincipalContext
     skill_id: str
     skill_version: str
     allowed_tools: tuple[str, ...]
-    bundle: ResolvedRuntimeBundle
     budget: ToolBudget
+    authority: DatasetAuthority
+    mode: AgentMode | None = None
+    runtime_resources: object | None = None
+    max_rows: int = 1000
+    statement_timeout_ms: int = 15_000
+    run_id: str = "run-tool"
+
+    def __post_init__(self) -> None:
+        if self.max_rows < 1 or self.statement_timeout_ms < 1:
+            raise ValueError("dataset tool runtime limits must be positive")
+        authority = DatasetAuthority.model_validate(self.authority)
+        effective_mode = self.mode or authority.mode
+        if effective_mode != authority.mode:
+            raise ValueError("dataset authority mode is immutable")
+        if (
+            self.principal.tenant_id != authority.tenant_id
+            or self.principal.user_id != authority.user_id
+        ):
+            raise ValueError("dataset authority does not belong to the principal")
+        object.__setattr__(self, "authority", authority)
+        object.__setattr__(self, "mode", effective_mode)
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderContext:
     call_id: str
+    run_id: str
     principal: PrincipalContext
-    bundle: ResolvedRuntimeBundle
+    authority: DatasetAuthority
+    runtime_resources: object | None
     access_grant: AccessGrant
     credential: CredentialLease | None
 

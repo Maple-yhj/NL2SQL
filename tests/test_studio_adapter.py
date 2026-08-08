@@ -2,100 +2,34 @@ from __future__ import annotations
 
 import json
 import unittest
-from collections.abc import AsyncIterator
 from pathlib import Path
-from unittest import mock
-
-from data_agent.runtime import (
-    AgentEvent,
-    AgentEventType,
-    AgentRequest,
-    AgentResponse,
-    PrincipalContext,
-)
-from data_agent.runtime.events import RunCompletedPayload
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-class _Runtime:
-    def __init__(self) -> None:
-        self.calls: list[tuple[AgentRequest, PrincipalContext]] = []
-
-    async def run(
-        self,
-        request: AgentRequest,
-        principal: PrincipalContext,
-    ) -> AsyncIterator[AgentEvent]:
-        self.calls.append((request, principal))
-        response = AgentResponse(
-            ok=True,
-            question=request.question,
-            contextualized_question=request.question,
-            conversation_id=request.conversation_id,
-            tenant_id=principal.tenant_id,
-            sql="SELECT 1",
-            answer="done",
-        )
-        yield AgentEvent(
-            type=AgentEventType.RUN_COMPLETED,
-            run_id="studio-run",
-            sequence=0,
-            data=RunCompletedPayload(),
-            response=response,
-        )
-
-
-class _Composition:
-    def __init__(self) -> None:
-        self.runtime = _Runtime()
-        self.close_calls = 0
-
-    async def close(self) -> None:
-        self.close_calls += 1
-
-
 class StudioRuntimeAdapterTests(unittest.IsolatedAsyncioTestCase):
-    async def test_wrapper_output_is_exactly_the_direct_runtime_response(self):
-        from data_agent.adapters.studio import build_studio_graph
+    async def test_exports_the_native_compiled_agent_graph(self):
+        from data_agent.adapters.studio import build_studio_graph, development_input
 
-        composition = _Composition()
-        factory = mock.AsyncMock(return_value=composition)
-        studio_graph = build_studio_graph(runtime_factory=factory)
+        studio_graph = build_studio_graph()
+        document = studio_graph.get_graph().to_json()
+        nodes = {item["id"] for item in document["nodes"]}
+        self.assertIn("plan_or_replan", nodes)
+        self.assertIn("guard_decision", nodes)
+        self.assertIn("execute_tool", nodes)
+        self.assertIn("evaluate_progress", nodes)
+        self.assertIn("persist_turn", nodes)
+        self.assertNotIn("runtime", nodes)
 
-        output = await studio_graph.ainvoke(
-            {
-                "request": {
-                    "question": " show gmv ",
-                    "mode": "preview",
-                    "conversation_id": "conv-1",
-                },
-                "principal": {
-                    "tenant_id": "tenant-1",
-                    "user_id": "user-1",
-                    "roles": ["analyst"],
-                },
-            }
-        )
+        self.assertIsNone(studio_graph.get_context_jsonschema())
+        output = await studio_graph.ainvoke(development_input())
+        self.assertEqual(output["status"].value, "completed")
+        self.assertTrue(output["final_response"].ok)
+        self.assertEqual(output["authority"].source_id, "studio-source")
+        self.assertIn("offline plan mode", output["final_response"].answer)
 
-        expected = AgentResponse(
-            ok=True,
-            question="show gmv",
-            contextualized_question="show gmv",
-            conversation_id="conv-1",
-            tenant_id="tenant-1",
-            sql="SELECT 1",
-            answer="done",
-        ).model_dump(mode="json")
-        self.assertEqual(output, expected)
-        factory.assert_awaited_once_with()
-        self.assertEqual(composition.close_calls, 1)
-        request, principal = composition.runtime.calls[-1]
-        self.assertEqual(request.mode.value, "preview")
-        self.assertEqual(principal.roles, ("analyst",))
-
-    def test_studio_config_points_only_to_runtime_wrapper(self):
+    def test_studio_config_points_only_to_native_agent_graph(self):
         config = json.loads((ROOT / "langgraph.json").read_text(encoding="utf-8"))
         graph_targets = tuple(config["graphs"].values())
 
@@ -107,7 +41,7 @@ class StudioRuntimeAdapterTests(unittest.IsolatedAsyncioTestCase):
         for forbidden in ("graph/pipeline", "graph.pipeline", "execution"):
             self.assertNotIn(forbidden, serialized)
 
-    def test_wrapper_source_does_not_import_internal_execution_or_legacy_graph(self):
+    def test_source_is_inert_and_does_not_build_runtime_or_datasource(self):
         source = (ROOT / "src" / "data_agent" / "adapters" / "studio.py").read_text(
             encoding="utf-8"
         )
@@ -118,6 +52,9 @@ class StudioRuntimeAdapterTests(unittest.IsolatedAsyncioTestCase):
             "run_nl2sql",
             "graph.tools",
             "graph.memory_store",
+            "build_upload_runtime",
+            "DataSourceService",
+            "runtime.run",
         ):
             self.assertNotIn(forbidden, source)
 

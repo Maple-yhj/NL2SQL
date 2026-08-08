@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Protocol
 
-from data_agent.runtime.binding import PreparedQuery
+from data_agent.dataset_query.contracts import PreparedQuery
 
 from ..models import AccessGrant, CredentialLease
 from ..schemas import (
@@ -187,8 +187,8 @@ class PostgresConnector:
         *,
         allowed_relations: Sequence[str],
         schema_fingerprint: str,
-        source: str = "sales",
-        connection_ref: str = "secret://olist/local/database",
+        source: str,
+        connection_ref: str,
         bundle_digest: str | None = None,
         pool_resolver: PoolResolver | None = None,
     ) -> None:

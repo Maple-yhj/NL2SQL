@@ -22,4 +22,20 @@ describe("graphEditorReducer", () => {
     expect(edited.graph?.edges[0].enabled).toBe(false);
     expect(graphEditorReducer(edited, { type: "undo" }).graph?.edges[0].enabled).toBe(true);
   });
+  it("keeps preferred route edits in undo history", () => {
+    const routeRules = [
+      {
+        rule_id: "route-1",
+        terminal_node_ids: ["a", "b"],
+        ordered_edge_ids: ["e"],
+      },
+    ];
+    const edited = graphEditorReducer(
+      { graph, undo: [], redo: [] },
+      { type: "updateRouteRules", routeRules },
+    );
+    expect(edited.graph?.route_rules).toEqual(routeRules);
+    expect(edited.undo).toHaveLength(1);
+    expect(graphEditorReducer(edited, { type: "undo" }).graph?.route_rules).toEqual([]);
+  });
 });

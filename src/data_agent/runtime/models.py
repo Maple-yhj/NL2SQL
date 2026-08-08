@@ -3,71 +3,31 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
-from typing import Annotated, Literal, Self
+from typing import Literal
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     JsonValue,
     RootModel,
-    StringConstraints,
     model_validator,
 )
 
-from data_agent.skills.models import LogicalQueryPlan
+from data_agent.analysis_agent.models import (
+    AgentArtifactKind,
+    AnalysisPlan,
+)
+from data_agent.dataset_query.contracts import LogicalQueryPlan
 
+from .base import (
+    AgentMode,
+    ContractModel,
+    Digest,
+    NonBlankText,
+    PublicContractModel,
+    SchemaFingerprint,
+)
 from .errors import AgentError
-
-
-NonBlankText = Annotated[
-    str,
-    StringConstraints(strip_whitespace=True, min_length=1),
-]
-Digest = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
-
-
-class ContractModel(BaseModel):
-    """Strict base for public contracts."""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        frozen=True,
-        revalidate_instances="always",
-    )
-
-
-class PublicContractModel(ContractModel):
-    """Public boundary that cannot use Pydantic's unchecked construction path."""
-
-    @classmethod
-    def model_construct(
-        cls,
-        _fields_set: set[str] | None = None,
-        **values: object,
-    ) -> Self:
-        del _fields_set
-        return cls.model_validate(values)
-
-    def _revalidated(self) -> Self:
-        values = dict(getattr(self, "__dict__", {}))
-        extra = getattr(self, "__pydantic_extra__", None)
-        if isinstance(extra, dict):
-            values.update(extra)
-        return type(self).model_validate(values)
-
-    def model_dump(self, **kwargs: object) -> dict[str, object]:
-        return BaseModel.model_dump(self._revalidated(), **kwargs)
-
-    def model_dump_json(self, **kwargs: object) -> str:
-        return BaseModel.model_dump_json(self._revalidated(), **kwargs)
-
-
-class AgentMode(StrEnum):
-    PLAN = "plan"
-    PREVIEW = "preview"
-    EXECUTE = "execute"
 
 
 class AgentRequest(ContractModel):
@@ -143,28 +103,75 @@ class ComponentVersionPin(PublicContractModel):
     version: NonBlankText
 
 
-class RuntimeVersionPins(PublicContractModel):
-    bundle_digest: Digest
+class DatasetRuntimeVersionPins(PublicContractModel):
+    kind: Literal["dataset"] = "dataset"
     runtime_version: NonBlankText
-    domain_pack_digest: Digest
-    enterprise_binding_digest: Digest
-    deployment_profile_digest: Digest
-    schema_fingerprint: Digest
-    skill_id: NonBlankText
-    skill_version: NonBlankText
     graph_id: NonBlankText
     graph_version: NonBlankText
     graph_digest: Digest
     tool_registry_version: NonBlankText
-    tool_versions: tuple[ComponentVersionPin, ...] = Field(min_length=1)
     model_versions: tuple[ComponentVersionPin, ...] = Field(min_length=1)
+    source_id: NonBlankText
+    source_version: int = Field(ge=1)
+    binding_id: NonBlankText
+    binding_version: int = Field(ge=1)
+    schema_fingerprint: SchemaFingerprint
+    relationship_graph_digest: Digest | None = None
 
     @model_validator(mode="after")
-    def validate_unique_components(self) -> "RuntimeVersionPins":
-        for pins in (self.tool_versions, self.model_versions):
-            components = tuple(item.component for item in pins)
-            if len(components) != len(set(components)):
-                raise ValueError("runtime version pin components must be unique")
+    def validate_unique_model_components(self) -> "DatasetRuntimeVersionPins":
+        components = tuple(item.component for item in self.model_versions)
+        if len(components) != len(set(components)):
+            raise ValueError("runtime version pin components must be unique")
+        return self
+
+
+RuntimeVersionPins = DatasetRuntimeVersionPins
+
+
+class AnalysisStepSummary(PublicContractModel):
+    step_id: NonBlankText
+    objective: NonBlankText
+    status: Literal[
+        "pending",
+        "running",
+        "completed",
+        "blocked",
+        "skipped",
+        "waiting_input",
+        "failed",
+    ]
+    tool_names: tuple[NonBlankText, ...] = ()
+    evidence_ids: tuple[NonBlankText, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_unique_refs(self) -> "AnalysisStepSummary":
+        if len(self.tool_names) != len(set(self.tool_names)):
+            raise ValueError("step tool names must be unique")
+        if len(self.evidence_ids) != len(set(self.evidence_ids)):
+            raise ValueError("step evidence ids must be unique")
+        return self
+
+
+class AgentArtifactSummary(PublicContractModel):
+    artifact_id: NonBlankText
+    kind: AgentArtifactKind
+    digest: Digest
+    row_count: int | None = Field(default=None, ge=0)
+    sensitivity: Literal["metadata", "derived", "row_data"]
+    created_at: datetime
+
+
+class EvidenceSummary(PublicContractModel):
+    evidence_id: NonBlankText
+    claim_key: NonBlankText
+    artifact_id: NonBlankText
+    field_refs: tuple[NonBlankText, ...] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_unique_fields(self) -> "EvidenceSummary":
+        if len(self.field_refs) != len(set(self.field_refs)):
+            raise ValueError("evidence summary field refs must be unique")
         return self
 
 
@@ -195,6 +202,11 @@ class ConversationMessageMetadata(PublicContractModel):
     trace: tuple[AgentTraceEntry, ...] = ()
     pending_memory_updates: tuple[ProposalSummary, ...] = ()
     version_pins: RuntimeVersionPins | None = None
+    analysis_plan: AnalysisPlan | None = None
+    analysis_steps: tuple[AnalysisStepSummary, ...] = ()
+    artifacts: tuple[AgentArtifactSummary, ...] = ()
+    evidence: tuple[EvidenceSummary, ...] = ()
+    limitations: tuple[NonBlankText, ...] = ()
 
 
 class ConversationMessage(PublicContractModel):
@@ -222,6 +234,11 @@ class AgentResponse(PublicContractModel):
     trace: tuple[AgentTraceEntry, ...] = ()
     pending_memory_updates: tuple[ProposalSummary, ...] = ()
     version_pins: RuntimeVersionPins | None = None
+    analysis_plan: AnalysisPlan | None = None
+    analysis_steps: tuple[AnalysisStepSummary, ...] = ()
+    artifacts: tuple[AgentArtifactSummary, ...] = ()
+    evidence: tuple[EvidenceSummary, ...] = ()
+    limitations: tuple[NonBlankText, ...] = ()
 
     @model_validator(mode="after")
     def validate_response_state(self) -> "AgentResponse":
@@ -284,6 +301,45 @@ class AgentResponse(PublicContractModel):
             if isinstance(error_extra, dict):
                 raw_error.update(error_extra)
             object.__setattr__(self, "error", AgentError.model_validate(raw_error))
+        if self.analysis_plan is not None:
+            object.__setattr__(
+                self,
+                "analysis_plan",
+                AnalysisPlan.model_validate(self.analysis_plan),
+            )
+        object.__setattr__(
+            self,
+            "analysis_steps",
+            tuple(AnalysisStepSummary.model_validate(item) for item in self.analysis_steps),
+        )
+        object.__setattr__(
+            self,
+            "artifacts",
+            tuple(AgentArtifactSummary.model_validate(item) for item in self.artifacts),
+        )
+        object.__setattr__(
+            self,
+            "evidence",
+            tuple(EvidenceSummary.model_validate(item) for item in self.evidence),
+        )
+        for values, field_name in (
+            (tuple(item.step_id for item in self.analysis_steps), "analysis step ids"),
+            (tuple(item.artifact_id for item in self.artifacts), "artifact ids"),
+            (tuple(item.evidence_id for item in self.evidence), "evidence ids"),
+            (self.limitations, "limitations"),
+        ):
+            if len(values) != len(set(values)):
+                raise ValueError(f"{field_name} must be unique")
+        artifact_ids = {item.artifact_id for item in self.artifacts}
+        if artifact_ids:
+            for item in self.evidence:
+                if item.artifact_id not in artifact_ids:
+                    raise ValueError("evidence summary must reference a response artifact")
+        evidence_ids = {item.evidence_id for item in self.evidence}
+        if evidence_ids:
+            for step in self.analysis_steps:
+                if not set(step.evidence_ids).issubset(evidence_ids):
+                    raise ValueError("step summary references unknown evidence")
         return self
 
 

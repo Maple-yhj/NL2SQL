@@ -11,11 +11,11 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from data_agent.runtime.composition import stable_digest
-from data_agent.runtime.policy import compute_policy_decision_id
+from data_agent.analysis_agent.models import stable_digest
 
 from .models import (
     AccessGrant,
+    ArtifactRef,
     CredentialBroker,
     NullCredentialBroker,
     ProviderContext,
@@ -62,10 +62,11 @@ def policy_decision_id(
     context: ToolInvocationContext,
     logical_plan_hash: str | None,
 ) -> str:
-    return compute_policy_decision_id(
-        context.bundle,
-        context.principal,
-        logical_plan_hash,
+    return stable_digest(
+        {
+            "authority": context.authority.model_dump(mode="json"),
+            "logical_plan_hash": logical_plan_hash,
+        }
     )
 
 
@@ -74,19 +75,14 @@ def _issue_access_grant(
     payload: BaseModel,
     context: ToolInvocationContext,
 ) -> AccessGrant:
-    policy = context.bundle.compiled_access_policy
-    allowed_relations = tuple(policy.get("relationAllowlist", ()))
-    max_rows = min(
-        int(policy.get("maxRows", 1000)),
-        int(context.bundle.runtime_limits.get("maxResultRows", 1000)),
-    )
-    policy_timeout = float(policy.get("queryTimeoutSeconds", spec.timeout_seconds))
-    timeout_seconds = min(spec.timeout_seconds, policy_timeout)
-    tenant_scope = policy.get("tenantScope", {})
-    admin_roles = frozenset(
-        tenant_scope.get("adminBypass", {}).get("allowedRoles", ())
-    )
-    admin_bypass = bool(admin_roles.intersection(context.principal.roles))
+    authority = context.authority
+    admin_bypass = False
+    allowed_relations = authority.allowed_relation_ids
+    max_rows = context.max_rows
+    policy_timeout_seconds = context.statement_timeout_ms / 1000
+    bundle_digest = stable_digest(authority.model_dump(mode="json"))
+    source = authority.source_id if spec.credential_requirement == "required" else None
+    timeout_seconds = min(spec.timeout_seconds, policy_timeout_seconds)
     logical_hash = _logical_plan_hash(payload)
     decision = policy_decision_id(context, logical_hash)
     now = datetime.now(UTC)
@@ -100,19 +96,15 @@ def _issue_access_grant(
         tool_name=spec.name,
         tool_version=spec.version,
         skill_id=context.skill_id,
-        bundle_digest=context.bundle.digest,
-        schema_fingerprint=context.bundle.schema_fingerprint,
-        source=(
-            next(iter(context.bundle.connector_capabilities), None)
-            if spec.side_effects == "read"
-            else None
-        ),
+        bundle_digest=bundle_digest,
+        schema_fingerprint=authority.schema_fingerprint,
+        source=source,
         read_only=True,
         principal_user_id=context.principal.user_id,
         tenant_id=context.principal.tenant_id,
         admin_bypass=admin_bypass,
-        allowed_relations=allowed_relations,
-        max_rows=max_rows,
+        allowed_relations=tuple(allowed_relations),
+        max_rows=min(max_rows, context.max_rows),
         statement_timeout_ms=max(1, int(timeout_seconds * 1000)),
         policy_decision_id=decision,
         logical_plan_hash=logical_hash,
@@ -166,16 +158,6 @@ class ToolInvoker:
                 ToolErrorCode.VERSION_MISMATCH,
                 "requested tool version is not available",
             )
-        if context.bundle.tool_registry_version != self._registry.version:
-            return await self._error_result(
-                call,
-                spec,
-                started_at,
-                started_clock,
-                ToolErrorCode.VERSION_MISMATCH,
-                "resolved bundle and Tool Registry versions do not match",
-            )
-
         try:
             validated_input = spec.input_schema.model_validate(
                 call.input_data.model_dump(mode="python", warnings=False)
@@ -188,6 +170,17 @@ class ToolInvoker:
                 started_clock,
                 ToolErrorCode.INPUT_INVALID,
                 "tool input does not satisfy its declared schema",
+            )
+        if _contains_forbidden_authority_fields(
+            validated_input.model_dump(mode="python", warnings=False)
+        ):
+            return await self._error_result(
+                call,
+                spec,
+                started_at,
+                started_clock,
+                ToolErrorCode.INPUT_INVALID,
+                "tool input cannot override runtime authority",
             )
 
         if self._registry.allowed_view(context).get(call.tool_name) is None:
@@ -236,7 +229,7 @@ class ToolInvoker:
         try:
             async with asyncio.timeout(spec.timeout_seconds):
                 credential = None
-                if spec.side_effects == "read":
+                if spec.credential_requirement == "required":
                     credential = await self._credential_broker.acquire(
                         grant=grant,
                         source=grant.source,
@@ -251,8 +244,10 @@ class ToolInvoker:
                         raise PermissionError("credential lease authority is invalid")
                 provider_context = ProviderContext(
                     call_id=call.call_id,
+                    run_id=context.run_id,
                     principal=context.principal,
-                    bundle=context.bundle,
+                    authority=context.authority,
+                    runtime_resources=context.runtime_resources,
                     access_grant=grant,
                     credential=credential,
                 )
@@ -329,6 +324,23 @@ class ToolInvoker:
                 policy_decision_id=grant.policy_decision_id,
             )
 
+        artifact = getattr(validated_output, "artifact", None)
+        evidence = getattr(validated_output, "evidence", None)
+        rows = int(
+            getattr(validated_output, "row_count", 0)
+            or getattr(artifact, "row_count", 0)
+            or 0
+        )
+        artifact_refs = (
+            (ArtifactRef(artifact_id=artifact.artifact_id, media_type="application/json"),)
+            if artifact is not None
+            else ()
+        )
+        evidence_ids = (
+            (evidence.evidence_id,)
+            if evidence is not None
+            else ()
+        )
         finished_at = datetime.now(UTC)
         latency_ms = max(0, int((monotonic() - started_clock) * 1000))
         trace = ToolTrace(
@@ -342,17 +354,21 @@ class ToolInvoker:
             latency_ms=latency_ms,
             input_schema=spec.input_schema.__name__,
             output_schema=spec.output_schema.__name__,
+            safe_args_digest=_safe_args_digest(call),
+            artifact_ids=tuple(item.artifact_id for item in artifact_refs),
+            evidence_ids=evidence_ids,
         )
         await self._audit(trace)
-        rows = int(getattr(validated_output, "row_count", 0) or 0)
         return ToolResult(
             status="success",
             typed_data=validated_output,
+            artifact_refs=artifact_refs,
             rows=rows,
             latency_ms=latency_ms,
             lineage=ToolLineage(
                 logical_plan_hash=grant.logical_plan_hash,
                 query_hash=grant.prepared_query_hash,
+                evidence_ids=evidence_ids,
             ),
             policy_decision_id=grant.policy_decision_id,
             redacted_trace=trace,
@@ -386,6 +402,7 @@ class ToolInvoker:
             latency_ms=latency_ms,
             input_schema=input_name,
             output_schema=output_name,
+            safe_args_digest=_safe_args_digest(call),
             error_code=code,
         )
         await self._audit(trace)
@@ -434,5 +451,51 @@ class ToolInvoker:
             "BOUND_PLAN_MISMATCH": (ToolErrorCode.POLICY_VIOLATION, False),
             "POLICY_VIOLATION": (ToolErrorCode.POLICY_VIOLATION, False),
             "ACCESS_DENIED": (ToolErrorCode.ACCESS_DENIED, False),
+            "AGENT_ARTIFACT_NOT_FOUND": (ToolErrorCode.ACCESS_DENIED, False),
+            "AGENT_ARTIFACT_INTEGRITY_ERROR": (ToolErrorCode.ACCESS_DENIED, False),
         }
         return mapping.get(raw_code, (ToolErrorCode.PROVIDER_ERROR, False))
+
+
+_FORBIDDEN_AUTHORITY_FIELDS = frozenset(
+    {
+        "authority",
+        "tenant_id",
+        "user_id",
+        "source_id",
+        "source_version",
+        "binding_id",
+        "binding_version",
+        "allowed_relation_ids",
+        "credential",
+        "credential_ref",
+        "secret",
+        "dsn",
+        "raw_sql",
+        "code",
+        "file_path",
+        "path",
+    }
+)
+
+
+def _contains_forbidden_authority_fields(value: object) -> bool:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            normalized = str(key).strip().lower().replace("-", "_")
+            if normalized in _FORBIDDEN_AUTHORITY_FIELDS:
+                return True
+            if _contains_forbidden_authority_fields(nested):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_contains_forbidden_authority_fields(item) for item in value)
+    return False
+
+
+def _safe_args_digest(call: ToolCall) -> str | None:
+    try:
+        return stable_digest(
+            call.input_data.model_dump(mode="json", warnings=False)
+        )
+    except (AttributeError, TypeError, ValueError):
+        return None

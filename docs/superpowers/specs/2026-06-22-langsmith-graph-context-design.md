@@ -1,5 +1,7 @@
 # LangSmith Studio GraphContext Compatibility Design
 
+> **Historical / superseded:** Retained for the runtime-only-context schema decision. The current Studio adapter exports the native Analysis Agent graph with an isolated offline development context.
+
 ## Problem
 
 The compiled graph declares `GraphContext` as its `context_schema`. The current dataclass exposes `LLMProtocol` and `EmbeddingClientProtocol` as schema fields. Pydantic cannot generate JSON Schema for those runtime-only objects, so the LangGraph API cannot filter Studio-provided context. LangSmith Studio then passes `thread_id` into `GraphContext(**context)`, causing the reported `TypeError`.

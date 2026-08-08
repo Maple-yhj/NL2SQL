@@ -2,6 +2,68 @@
 const schema = {
   "root": "AgentResponse",
   "schemas": {
+    "AgentArtifactKind": {
+      "enum": [
+        "catalog",
+        "logical_plan",
+        "prepared_query",
+        "query_preview",
+        "query_result",
+        "profile",
+        "computation",
+        "chart",
+        "answer"
+      ],
+      "type": "string"
+    },
+    "AgentArtifactSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/components/schemas/AgentArtifactKind"
+        },
+        "row_count": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sensitivity": {
+          "enum": [
+            "metadata",
+            "derived",
+            "row_data"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "created_at",
+        "digest",
+        "kind",
+        "row_count",
+        "sensitivity"
+      ],
+      "type": "object"
+    },
     "AgentError": {
       "additionalProperties": false,
       "properties": {
@@ -26,6 +88,22 @@ const schema = {
     "AgentResponse": {
       "additionalProperties": false,
       "properties": {
+        "analysis_plan": {
+          "anyOf": [
+            {
+              "$ref": "#/components/schemas/AnalysisPlan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "analysis_steps": {
+          "items": {
+            "$ref": "#/components/schemas/AnalysisStepSummary"
+          },
+          "type": "array"
+        },
         "answer": {
           "anyOf": [
             {
@@ -35,6 +113,12 @@ const schema = {
               "type": "null"
             }
           ]
+        },
+        "artifacts": {
+          "items": {
+            "$ref": "#/components/schemas/AgentArtifactSummary"
+          },
+          "type": "array"
         },
         "chart": {
           "anyOf": [
@@ -88,6 +172,19 @@ const schema = {
               "type": "null"
             }
           ]
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/components/schemas/EvidenceSummary"
+          },
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
         },
         "logical_plan": {
           "anyOf": [
@@ -151,7 +248,7 @@ const schema = {
         "version_pins": {
           "anyOf": [
             {
-              "$ref": "#/components/schemas/RuntimeVersionPins"
+              "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
             },
             {
               "type": "null"
@@ -160,12 +257,17 @@ const schema = {
         }
       },
       "required": [
+        "analysis_plan",
+        "analysis_steps",
         "answer",
+        "artifacts",
         "chart",
         "contextualized_question",
         "conversation_id",
         "dataset_query_plan",
         "error",
+        "evidence",
+        "limitations",
         "logical_plan",
         "message_type",
         "ok",
@@ -215,6 +317,139 @@ const schema = {
         "error_code",
         "node",
         "status"
+      ],
+      "type": "object"
+    },
+    "AnalysisPlan": {
+      "additionalProperties": false,
+      "properties": {
+        "completion_criteria": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "plan_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/components/schemas/AnalysisStep"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "completion_criteria",
+        "plan_id",
+        "revision",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "AnalysisStep": {
+      "additionalProperties": false,
+      "properties": {
+        "depends_on": {
+          "items": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expected_evidence": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "objective": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "completed",
+            "blocked",
+            "skipped"
+          ],
+          "type": "string"
+        },
+        "step_id": {
+          "maxLength": 160,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "depends_on",
+        "expected_evidence",
+        "objective",
+        "status",
+        "step_id"
+      ],
+      "type": "object"
+    },
+    "AnalysisStepSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "objective": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "running",
+            "completed",
+            "blocked",
+            "skipped",
+            "waiting_input",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "step_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "tool_names": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ids",
+        "objective",
+        "status",
+        "step_id",
+        "tool_names"
       ],
       "type": "object"
     },
@@ -299,16 +534,16 @@ const schema = {
       "additionalProperties": false,
       "properties": {
         "columnAxis": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "rowAxis": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "values": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "minLength": 1,
             "type": "string"
           },
           "minItems": 1,
@@ -322,16 +557,99 @@ const schema = {
       ],
       "type": "object"
     },
+    "DatasetRuntimeVersionPins": {
+      "additionalProperties": false,
+      "properties": {
+        "binding_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "binding_version": {
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "graph_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "graph_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "graph_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "kind": {
+          "const": "dataset",
+          "type": "string"
+        },
+        "model_versions": {
+          "items": {
+            "$ref": "#/components/schemas/ComponentVersionPin"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "relationship_graph_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtime_version": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "schema_fingerprint": {
+          "pattern": "^(?:sha256:)?[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "source_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_version": {
+          "minimum": 1.0,
+          "type": "integer"
+        },
+        "tool_registry_version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding_id",
+        "binding_version",
+        "graph_digest",
+        "graph_id",
+        "graph_version",
+        "kind",
+        "model_versions",
+        "relationship_graph_digest",
+        "runtime_version",
+        "schema_fingerprint",
+        "source_id",
+        "source_version",
+        "tool_registry_version"
+      ],
+      "type": "object"
+    },
     "DerivedCalculation": {
       "additionalProperties": false,
       "properties": {
         "id": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "inputs": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "minLength": 1,
             "type": "string"
           },
           "minItems": 1,
@@ -342,7 +660,7 @@ const schema = {
         },
         "partitionBy": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
@@ -379,11 +697,55 @@ const schema = {
         "RESULT_SEMANTIC_MISMATCH",
         "TOOL_BUDGET_EXCEEDED",
         "CONTEXT_BUDGET_EXCEEDED",
+        "AGENT_DECISION_INVALID",
+        "AGENT_ACTION_NOT_ALLOWED",
+        "AGENT_BUDGET_EXCEEDED",
+        "AGENT_MAX_STEPS_EXCEEDED",
+        "AGENT_EVIDENCE_INSUFFICIENT",
+        "AGENT_RESPONSE_UNGROUNDED",
+        "AGENT_WAITING_FOR_INPUT",
+        "AGENT_INTERRUPT_STALE",
+        "AGENT_RESUME_CONFLICT",
+        "AGENT_ARTIFACT_NOT_FOUND",
+        "AGENT_ARTIFACT_INTEGRITY_ERROR",
+        "AGENT_CHECKPOINT_UNAVAILABLE",
         "DEADLINE_EXCEEDED",
         "CANCELLED",
         "INTERNAL_ERROR"
       ],
       "type": "string"
+    },
+    "EvidenceSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "claim_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "evidence_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "field_refs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "claim_key",
+        "evidence_id",
+        "field_refs"
+      ],
+      "type": "object"
     },
     "FilterOperator": {
       "enum": [
@@ -406,7 +768,7 @@ const schema = {
       "properties": {
         "joinGrain": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "minItems": 1,
@@ -414,14 +776,14 @@ const schema = {
         },
         "relationshipPath": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "minItems": 1,
           "type": "array"
         },
         "sourceEntity": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+          "minLength": 1,
           "type": "string"
         },
         "strategy": {
@@ -432,7 +794,7 @@ const schema = {
           "type": "string"
         },
         "targetEntity": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+          "minLength": 1,
           "type": "string"
         }
       },
@@ -453,7 +815,7 @@ const schema = {
           "$ref": "#/components/schemas/FilterOperator"
         },
         "ref": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+          "minLength": 1,
           "type": "string"
         },
         "value": {
@@ -511,7 +873,7 @@ const schema = {
           "$ref": "#/components/schemas/SortDirection"
         },
         "ref": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+          "minLength": 1,
           "type": "string"
         }
       },
@@ -555,28 +917,28 @@ const schema = {
         },
         "dimensions": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
         },
         "entities": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
         },
         "expectedGrain": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
         },
         "fields": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
@@ -612,7 +974,7 @@ const schema = {
         },
         "metrics": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
@@ -645,7 +1007,7 @@ const schema = {
         },
         "relationships": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"
@@ -814,7 +1176,7 @@ const schema = {
       "additionalProperties": false,
       "properties": {
         "measure": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+          "minLength": 1,
           "type": "string"
         },
         "mode": {
@@ -904,95 +1266,11 @@ const schema = {
       ],
       "type": "string"
     },
-    "RuntimeVersionPins": {
-      "additionalProperties": false,
-      "properties": {
-        "bundle_digest": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "deployment_profile_digest": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "domain_pack_digest": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "enterprise_binding_digest": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "graph_digest": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "graph_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "graph_version": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "model_versions": {
-          "items": {
-            "$ref": "#/components/schemas/ComponentVersionPin"
-          },
-          "minItems": 1,
-          "type": "array"
-        },
-        "runtime_version": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "schema_fingerprint": {
-          "pattern": "^[0-9a-f]{64}$",
-          "type": "string"
-        },
-        "skill_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "skill_version": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "tool_registry_version": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "tool_versions": {
-          "items": {
-            "$ref": "#/components/schemas/ComponentVersionPin"
-          },
-          "minItems": 1,
-          "type": "array"
-        }
-      },
-      "required": [
-        "bundle_digest",
-        "deployment_profile_digest",
-        "domain_pack_digest",
-        "enterprise_binding_digest",
-        "graph_digest",
-        "graph_id",
-        "graph_version",
-        "model_versions",
-        "runtime_version",
-        "schema_fingerprint",
-        "skill_id",
-        "skill_version",
-        "tool_registry_version",
-        "tool_versions"
-      ],
-      "type": "object"
-    },
     "SeriesAxis": {
       "additionalProperties": false,
       "properties": {
         "field": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "kind": {
@@ -1052,7 +1330,7 @@ const schema = {
           ]
         },
         "field": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "start": {
@@ -1078,15 +1356,15 @@ const schema = {
       "additionalProperties": false,
       "properties": {
         "axisRef": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "calculation": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "id": {
-          "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+          "minLength": 1,
           "type": "string"
         },
         "ordering": {
@@ -1098,7 +1376,7 @@ const schema = {
         },
         "outputGrain": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "minItems": 1,
@@ -1106,7 +1384,7 @@ const schema = {
         },
         "partitionBy": {
           "items": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "type": "string"
           },
           "type": "array"

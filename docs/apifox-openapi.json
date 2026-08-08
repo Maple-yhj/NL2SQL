@@ -57,6 +57,74 @@
         "title": "ActivatedRelationshipGraph",
         "type": "object"
       },
+      "AgentArtifactKind": {
+        "enum": [
+          "catalog",
+          "logical_plan",
+          "prepared_query",
+          "query_preview",
+          "query_result",
+          "profile",
+          "computation",
+          "chart",
+          "answer"
+        ],
+        "title": "AgentArtifactKind",
+        "type": "string"
+      },
+      "AgentArtifactSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Digest",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AgentArtifactKind"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
+          },
+          "sensitivity": {
+            "enum": [
+              "metadata",
+              "derived",
+              "row_data"
+            ],
+            "title": "Sensitivity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "kind",
+          "digest",
+          "sensitivity",
+          "created_at"
+        ],
+        "title": "AgentArtifactSummary",
+        "type": "object"
+      },
       "AgentError": {
         "additionalProperties": false,
         "description": "Error safe to expose at an API, CLI, or event boundary.",
@@ -88,10 +156,19 @@
           "data": {
             "discriminator": {
               "mapping": {
+                "answer_synthesizing": "#/components/schemas/AnswerSynthesizingPayload",
+                "context_resolved": "#/components/schemas/ContextResolvedPayload",
+                "observation_recorded": "#/components/schemas/ObservationRecordedPayload",
+                "plan_updated": "#/components/schemas/PlanUpdatedPayload",
                 "progress": "#/components/schemas/RunProgressPayload",
                 "run_completed": "#/components/schemas/RunCompletedPayload",
                 "run_failed": "#/components/schemas/RunFailedPayload",
-                "run_started": "#/components/schemas/RunStartedPayload"
+                "run_resumed": "#/components/schemas/RunResumedPayload",
+                "run_started": "#/components/schemas/RunStartedPayload",
+                "run_waiting": "#/components/schemas/RunWaitingPayload",
+                "step_started": "#/components/schemas/StepStartedPayload",
+                "tool_completed": "#/components/schemas/ToolCompletedPayload",
+                "tool_started": "#/components/schemas/ToolStartedPayload"
               },
               "propertyName": "kind"
             },
@@ -101,6 +178,33 @@
               },
               {
                 "$ref": "#/components/schemas/RunProgressPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ContextResolvedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/PlanUpdatedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/StepStartedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ToolStartedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ToolCompletedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/ObservationRecordedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunWaitingPayload"
+              },
+              {
+                "$ref": "#/components/schemas/RunResumedPayload"
+              },
+              {
+                "$ref": "#/components/schemas/AnswerSynthesizingPayload"
               },
               {
                 "$ref": "#/components/schemas/RunCompletedPayload"
@@ -148,11 +252,84 @@
         "enum": [
           "run_started",
           "progress",
+          "context_resolved",
+          "plan_updated",
+          "step_started",
+          "tool_started",
+          "tool_completed",
+          "observation_recorded",
+          "run_waiting",
+          "run_resumed",
+          "answer_synthesizing",
           "run_completed",
           "run_failed"
         ],
         "title": "AgentEventType",
         "type": "string"
+      },
+      "AgentInputReason": {
+        "enum": [
+          "clarification",
+          "approval",
+          "conflict_resolution"
+        ],
+        "title": "AgentInputReason",
+        "type": "string"
+      },
+      "AgentInputRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "allow_free_text": {
+            "default": true,
+            "title": "Allow Free Text",
+            "type": "boolean"
+          },
+          "choices": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Choices",
+            "type": "array"
+          },
+          "interrupt_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Interrupt Id",
+            "type": "string"
+          },
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/AgentInputReason"
+          }
+        },
+        "required": [
+          "interrupt_id",
+          "reason",
+          "prompt"
+        ],
+        "title": "AgentInputRequest",
+        "type": "object"
       },
       "AgentMode": {
         "enum": [
@@ -166,6 +343,24 @@
       "AgentResponse": {
         "additionalProperties": false,
         "properties": {
+          "analysis_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "analysis_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStepSummary"
+            },
+            "title": "Analysis Steps",
+            "type": "array"
+          },
           "answer": {
             "anyOf": [
               {
@@ -176,6 +371,14 @@
               }
             ],
             "title": "Answer"
+          },
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactSummary"
+            },
+            "title": "Artifacts",
+            "type": "array"
           },
           "chart": {
             "anyOf": [
@@ -232,6 +435,23 @@
                 "type": "null"
               }
             ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
           },
           "logical_plan": {
             "anyOf": [
@@ -307,7 +527,7 @@
           "version_pins": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/RuntimeVersionPins"
+                "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
               },
               {
                 "type": "null"
@@ -365,6 +585,156 @@
         "title": "AgentTraceEntry",
         "type": "object"
       },
+      "AnalysisPlan": {
+        "additionalProperties": false,
+        "properties": {
+          "completion_criteria": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Completion Criteria",
+            "type": "array"
+          },
+          "plan_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Plan Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStep"
+            },
+            "minItems": 1,
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "plan_id",
+          "revision",
+          "steps",
+          "completion_criteria"
+        ],
+        "title": "AnalysisPlan",
+        "type": "object"
+      },
+      "AnalysisStep": {
+        "additionalProperties": false,
+        "properties": {
+          "depends_on": {
+            "default": [],
+            "items": {
+              "maxLength": 160,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+              "type": "string"
+            },
+            "title": "Depends On",
+            "type": "array"
+          },
+          "expected_evidence": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Expected Evidence",
+            "type": "array"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "blocked",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "objective",
+          "status"
+        ],
+        "title": "AnalysisStep",
+        "type": "object"
+      },
+      "AnalysisStepSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "blocked",
+              "skipped",
+              "waiting_input",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "step_id": {
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          },
+          "tool_names": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Tool Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "step_id",
+          "objective",
+          "status"
+        ],
+        "title": "AnalysisStepSummary",
+        "type": "object"
+      },
       "AnalysisType": {
         "enum": [
           "metric",
@@ -380,6 +750,28 @@
         ],
         "title": "AnalysisType",
         "type": "string"
+      },
+      "AnswerSynthesizingPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "evidence_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "answer_synthesizing",
+            "default": "answer_synthesizing",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "AnswerSynthesizingPayload",
+        "type": "object"
       },
       "ApprovalContext": {
         "additionalProperties": false,
@@ -907,6 +1299,51 @@
         "title": "ComponentVersionPin",
         "type": "object"
       },
+      "ContextResolvedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "context_resolved",
+            "default": "context_resolved",
+            "title": "Kind",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "pattern": "^(?:sha256:)?[0-9a-f]{64}$",
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "source_version",
+          "binding_id",
+          "binding_version",
+          "schema_fingerprint"
+        ],
+        "title": "ContextResolvedPayload",
+        "type": "object"
+      },
       "ConversationCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1070,6 +1507,24 @@
       "ConversationMessageMetadata": {
         "additionalProperties": false,
         "properties": {
+          "analysis_plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnalysisPlan"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "analysis_steps": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AnalysisStepSummary"
+            },
+            "title": "Analysis Steps",
+            "type": "array"
+          },
           "answer": {
             "anyOf": [
               {
@@ -1080,6 +1535,14 @@
               }
             ],
             "title": "Answer"
+          },
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactSummary"
+            },
+            "title": "Artifacts",
+            "type": "array"
           },
           "chart": {
             "anyOf": [
@@ -1136,6 +1599,23 @@
               }
             ],
             "title": "Error Code"
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
           },
           "logical_plan": {
             "anyOf": [
@@ -1214,7 +1694,7 @@
           "version_pins": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/RuntimeVersionPins"
+                "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
               },
               {
                 "type": "null"
@@ -1433,18 +1913,18 @@
         "additionalProperties": false,
         "properties": {
           "columnAxis": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Columnaxis",
             "type": "string"
           },
           "rowAxis": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Rowaxis",
             "type": "string"
           },
           "values": {
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+              "minLength": 1,
               "type": "string"
             },
             "minItems": 1,
@@ -1617,17 +2097,113 @@
         "title": "DataSourceStatus",
         "type": "string"
       },
+      "DatasetRuntimeVersionPins": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "minLength": 1,
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "graph_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Graph Digest",
+            "type": "string"
+          },
+          "graph_id": {
+            "minLength": 1,
+            "title": "Graph Id",
+            "type": "string"
+          },
+          "graph_version": {
+            "minLength": 1,
+            "title": "Graph Version",
+            "type": "string"
+          },
+          "kind": {
+            "const": "dataset",
+            "default": "dataset",
+            "title": "Kind",
+            "type": "string"
+          },
+          "model_versions": {
+            "items": {
+              "$ref": "#/components/schemas/ComponentVersionPin"
+            },
+            "minItems": 1,
+            "title": "Model Versions",
+            "type": "array"
+          },
+          "relationship_graph_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relationship Graph Digest"
+          },
+          "runtime_version": {
+            "minLength": 1,
+            "title": "Runtime Version",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "pattern": "^(?:sha256:)?[0-9a-f]{64}$",
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "minLength": 1,
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "tool_registry_version": {
+            "minLength": 1,
+            "title": "Tool Registry Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "runtime_version",
+          "graph_id",
+          "graph_version",
+          "graph_digest",
+          "tool_registry_version",
+          "model_versions",
+          "source_id",
+          "source_version",
+          "binding_id",
+          "binding_version",
+          "schema_fingerprint"
+        ],
+        "title": "DatasetRuntimeVersionPins",
+        "type": "object"
+      },
       "DerivedCalculation": {
         "additionalProperties": false,
         "properties": {
           "id": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Id",
             "type": "string"
           },
           "inputs": {
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+              "minLength": 1,
               "type": "string"
             },
             "minItems": 1,
@@ -1640,7 +2216,7 @@
           "partitionBy": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Partitionby",
@@ -1808,12 +2384,61 @@
           "RESULT_SEMANTIC_MISMATCH",
           "TOOL_BUDGET_EXCEEDED",
           "CONTEXT_BUDGET_EXCEEDED",
+          "AGENT_DECISION_INVALID",
+          "AGENT_ACTION_NOT_ALLOWED",
+          "AGENT_BUDGET_EXCEEDED",
+          "AGENT_MAX_STEPS_EXCEEDED",
+          "AGENT_EVIDENCE_INSUFFICIENT",
+          "AGENT_RESPONSE_UNGROUNDED",
+          "AGENT_WAITING_FOR_INPUT",
+          "AGENT_INTERRUPT_STALE",
+          "AGENT_RESUME_CONFLICT",
+          "AGENT_ARTIFACT_NOT_FOUND",
+          "AGENT_ARTIFACT_INTEGRITY_ERROR",
+          "AGENT_CHECKPOINT_UNAVAILABLE",
           "DEADLINE_EXCEEDED",
           "CANCELLED",
           "INTERNAL_ERROR"
         ],
         "title": "ErrorCode",
         "type": "string"
+      },
+      "EvidenceSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "minLength": 1,
+            "title": "Artifact Id",
+            "type": "string"
+          },
+          "claim_key": {
+            "minLength": 1,
+            "title": "Claim Key",
+            "type": "string"
+          },
+          "evidence_id": {
+            "minLength": 1,
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "field_refs": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Field Refs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "claim_key",
+          "artifact_id",
+          "field_refs"
+        ],
+        "title": "EvidenceSummary",
+        "type": "object"
       },
       "FilterOperator": {
         "enum": [
@@ -1834,11 +2459,10 @@
       },
       "GrainAlignment": {
         "additionalProperties": false,
-        "description": "Explicit proof that an expanding semantic path is handled safely.",
         "properties": {
           "joinGrain": {
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "minItems": 1,
@@ -1847,7 +2471,7 @@
           },
           "relationshipPath": {
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "minItems": 1,
@@ -1855,7 +2479,7 @@
             "type": "array"
           },
           "sourceEntity": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+            "minLength": 1,
             "title": "Sourceentity",
             "type": "string"
           },
@@ -1868,7 +2492,7 @@
             "type": "string"
           },
           "targetEntity": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+            "minLength": 1,
             "title": "Targetentity",
             "type": "string"
           }
@@ -1932,7 +2556,7 @@
             "$ref": "#/components/schemas/FilterOperator"
           },
           "ref": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "minLength": 1,
             "title": "Ref",
             "type": "string"
           },
@@ -1992,7 +2616,7 @@
             "$ref": "#/components/schemas/SortDirection"
           },
           "ref": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "minLength": 1,
             "title": "Ref",
             "type": "string"
           }
@@ -2006,7 +2630,6 @@
       },
       "LogicalQueryPlan": {
         "additionalProperties": false,
-        "description": "A complete, physical-system-independent analytical query plan.",
         "properties": {
           "analysisType": {
             "$ref": "#/components/schemas/AnalysisType"
@@ -2044,7 +2667,7 @@
           "dimensions": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Dimensions",
@@ -2053,7 +2676,7 @@
           "entities": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Entities",
@@ -2062,7 +2685,7 @@
           "expectedGrain": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Expectedgrain",
@@ -2071,7 +2694,7 @@
           "fields": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Fields",
@@ -2116,7 +2739,7 @@
           "metrics": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Metrics",
@@ -2153,7 +2776,7 @@
           "relationships": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Relationships",
@@ -2727,6 +3350,57 @@
         "title": "Nl2SqlRequest",
         "type": "object"
       },
+      "ObservationRecordedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "artifact_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Artifact Ids",
+            "type": "array"
+          },
+          "evidence_ids": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Evidence Ids",
+            "type": "array"
+          },
+          "kind": {
+            "const": "observation_recorded",
+            "default": "observation_recorded",
+            "title": "Kind",
+            "type": "string"
+          },
+          "observation_id": {
+            "minLength": 1,
+            "title": "Observation Id",
+            "type": "string"
+          },
+          "summary": {
+            "minLength": 1,
+            "title": "Summary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observation_id",
+          "action_id",
+          "summary"
+        ],
+        "title": "ObservationRecordedPayload",
+        "type": "object"
+      },
       "PlanContext": {
         "additionalProperties": false,
         "properties": {
@@ -2777,6 +3451,25 @@
           }
         },
         "title": "PlanContext",
+        "type": "object"
+      },
+      "PlanUpdatedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "plan_updated",
+            "default": "plan_updated",
+            "title": "Kind",
+            "type": "string"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/AnalysisPlan"
+          }
+        },
+        "required": [
+          "plan"
+        ],
+        "title": "PlanUpdatedPayload",
         "type": "object"
       },
       "PostgresDataSourceRequest": {
@@ -2887,7 +3580,7 @@
         "additionalProperties": false,
         "properties": {
           "measure": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.(?:[A-Z][A-Za-z0-9]*(?:\\.[a-z][a-z0-9_]*)?|[a-z][a-z0-9_]*)$",
+            "minLength": 1,
             "title": "Measure",
             "type": "string"
           },
@@ -3618,7 +4311,6 @@
       },
       "RelationshipRouteEvidence": {
         "additionalProperties": false,
-        "description": "The immutable graph route and grain decision used for one query.",
         "properties": {
           "cardinalityByNode": {
             "items": {
@@ -3817,7 +4509,7 @@
             "type": "string"
           },
           "pins": {
-            "$ref": "#/components/schemas/RuntimeVersionPins"
+            "$ref": "#/components/schemas/DatasetRuntimeVersionPins"
           },
           "stage": {
             "const": "versions_pinned",
@@ -3830,6 +4522,60 @@
           "pins"
         ],
         "title": "RunProgressPayload",
+        "type": "object"
+      },
+      "RunResumeRequest": {
+        "additionalProperties": false,
+        "description": "Strict public body for both normal and streaming resume endpoints.",
+        "properties": {
+          "decision": {
+            "const": "respond",
+            "default": "respond",
+            "title": "Decision",
+            "type": "string"
+          },
+          "edited_action": {
+            "title": "Edited Action",
+            "type": "null"
+          },
+          "interrupt_id": {
+            "minLength": 1,
+            "title": "Interrupt Id",
+            "type": "string"
+          },
+          "message": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interrupt_id",
+          "message"
+        ],
+        "title": "RunResumeRequest",
+        "type": "object"
+      },
+      "RunResumedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "interrupt_id": {
+            "minLength": 1,
+            "title": "Interrupt Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "run_resumed",
+            "default": "run_resumed",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "interrupt_id"
+        ],
+        "title": "RunResumedPayload",
         "type": "object"
       },
       "RunStartedPayload": {
@@ -3863,103 +4609,48 @@
         "title": "RunStartedPayload",
         "type": "object"
       },
-      "RuntimeVersionPins": {
+      "RunWaitingPayload": {
         "additionalProperties": false,
         "properties": {
-          "bundle_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Bundle Digest",
+          "input_request": {
+            "$ref": "#/components/schemas/AgentInputRequest"
+          },
+          "kind": {
+            "const": "run_waiting",
+            "default": "run_waiting",
+            "title": "Kind",
             "type": "string"
-          },
-          "deployment_profile_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Deployment Profile Digest",
-            "type": "string"
-          },
-          "domain_pack_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Domain Pack Digest",
-            "type": "string"
-          },
-          "enterprise_binding_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Enterprise Binding Digest",
-            "type": "string"
-          },
-          "graph_digest": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Graph Digest",
-            "type": "string"
-          },
-          "graph_id": {
-            "minLength": 1,
-            "title": "Graph Id",
-            "type": "string"
-          },
-          "graph_version": {
-            "minLength": 1,
-            "title": "Graph Version",
-            "type": "string"
-          },
-          "model_versions": {
-            "items": {
-              "$ref": "#/components/schemas/ComponentVersionPin"
-            },
-            "minItems": 1,
-            "title": "Model Versions",
-            "type": "array"
-          },
-          "runtime_version": {
-            "minLength": 1,
-            "title": "Runtime Version",
-            "type": "string"
-          },
-          "schema_fingerprint": {
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Schema Fingerprint",
-            "type": "string"
-          },
-          "skill_id": {
-            "minLength": 1,
-            "title": "Skill Id",
-            "type": "string"
-          },
-          "skill_version": {
-            "minLength": 1,
-            "title": "Skill Version",
-            "type": "string"
-          },
-          "tool_registry_version": {
-            "minLength": 1,
-            "title": "Tool Registry Version",
-            "type": "string"
-          },
-          "tool_versions": {
-            "items": {
-              "$ref": "#/components/schemas/ComponentVersionPin"
-            },
-            "minItems": 1,
-            "title": "Tool Versions",
-            "type": "array"
           }
         },
         "required": [
-          "bundle_digest",
-          "runtime_version",
-          "domain_pack_digest",
-          "enterprise_binding_digest",
-          "deployment_profile_digest",
-          "schema_fingerprint",
-          "skill_id",
-          "skill_version",
-          "graph_id",
-          "graph_version",
-          "graph_digest",
-          "tool_registry_version",
-          "tool_versions",
-          "model_versions"
+          "input_request"
         ],
-        "title": "RuntimeVersionPins",
+        "title": "RunWaitingPayload",
+        "type": "object"
+      },
+      "RunWaitingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/AgentEvent"
+          },
+          "run_id": {
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "waiting",
+            "default": "waiting",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "event"
+        ],
+        "title": "RunWaitingResponse",
         "type": "object"
       },
       "SemanticBindingCreateRequest": {
@@ -4372,7 +5063,7 @@
         "additionalProperties": false,
         "properties": {
           "field": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Field",
             "type": "string"
           },
@@ -4410,6 +5101,33 @@
         "title": "SortDirection",
         "type": "string"
       },
+      "StepStartedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "step_started",
+            "default": "step_started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "step_id": {
+            "minLength": 1,
+            "title": "Step Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "step_id",
+          "objective"
+        ],
+        "title": "StepStartedPayload",
+        "type": "object"
+      },
       "TimeGrain": {
         "enum": [
           "day",
@@ -4423,7 +5141,6 @@
       },
       "TimeRange": {
         "additionalProperties": false,
-        "description": "Canonical event-time selection with optional half-open bounds.",
         "properties": {
           "end": {
             "anyOf": [
@@ -4438,7 +5155,7 @@
             "title": "End"
           },
           "field": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Field",
             "type": "string"
           },
@@ -4492,6 +5209,119 @@
           "user"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "ToolCompletedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "artifacts": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AgentArtifactSummary"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "call_id": {
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ErrorCode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/EvidenceSummary"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "kind": {
+            "const": "tool_completed",
+            "default": "tool_completed",
+            "title": "Kind",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "succeeded",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tool_name": {
+            "minLength": 1,
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "action_id",
+          "tool_name",
+          "status"
+        ],
+        "title": "ToolCompletedPayload",
+        "type": "object"
+      },
+      "ToolStartedPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "action_id": {
+            "minLength": 1,
+            "title": "Action Id",
+            "type": "string"
+          },
+          "call_id": {
+            "minLength": 1,
+            "title": "Call Id",
+            "type": "string"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "kind": {
+            "const": "tool_started",
+            "default": "tool_started",
+            "title": "Kind",
+            "type": "string"
+          },
+          "safe_arguments_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Safe Arguments Digest",
+            "type": "string"
+          },
+          "tool_name": {
+            "minLength": 1,
+            "title": "Tool Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "call_id",
+          "action_id",
+          "tool_name",
+          "display_name",
+          "safe_arguments_digest"
+        ],
+        "title": "ToolStartedPayload",
         "type": "object"
       },
       "TrustLevel": {
@@ -4600,20 +5430,19 @@
       },
       "WindowSpec": {
         "additionalProperties": false,
-        "description": "Logical window metadata; it never contains executable expressions.",
         "properties": {
           "axisRef": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Axisref",
             "type": "string"
           },
           "calculation": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Calculation",
             "type": "string"
           },
           "id": {
-            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[a-z][a-z0-9_]*$",
+            "minLength": 1,
             "title": "Id",
             "type": "string"
           },
@@ -4627,7 +5456,7 @@
           },
           "outputGrain": {
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "minItems": 1,
@@ -4637,7 +5466,7 @@
           "partitionBy": {
             "default": [],
             "items": {
-              "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\\.[A-Z][A-Za-z0-9]*\\.[a-z][a-z0-9_]*$",
+              "minLength": 1,
               "type": "string"
             },
             "title": "Partitionby",
@@ -5247,7 +6076,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunWaitingResponse"
+                    }
+                  ],
+                  "title": "Response Send Conversation Message Api Conversations  Conversation Id  Messages Post"
                 }
               }
             },
@@ -6232,7 +7069,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AgentResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunWaitingResponse"
+                    }
+                  ],
+                  "title": "Response Nl2Sql Api Nl2Sql Post"
                 }
               }
             },
@@ -6409,6 +7254,122 @@
           }
         ],
         "summary": "Replay Run Events"
+      }
+    },
+    "/api/runs/{run_id}/resume": {
+      "post": {
+        "operationId": "resume_run_api_runs__run_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AgentResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunWaitingResponse"
+                    }
+                  ],
+                  "title": "Response Resume Run Api Runs  Run Id  Resume Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Resume Run"
+      }
+    },
+    "/api/runs/{run_id}/resume/stream": {
+      "post": {
+        "operationId": "stream_resume_run_api_runs__run_id__resume_stream_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunResumeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Typed resumed runtime event stream"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Stream Resume Run"
       }
     },
     "/health": {

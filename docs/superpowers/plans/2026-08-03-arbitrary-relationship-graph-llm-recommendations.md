@@ -1,5 +1,7 @@
 # Arbitrary Relationship Graph and LLM Recommendation Implementation Plan
 
+> **Retained subsystem:** The relationship graph, deterministic routing and recommendation decisions remain current and are consumed by the native Data Analysis Agent.
+
 > **For the next implementation session:** Execute this plan task-by-task and keep the checkboxes current. The repository already contains substantial uncommitted user changes. Treat the working tree as the baseline, inspect overlapping diffs before every edit, and do not reset, discard, or rewrite unrelated changes.
 
 **Goal:** 将当前以主表为根、依赖加入顺序的多表关联树，升级为支持环、平行边、自关联、复合键和多对多桥接的通用语义关系图；数据源目录发布后自动由 LLM 生成字段关联建议，并通过本地数据验证与人工编辑后激活；查询阶段由确定性路由器选择安全、可解释的 JOIN 子图，禁止模型直接生成或选择物理 SQL。

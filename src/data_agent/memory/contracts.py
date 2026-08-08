@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from data_agent.execution.contracts import ExecutionCheckpoint
-
 from .models import (
     ApprovalContext,
-    Checkpoint,
     ConversationRecord,
     ConversationWriteBatch,
     MemoryBudget,
@@ -53,18 +50,6 @@ class MemoryManager(Protocol):
     async def invalidate(self, selector: MemorySelector) -> int: ...
 
     async def forget(self, subject: SubjectScope) -> int: ...
-
-    async def save_checkpoint(self, run_id: str, state: Checkpoint) -> None: ...
-
-    async def load_checkpoint(
-        self,
-        *,
-        tenant_id: str,
-        user_id: str,
-        domain_id: str,
-        conversation_id: str,
-        run_id: str,
-    ) -> ExecutionCheckpoint | None: ...
 
     async def create_conversation(
         self,

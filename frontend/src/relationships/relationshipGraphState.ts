@@ -8,6 +8,10 @@ export type GraphAction =
   | { type: "removeEdge"; edgeId: string }
   | { type: "addNode"; node: RelationshipGraphNode }
   | { type: "removeNode"; nodeId: string }
+  | {
+      type: "updateRouteRules";
+      routeRules: RelationshipGraphDraft["route_rules"];
+    }
   | { type: "undo" }
   | { type: "redo" };
 
@@ -30,6 +34,8 @@ export function graphEditorReducer(state: GraphEditorState, action: GraphAction)
       ? { ...state.graph, edges: state.graph.edges.filter((edge) => edge.edge_id !== action.edgeId) }
       : action.type === "addNode"
         ? { ...state.graph, nodes: [...state.graph.nodes, action.node] }
+        : action.type === "updateRouteRules"
+          ? { ...state.graph, route_rules: action.routeRules }
         : { ...state.graph, nodes: state.graph.nodes.filter((node) => node.node_id !== action.nodeId), edges: state.graph.edges.filter((edge) => edge.from_node_id !== action.nodeId && edge.to_node_id !== action.nodeId) };
   return { graph, undo: [...state.undo, state.graph], redo: [] };
 }

@@ -1,5 +1,7 @@
 # Data Agent Memory Graphiti Implementation Plan
 
+> **Historical / partially retained:** Long-term Memory authority and approval decisions remain relevant. Execution checkpoints are now owned separately by LangGraph checkpointers as defined on 2026-08-08.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a Data Agent memory layer that uses Graphiti-style temporal knowledge graph memory for tenant/user-scoped data corrections, filter rules, table guidance, and analysis learnings while preserving the existing conversation history store.

@@ -19,20 +19,11 @@ from sqlglot.errors import ParseError
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from data_agent.execution import (
-    ExecutionAuthorityPin,
-    ExecutionCheckpoint,
-    ExecutionState,
-    ExecutionStatus,
-    ExecutionVersionPins,
-    VersionPin,
-)
 from data_agent.memory.manager import MemoryApprovalError, MemoryConflictError
 from data_agent.memory.models import (
     ApprovalContext,
     ApprovalDecision,
     ArtifactReference,
-    Checkpoint,
     ConversationSummaryWrite,
     ConversationWriteBatch,
     EnterpriseMemoryContent,
@@ -52,7 +43,6 @@ from data_agent.memory.models import (
     WorkingMemoryOwner,
 )
 from data_agent.memory.providers.postgres import PostgresMemoryManager
-from data_agent.runtime.models import AgentMode
 
 
 NOW = datetime(2026, 7, 11, 5, 0, tzinfo=UTC)
@@ -201,10 +191,6 @@ _SQL_RULES: dict[str, _SqlRule] = {
         required_predicates=("owner_key = $1", "deduplication_key = $2", "tenant_id = $3", "scope = $4", "user_id is not distinct from $5", "domain_id is not distinct from $6", "conversation_id is not distinct from $7", "run_id is not distinct from $8"),
         for_update=True,
     ),
-    "memory:load_checkpoint": _SqlRule(
-        "fetchrow", "SELECT", "data_agent_checkpoints", _indices(6),
-        required_predicates=("tenant_id = $1", "user_id = $2", "domain_id = $3", "conversation_id = $4", "run_id = $5", "owner_key = $6"),
-    ),
     "memory:recall": _SqlRule(
         "fetch", "SELECT", "data_agent_memory_records", _indices(12),
         required_predicates=("tenant_id = $1", "user_id = $2", "domain_id = $3", "scope = any", "owner_key = any"),
@@ -213,6 +199,13 @@ _SQL_RULES: dict[str, _SqlRule] = {
         "fetch", "SELECT", "data_agent_messages", _indices(5),
         required_predicates=("tenant_id = $1", "user_id = $2", "domain_id = $3", "conversation_id = $4"),
         joins=("data_agent_conversations",),
+    ),
+    "memory:load_turn_messages": _SqlRule(
+        "fetch", "SELECT", "data_agent_messages", _indices(6),
+        required_predicates=(
+            "tenant_id = $1", "user_id = $2", "domain_id = $3",
+            "conversation_id = $4", "run_id = $5", "owner_key = $6",
+        ),
     ),
     "memory:insert_message": _SqlRule(
         "execute", "INSERT", "data_agent_messages", _indices(11),
@@ -241,10 +234,6 @@ _SQL_RULES: dict[str, _SqlRule] = {
         "execute", "UPDATE", "data_agent_memory_proposals", _indices(9),
         assignments=frozenset({"status", "conflict_with", "approver_user_id", "approver_roles", "approval_decision", "decided_at", "updated_at"}),
         required_predicates=("proposal_id = $1", "tenant_id = $8", "owner_key = $9"),
-    ),
-    "memory:save_checkpoint": _SqlRule(
-        "execute", "INSERT", "data_agent_checkpoints", _indices(10),
-        frozenset({"tenant_id", "user_id", "domain_id", "conversation_id", "run_id", "owner_key", "checkpoint_id", "checkpoint_digest", "checkpoint_json", "created_at", "updated_at"}),
     ),
     "memory:mark_version_drift": _SqlRule(
         "execute", "UPDATE", "data_agent_memory_records", _indices(11),
@@ -275,10 +264,6 @@ _SQL_RULES: dict[str, _SqlRule] = {
     ),
     "memory:forget_artifacts": _SqlRule(
         "execute", "DELETE", "data_agent_artifact_refs", _indices(5),
-        required_predicates=("tenant_id = $1", "domain_id = $2", "user_id = $3", "conversation_id = $4", "run_id = $5"),
-    ),
-    "memory:forget_checkpoints": _SqlRule(
-        "execute", "DELETE", "data_agent_checkpoints", _indices(5),
         required_predicates=("tenant_id = $1", "domain_id = $2", "user_id = $3", "conversation_id = $4", "run_id = $5"),
     ),
     "memory:forget_run_summary": _SqlRule(
@@ -346,7 +331,6 @@ class _Database:
         self.records: dict[str, dict[str, Any]] = {}
         self.record_by_proposal: dict[str, str] = {}
         self.record_by_slot: dict[tuple[str, str], str] = {}
-        self.checkpoints: dict[tuple[str, str, str, str, str], dict[str, Any]] = {}
         self.sql_calls: list[tuple[str, tuple[Any, ...]]] = []
         self.transaction_exits: list[type[BaseException] | None] = []
         self.fail_marker: str | None = None
@@ -363,7 +347,6 @@ class _Database:
                 "records",
                 "record_by_proposal",
                 "record_by_slot",
-                "checkpoints",
             )
         }
 
@@ -388,7 +371,7 @@ class _Database:
                 )
                 if key not in self.conversations:
                     raise RuntimeError("proposal conversation foreign key violation")
-        for collection in (self.messages, self.artifacts.values(), self.checkpoints.values()):
+        for collection in (self.messages, self.artifacts.values()):
             for row in collection:
                 key = (
                     row["tenant_id"],
@@ -596,11 +579,6 @@ class _Connection:
             if explicit != tuple(args[2:8]):
                 return None
             return copy.deepcopy(row)
-        if marker == "memory:load_checkpoint":
-            row = db.checkpoints.get(tuple(args[:5]))
-            if row is None or row["owner_key"] != args[5]:
-                return None
-            return copy.deepcopy(row)
         raise AssertionError(f"unhandled fetchrow marker {marker}")
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
@@ -680,6 +658,18 @@ class _Connection:
                 and row["conversation_id"] == conversation_id
             ]
             return rows[-limit:]
+        if marker == "memory:load_turn_messages":
+            tenant_id, user_id, domain_id, conversation_id, run_id, owner_key = args
+            return [
+                copy.deepcopy(row)
+                for row in db.messages
+                if row["tenant_id"] == tenant_id
+                and row["user_id"] == user_id
+                and row["domain_id"] == domain_id
+                and row["conversation_id"] == conversation_id
+                and row["run_id"] == run_id
+                and row["owner_key"] == owner_key
+            ]
         raise AssertionError(f"unhandled fetch marker {marker}")
 
     async def execute(self, sql: str, *args: Any) -> str:
@@ -823,23 +813,6 @@ class _Connection:
                 updated_at=decided_at,
             )
             return "UPDATE 1"
-        if marker == "memory:save_checkpoint":
-            fields = (
-                "tenant_id",
-                "user_id",
-                "domain_id",
-                "conversation_id",
-                "run_id",
-                "owner_key",
-                "checkpoint_id",
-                "checkpoint_digest",
-                "checkpoint_json",
-                "created_at",
-            )
-            row = dict(zip(fields, args, strict=True))
-            row["updated_at"] = row["created_at"]
-            db.checkpoints[tuple(args[:5])] = row
-            return "INSERT 0 1"
         if marker == "memory:mark_version_drift":
             owner_keys = set(args[10])
             changed = 0
@@ -904,15 +877,6 @@ class _Connection:
             ]
             for key in removed:
                 db.artifacts.pop(key)
-            return f"DELETE {len(removed)}"
-        if marker == "memory:forget_checkpoints":
-            removed = [
-                key
-                for key, row in db.checkpoints.items()
-                if _row_matches_subject(row, args)
-            ]
-            for key in removed:
-                db.checkpoints.pop(key)
             return f"DELETE {len(removed)}"
         if marker == "memory:forget_run_summary":
             tenant_id, domain_id, user_id, conversation_id, run_id = args
@@ -979,39 +943,6 @@ class _Pool:
 
     def acquire(self) -> _Acquire:
         return _Acquire(self)
-
-
-def checkpoint(run_id: str = "run-a") -> ExecutionCheckpoint:
-    pins = ExecutionVersionPins(
-        authority=ExecutionAuthorityPin(
-            tenant_id="tenant-a",
-            user_id="user-a",
-            normalized_roles=("seller",),
-            admin_scope=False,
-            enterprise_id="olist",
-            domain_id="commerce",
-            request_id=run_id,
-            question_digest="0" * 64,
-        ),
-        bundle_digest="bundle-a",
-        bundle_runtime_version="1.0.0",
-        schema_fingerprint="schema-a",
-        skill_id="commerce.analytics",
-        skill_version="1.0.0",
-        graph_id="commerce.execution",
-        graph_version="1.0.0",
-        graph_digest="graph-a",
-        tool_registry_version="1.0.0",
-        tool_versions=(VersionPin(component="semantic.search", version="1.0.0"),),
-        model_versions=(VersionPin(component="planner", version="model-a"),),
-    )
-    state = ExecutionState(
-        run_id=run_id,
-        mode=AgentMode.PLAN,
-        status=ExecutionStatus.PAUSED,
-        next_node="plan_query",
-    )
-    return ExecutionCheckpoint.capture(pins=pins, state=state)
 
 
 def candidate(
@@ -1090,7 +1021,6 @@ def turn_batch(
         ),
         artifact_refs=(reference,),
         proposals=(proposal,) if proposal is not None else (),
-        checkpoint=Checkpoint(**owner, checkpoint=checkpoint(run_id)),
     )
 
 
@@ -1115,7 +1045,6 @@ class MemoryDDLTests(unittest.TestCase):
             "data_agent_artifact_refs",
             "data_agent_memory_proposals",
             "data_agent_memory_records",
-            "data_agent_checkpoints",
         }
         self.assertEqual(set(table_creates), expected_tables)
 
@@ -1141,10 +1070,6 @@ class MemoryDDLTests(unittest.TestCase):
                 "memory_id", "proposal_id", "owner_key", "tenant_id", "scope",
                 "user_id", "domain_id", "conversation_id", "run_id",
                 "content_json", "deduplication_key", "status",
-            },
-            "data_agent_checkpoints": {
-                "tenant_id", "user_id", "domain_id", "conversation_id",
-                "run_id", "owner_key", "checkpoint_id", "checkpoint_json",
             },
         }
         for table, expected in expected_columns.items():
@@ -1192,7 +1117,6 @@ class MemoryDDLTests(unittest.TestCase):
             "data_agent_artifact_refs",
             "data_agent_memory_proposals",
             "data_agent_memory_records",
-            "data_agent_checkpoints",
         ):
             self.assertIn(
                 (table, conversation_owner, "data_agent_conversations", conversation_owner),
@@ -1205,7 +1129,6 @@ class MemoryDDLTests(unittest.TestCase):
         self.assertIn(
             ("proposal_id",), unique_shapes["data_agent_memory_records"]
         )
-        self.assertIn(("owner_key",), unique_shapes["data_agent_checkpoints"])
         self.assertTrue(all(count > 0 for count in check_counts.values()))
 
         indexes = {
@@ -1221,7 +1144,6 @@ class MemoryDDLTests(unittest.TestCase):
             "idx_data_agent_artifact_refs_owner_run",
             "idx_data_agent_memory_proposals_owner_status",
             "uq_data_agent_memory_records_active_dedup",
-            "idx_data_agent_checkpoints_owner_updated",
         }
         self.assertLessEqual(expected_indexes, set(indexes))
         active_dedup = indexes["uq_data_agent_memory_records_active_dedup"]
@@ -1299,14 +1221,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             ),
             artifact_refs=(reference,),
             proposals=(candidate(),),
-            checkpoint=Checkpoint(
-                tenant_id="tenant-a",
-                user_id="user-a",
-                domain_id="commerce",
-                conversation_id=conversation.conversation_id,
-                run_id="run-a",
-                checkpoint=checkpoint(),
-            ),
         )
         before = self.database.snapshot()
         self.database.fail_marker = "memory:insert_artifact"
@@ -1320,12 +1234,12 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.database.fail_marker = None
         await self.manager.save_turn(batch)
+        await self.manager.save_turn(batch)
 
         self.assertIsNone(self.database.transaction_exits[-1])
         self.assertEqual(len(self.database.messages), 2)
         self.assertEqual(len(self.database.artifacts), 1)
         self.assertEqual(len(self.database.proposals), 1)
-        self.assertEqual(len(self.database.checkpoints), 1)
         stored = repr(self.database.snapshot())
         self.assertNotIn("FULL_RESULT_SENTINEL", stored)
         self.assertNotIn('"rows"', stored)
@@ -1334,45 +1248,16 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             all("$1" in sql for sql, args in self.database.sql_calls if args),
             self.database.sql_calls,
         )
-
-    async def test_checkpoint_round_trip_and_all_owner_dimensions_fail_closed(self) -> None:
-        conversation = await self._conversation()
-        original = checkpoint("run-a")
-        state = Checkpoint(
-            tenant_id="tenant-a",
-            user_id="user-a",
-            domain_id="commerce",
-            conversation_id=conversation.conversation_id,
-            run_id="run-a",
-            checkpoint=original,
-        )
-
-        await self.manager.save_checkpoint("run-a", state)
-
-        restored = await self.manager.load_checkpoint(
-            tenant_id="tenant-a",
-            user_id="user-a",
-            domain_id="commerce",
-            conversation_id=conversation.conversation_id,
-            run_id="run-a",
-        )
-        self.assertEqual(restored, original)
-        for changed in (
-            {"tenant_id": "tenant-b"},
-            {"user_id": "user-b"},
-            {"domain_id": "other-domain"},
-            {"conversation_id": "conversation-b"},
-            {"run_id": "run-b"},
-        ):
-            owner = {
-                "tenant_id": "tenant-a",
-                "user_id": "user-a",
-                "domain_id": "commerce",
-                "conversation_id": conversation.conversation_id,
-                "run_id": "run-a",
-            }
-            owner.update(changed)
-            self.assertIsNone(await self.manager.load_checkpoint(**owner))
+        with self.assertRaises(MemoryConflictError):
+            await self.manager.save_turn(
+                batch.model_copy(
+                    update={
+                        "assistant_message": batch.assistant_message.model_copy(
+                            update={"content": "Sales decreased."}
+                        )
+                    }
+                )
+            )
 
     async def test_concurrent_dedup_and_commit_are_atomic_and_unapproved_is_hidden(self) -> None:
         first, second = await asyncio.gather(
@@ -1582,7 +1467,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                 "conversation_summary": valid.conversation_summary,
                 "artifact_refs": valid.artifact_refs,
                 "proposals": (cross_owner,),
-                "checkpoint": valid.checkpoint,
             }
         )
         before = self.database.snapshot()
@@ -1610,7 +1494,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                 "conversation_summary": valid.conversation_summary,
                 "artifact_refs": (),
                 "proposals": (),
-                "checkpoint": valid.checkpoint,
             }
         )
         with self.assertRaisesRegex(PermissionError, "artifact reference"):
@@ -1669,7 +1552,7 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                     run_id=run_id,
                 ),
                 content=WorkingMemoryContent(summary=f"{conversation.title} {run_id}"),
-                source="checkpoint",
+                source="agent_turn",
                 deduplication_key="working-slot",
             )
             working_ids.append(await self.manager.propose(working))
@@ -1718,7 +1601,7 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                     run_id=run_id,
                 ),
                 content=WorkingMemoryContent(summary=f"memory {run_id}"),
-                source="checkpoint",
+                source="agent_turn",
                 deduplication_key=f"slot-{conversation.conversation_id}-{run_id}",
             )
             await self.manager.save_turn(
@@ -1737,7 +1620,7 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                 run_id="run-a",
             )
         )
-        self.assertEqual(removed, 6)
+        self.assertEqual(removed, 5)
         self.assertIn(
             ("tenant-a", "user-a", "commerce", first.conversation_id),
             self.database.conversations,
@@ -1751,7 +1634,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                 for collection in (
                     self.database.messages,
                     self.database.artifacts.values(),
-                    self.database.checkpoints.values(),
                     self.database.proposals.values(),
                     self.database.records.values(),
                 )
@@ -1775,7 +1657,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
                     self.database.conversations.values(),
                     self.database.messages,
                     self.database.artifacts.values(),
-                    self.database.checkpoints.values(),
                     self.database.proposals.values(),
                     self.database.records.values(),
                 )
@@ -1798,7 +1679,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.database.conversations)
         self.assertFalse(self.database.messages)
         self.assertFalse(self.database.artifacts)
-        self.assertFalse(self.database.checkpoints)
         self.assertFalse(self.database.proposals)
         self.assertFalse(self.database.records)
 
@@ -1879,7 +1759,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
         for collection in (
             self.database.messages,
             self.database.artifacts.values(),
-            self.database.checkpoints.values(),
         ):
             self.assertTrue(all(row["domain_id"] == "finance" for row in collection))
 
@@ -1892,13 +1771,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             domain_id="commerce",
             conversation_id=conversation.conversation_id,
             limit=10,
-        )
-        await self.manager.load_checkpoint(
-            tenant_id="tenant-a",
-            user_id="user-a",
-            domain_id="commerce",
-            conversation_id=conversation.conversation_id,
-            run_id="run-a",
         )
         await self.manager.forget(
             SubjectScope(
@@ -1916,7 +1788,6 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             "memory:lock_conversation",
             "memory:update_conversation",
             "memory:list_messages",
-            "memory:load_checkpoint",
         ):
             sql = by_marker[marker]
             self.assertIn("owner_key", sql, marker)
@@ -1927,25 +1798,21 @@ class PostgresMemoryManagerTests(unittest.IsolatedAsyncioTestCase):
             "memory:lock_conversation",
             "memory:update_conversation",
             "memory:list_messages",
-            "memory:load_checkpoint",
             "memory:forget_unlink_proposals",
             "memory:forget_records",
             "memory:forget_proposals",
             "memory:forget_messages",
             "memory:forget_artifacts",
-            "memory:forget_checkpoints",
             "memory:forget_run_summary",
         ):
             sql = by_marker[marker]
             self.assertIn("domain_id", sql, marker)
             self.assertNotIn("domain_id is not null", sql, marker)
         for marker in (
-            "memory:load_checkpoint",
             "memory:forget_records",
             "memory:forget_proposals",
             "memory:forget_messages",
             "memory:forget_artifacts",
-            "memory:forget_checkpoints",
             "memory:forget_run_summary",
         ):
             self.assertIn("run_id", by_marker[marker], marker)

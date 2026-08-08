@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from data_agent.memory import MemoryManager, NullMemoryManager
 
-from .dependencies import ModelClient
+from data_agent.model_client import ModelClient
 from .errors import AgentError, ErrorCode
 from .events import (
     AgentEvent,
@@ -37,62 +37,14 @@ USER_DATASET_ENTERPRISE_ID = "user-dataset"
 _T = TypeVar("_T")
 
 
-class UploadDatasetRuntime:
-    """Conversation facade that never falls back to a bundled business dataset."""
+class SQLiteConversationRepository:
+    """Owner-scoped SQLite authority for conversation metadata and turns."""
 
     def __init__(self, database_path: str | Path) -> None:
         self._database_path = Path(database_path).expanduser().resolve()
         self._database_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = asyncio.Lock()
         self._initialize()
-
-    async def run(
-        self,
-        request: AgentRequest,
-        principal: PrincipalContext,
-    ) -> AsyncIterator[AgentEvent]:
-        run_id = "upload-runtime-" + uuid4().hex
-        yield AgentEvent(
-            type=AgentEventType.RUN_STARTED,
-            run_id=run_id,
-            sequence=0,
-            data=RunStartedPayload(
-                mode=request.mode,
-                enterprise_id=request.enterprise_id,
-                domain_id=request.domain_id,
-            ),
-        )
-        response = AgentResponse(
-            ok=False,
-            question=request.question,
-            contextualized_question=request.question,
-            conversation_id=request.conversation_id,
-            tenant_id=principal.tenant_id,
-            answer="请先上传数据集并激活语义绑定，再开始分析。",
-            error=AgentError(
-                code=ErrorCode.INVALID_REQUEST,
-                message="请先上传数据集并激活语义绑定，再开始分析。",
-            ),
-        )
-        if request.conversation_id is not None:
-            conversation = await self.get_conversation(
-                principal=principal,
-                domain_id=USER_DATASET_DOMAIN_ID,
-                conversation_id=request.conversation_id,
-            )
-            if conversation is not None:
-                await self.record_conversation_turn(
-                    request=request,
-                    principal=principal,
-                    response=response,
-                )
-        yield AgentEvent(
-            type=AgentEventType.RUN_FAILED,
-            run_id=run_id,
-            sequence=1,
-            data=RunFailedPayload(error_code=ErrorCode.INVALID_REQUEST),
-            response=response,
-        )
 
     async def create_conversation(
         self,
@@ -293,6 +245,7 @@ class UploadDatasetRuntime:
     async def record_conversation_turn(
         self,
         *,
+        run_id: str,
         request: AgentRequest,
         principal: PrincipalContext,
         response: AgentResponse,
@@ -327,6 +280,11 @@ class UploadDatasetRuntime:
                 trace=response.trace,
                 pending_memory_updates=response.pending_memory_updates,
                 version_pins=response.version_pins,
+                analysis_plan=response.analysis_plan,
+                analysis_steps=response.analysis_steps,
+                artifacts=response.artifacts,
+                evidence=response.evidence,
+                limitations=response.limitations,
             ),
         )
 
@@ -339,6 +297,30 @@ class UploadDatasetRuntime:
             )
             if conversation is None:
                 raise PermissionError("conversation is unavailable")
+            existing = connection.execute(
+                """
+                SELECT role, payload
+                FROM conversation_messages
+                WHERE tenant_id = ? AND user_id = ?
+                  AND domain_id = ? AND conversation_id = ? AND run_id = ?
+                ORDER BY sequence
+                """,
+                (
+                    principal.tenant_id,
+                    principal.user_id,
+                    USER_DATASET_DOMAIN_ID,
+                    conversation.conversation_id,
+                    run_id,
+                ),
+            ).fetchall()
+            expected = (
+                ("user", user_message.model_dump_json()),
+                ("assistant", assistant_message.model_dump_json()),
+            )
+            if existing:
+                if tuple((str(row[0]), str(row[1])) for row in existing) == expected:
+                    return
+                raise RuntimeError("conversation run already has different messages")
             row = connection.execute(
                 """
                 SELECT COALESCE(MAX(sequence), 0)
@@ -359,8 +341,8 @@ class UploadDatasetRuntime:
                     """
                     INSERT INTO conversation_messages (
                         tenant_id, user_id, domain_id, conversation_id,
-                        sequence, payload
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        sequence, run_id, role, payload
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         principal.tenant_id,
@@ -368,6 +350,8 @@ class UploadDatasetRuntime:
                         USER_DATASET_DOMAIN_ID,
                         conversation.conversation_id,
                         sequence,
+                        run_id,
+                        message.role,
                         message.model_dump_json(),
                     ),
                 )
@@ -393,6 +377,41 @@ class UploadDatasetRuntime:
             )
 
         await self._write(operation)
+
+    async def load_context_summary(
+        self,
+        *,
+        request: AgentRequest,
+        principal: PrincipalContext,
+        max_messages: int = 8,
+        max_characters: int = 4_096,
+    ) -> str | None:
+        """Render bounded prior turns without rows, SQL, traces, or run state."""
+
+        if request.conversation_id is None:
+            return None
+        if max_messages < 1 or max_characters < 64:
+            raise ValueError("conversation context budget is invalid")
+        messages = await self.list_conversation_messages(
+            principal=principal,
+            domain_id=USER_DATASET_DOMAIN_ID,
+            conversation_id=request.conversation_id,
+            limit=max_messages,
+        )
+        lines: list[str] = []
+        for message in messages:
+            line = f"{message.role}: {message.content.strip()}"
+            if message.role == "assistant" and message.metadata.evidence:
+                refs = ", ".join(
+                    f"{item.evidence_id}:{item.claim_key}:{item.artifact_id}"
+                    for item in message.metadata.evidence
+                )
+                line += f" [evidence {refs}]"
+            lines.append(line)
+        rendered = "\n".join(lines)
+        if not rendered:
+            return None
+        return rendered[-max_characters:]
 
     async def close(self) -> None:
         return None
@@ -474,6 +493,8 @@ class UploadDatasetRuntime:
                     domain_id TEXT NOT NULL,
                     conversation_id TEXT NOT NULL,
                     sequence INTEGER NOT NULL,
+                    run_id TEXT,
+                    role TEXT,
                     payload TEXT NOT NULL,
                     PRIMARY KEY (
                         tenant_id, user_id, domain_id,
@@ -487,6 +508,29 @@ class UploadDatasetRuntime:
                     )
                     ON DELETE CASCADE
                 );
+                """
+            )
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "PRAGMA table_info(conversation_messages)"
+                ).fetchall()
+            }
+            if "run_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE conversation_messages ADD COLUMN run_id TEXT"
+                )
+            if "role" not in columns:
+                connection.execute(
+                    "ALTER TABLE conversation_messages ADD COLUMN role TEXT"
+                )
+            connection.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS conversation_messages_run_role_idx
+                ON conversation_messages (
+                    tenant_id, user_id, domain_id, conversation_id, run_id, role
+                )
+                WHERE run_id IS NOT NULL AND role IS NOT NULL
                 """
             )
 
@@ -526,6 +570,91 @@ class UploadDatasetRuntime:
             return operation(connection)
 
 
+class UploadDatasetRuntime:
+    """No-datasource runtime delegating conversation duties to a repository."""
+
+    def __init__(self, database_path: str | Path) -> None:
+        self.repository = SQLiteConversationRepository(database_path)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.repository, name)
+
+    async def create_conversation(self, **kwargs: Any) -> ConversationSummary:
+        return await self.repository.create_conversation(**kwargs)
+
+    async def list_conversations(self, **kwargs: Any) -> tuple[ConversationSummary, ...]:
+        return await self.repository.list_conversations(**kwargs)
+
+    async def get_conversation(self, **kwargs: Any) -> ConversationSummary | None:
+        return await self.repository.get_conversation(**kwargs)
+
+    async def update_conversation(self, **kwargs: Any) -> ConversationSummary | None:
+        return await self.repository.update_conversation(**kwargs)
+
+    async def list_conversation_messages(
+        self,
+        **kwargs: Any,
+    ) -> tuple[ConversationMessage, ...]:
+        return await self.repository.list_conversation_messages(**kwargs)
+
+    async def record_conversation_turn(self, **kwargs: Any) -> None:
+        await self.repository.record_conversation_turn(**kwargs)
+
+    async def load_context_summary(self, **kwargs: Any) -> str | None:
+        return await self.repository.load_context_summary(**kwargs)
+
+    async def run(
+        self,
+        request: AgentRequest,
+        principal: PrincipalContext,
+    ) -> AsyncIterator[AgentEvent]:
+        run_id = "upload-runtime-" + uuid4().hex
+        yield AgentEvent(
+            type=AgentEventType.RUN_STARTED,
+            run_id=run_id,
+            sequence=0,
+            data=RunStartedPayload(
+                mode=request.mode,
+                enterprise_id=request.enterprise_id,
+                domain_id=request.domain_id,
+            ),
+        )
+        response = AgentResponse(
+            ok=False,
+            question=request.question,
+            contextualized_question=request.question,
+            conversation_id=request.conversation_id,
+            tenant_id=principal.tenant_id,
+            answer="请先上传数据集并激活语义绑定，再开始分析。",
+            error=AgentError(
+                code=ErrorCode.INVALID_REQUEST,
+                message="请先上传数据集并激活语义绑定，再开始分析。",
+            ),
+        )
+        if request.conversation_id is not None:
+            conversation = await self.repository.get_conversation(
+                principal=principal,
+                domain_id=USER_DATASET_DOMAIN_ID,
+                conversation_id=request.conversation_id,
+            )
+            if conversation is not None:
+                await self.repository.record_conversation_turn(
+                    run_id=run_id,
+                    request=request,
+                    principal=principal,
+                    response=response,
+                )
+        yield AgentEvent(
+            type=AgentEventType.RUN_FAILED,
+            run_id=run_id,
+            sequence=1,
+            data=RunFailedPayload(error_code=ErrorCode.INVALID_REQUEST),
+            response=response,
+        )
+
+    async def close(self) -> None:
+        await self.repository.close()
+
 @dataclass(frozen=True, slots=True)
 class UploadRuntimeDependencies:
     model_client: ModelClient
@@ -564,6 +693,7 @@ class UploadRuntimeComposition:
 __all__ = [
     "USER_DATASET_DOMAIN_ID",
     "USER_DATASET_ENTERPRISE_ID",
+    "SQLiteConversationRepository",
     "UploadDatasetRuntime",
     "UploadRuntimeComposition",
     "UploadRuntimeDependencies",

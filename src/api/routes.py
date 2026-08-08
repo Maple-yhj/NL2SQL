@@ -56,18 +56,16 @@ from api.schemas import (
     RelationshipDiscoveryResponse,
     RunCancelResponse,
     RunEventListResponse,
+    RunResumeRequest,
+    RunWaitingResponse,
     SemanticBindingCreateRequest,
     SemanticBindingListResponse,
     TokenResponse,
 )
 from api.datasource_service import DataSourceService
-from api.dataset_query_service import (
-    DataSourceQueryService,
-    DatasetConversationContext,
-    DatasetPlanStatus,
-    DatasetQueryPlan,
-)
-from api.run_streams import RunCoordinator
+from api.run_streams import RunConflictError, RunCoordinator
+from data_agent.analysis_agent.models import AgentInputRequest, AgentStatus
+from data_agent.analysis_agent.runtime import AnalysisRuntimeError
 from data_agent.memory import (
     ApprovalContext,
     ApprovalDecision,
@@ -95,11 +93,7 @@ from data_agent.runtime import (
     USER_DATASET_DOMAIN_ID,
 )
 from data_agent.runtime.errors import AgentError, ErrorCode
-from data_agent.runtime.events import (
-    AgentEventType,
-    RunFailedPayload,
-    RunStartedPayload,
-)
+from data_agent.runtime.events import AgentEventType
 from data_agent.relationships.models import (
     RelationshipGraphDraft,
     RelationshipRecommendationRun,
@@ -232,17 +226,18 @@ def get_runtime(request: Request) -> ProductRuntime:
     return runtime
 
 
+def get_analysis_runtime(request: Request) -> DataAgentRuntime:
+    runtime = getattr(request.app.state, "analysis_runtime", None)
+    if runtime is None:
+        raise RuntimeError("Analysis Agent runtime is unavailable outside app lifespan")
+    return runtime
+
+
 def get_data_source_service(request: Request) -> DataSourceService:
     service = getattr(request.app.state, "data_source_service", None)
     if service is None:
         raise RuntimeError("Datasource service is unavailable outside app lifespan")
     return service
-
-
-def get_data_source_query_service(
-    request: Request,
-) -> DataSourceQueryService | None:
-    return getattr(request.app.state, "data_source_query_service", None)
 
 
 def get_run_coordinator(request: Request) -> RunCoordinator:
@@ -585,46 +580,43 @@ async def activate_data_source_binding(
         raise _data_source_error(exc) from exc
 
 
-@router.post("/api/nl2sql", response_model=AgentResponse)
+@router.post("/api/nl2sql", response_model=AgentResponse | RunWaitingResponse)
 async def nl2sql(
     request: Nl2SqlRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
-    data_query: DataSourceQueryService | None = Depends(
-        get_data_source_query_service
-    ),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
 ):
     runtime_principal = _runtime_principal(principal)
     try:
-        if request.source_id is not None:
-            if data_query is None:
-                response = _unavailable_dataset_response(
-                    request,
-                    runtime_principal,
-                )
-            else:
-                response = await data_query.run(request, runtime_principal)
-            await _record_conversation_turn(
-                runtime,
-                request,
-                runtime_principal,
-                response,
-            )
-        else:
-            response = await _collect_terminal_response(
-                runtime,
-                request,
-                runtime_principal,
-            )
+        await coordinator.ensure_conversation_available(
+            tenant_id=runtime_principal.tenant_id,
+            user_id=runtime_principal.user_id,
+            conversation_id=request.conversation_id,
+        )
+        result = await _collect_run_result(
+            principal=runtime_principal,
+            coordinator=coordinator,
+            events=analysis_runtime.run(request, runtime_principal),
+            conversation_id=request.conversation_id,
+        )
+    except RunConflictError:
+        return _run_conflict_response(request, runtime_principal)
     except Exception:
-        response = _safe_internal_response(request, runtime_principal)
-    status_code = _status_for_response(response)
+        result = _safe_internal_response(request, runtime_principal)
+    if isinstance(result, RunWaitingResponse):
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=result.model_dump(mode="json"),
+        )
+    status_code = _status_for_response(result)
     if status_code != status.HTTP_200_OK:
         return JSONResponse(
             status_code=status_code,
-            content=response.model_dump(mode="json"),
+            content=result.model_dump(mode="json"),
         )
-    return response
+    return result
 
 
 @router.post(
@@ -643,19 +635,133 @@ async def stream_nl2sql(
     request: Nl2SqlRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
-    data_query: DataSourceQueryService | None = Depends(
-        get_data_source_query_service
-    ),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
     coordinator: RunCoordinator = Depends(get_run_coordinator),
 ):
     runtime_principal = _runtime_principal(principal)
+    try:
+        await coordinator.ensure_conversation_available(
+            tenant_id=runtime_principal.tenant_id,
+            user_id=runtime_principal.user_id,
+            conversation_id=request.conversation_id,
+        )
+    except RunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     events = _request_event_stream(
         request,
         runtime_principal,
-        runtime=runtime,
-        data_query=data_query,
+        analysis_runtime=analysis_runtime,
     )
-    return _sse_response(coordinator.observe(runtime_principal, events))
+    return _sse_response(
+        coordinator.observe(
+            runtime_principal,
+            events,
+            conversation_id=request.conversation_id,
+        )
+    )
+
+
+@router.post(
+    "/api/runs/{run_id}/resume",
+    response_model=AgentResponse | RunWaitingResponse,
+)
+async def resume_run(
+    run_id: str,
+    request: RunResumeRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    runtime: ProductRuntime = Depends(get_runtime),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
+):
+    runtime_principal = _runtime_principal(principal)
+    resolved_run_id = run_id.strip()
+    try:
+        original_request, next_sequence = await _prepare_resume(
+            analysis_runtime=analysis_runtime,
+            coordinator=coordinator,
+            run_id=resolved_run_id,
+            response=request,
+            principal=runtime_principal,
+        )
+        result = await _collect_run_result(
+            principal=runtime_principal,
+            coordinator=coordinator,
+            events=analysis_runtime.resume(
+                run_id=resolved_run_id,
+                response=request,
+                principal=runtime_principal,
+                start_sequence=next_sequence,
+            ),
+            conversation_id=original_request.conversation_id,
+            existing_run=True,
+        )
+    except HTTPException:
+        raise
+    except AnalysisRuntimeError as exc:
+        return _analysis_runtime_error_response(
+            exc,
+            principal=runtime_principal,
+            question="Resume analysis run",
+        )
+    if isinstance(result, RunWaitingResponse):
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=result.model_dump(mode="json"),
+        )
+    status_code = _status_for_response(result)
+    if status_code != status.HTTP_200_OK:
+        return JSONResponse(status_code=status_code, content=result.model_dump(mode="json"))
+    return result
+
+
+@router.post(
+    "/api/runs/{run_id}/resume/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Typed resumed runtime event stream",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        }
+    },
+)
+async def stream_resume_run(
+    run_id: str,
+    request: RunResumeRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    runtime: ProductRuntime = Depends(get_runtime),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
+):
+    runtime_principal = _runtime_principal(principal)
+    resolved_run_id = run_id.strip()
+    try:
+        original_request, next_sequence = await _prepare_resume(
+            analysis_runtime=analysis_runtime,
+            coordinator=coordinator,
+            run_id=resolved_run_id,
+            response=request,
+            principal=runtime_principal,
+        )
+    except AnalysisRuntimeError as exc:
+        response = _analysis_runtime_error_response(
+            exc,
+            principal=runtime_principal,
+            question="Resume analysis run",
+        )
+        return response
+    events = analysis_runtime.resume(
+        run_id=resolved_run_id,
+        response=request,
+        principal=runtime_principal,
+        start_sequence=next_sequence,
+    )
+    return _sse_response(
+        coordinator.observe(
+            runtime_principal,
+            events,
+            existing_run=True,
+        )
+    )
 
 
 @router.post(
@@ -665,6 +771,7 @@ async def stream_nl2sql(
 async def cancel_run(
     run_id: str,
     principal: AuthPrincipal = Depends(get_bearer_principal),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
     coordinator: RunCoordinator = Depends(get_run_coordinator),
 ):
     resolved_run_id = run_id.strip()
@@ -674,7 +781,37 @@ async def cancel_run(
         run_id=resolved_run_id,
     )
     if not cancelled:
-        raise HTTPException(status_code=404, detail="Active run not found")
+        run_status = await coordinator.status(
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            run_id=resolved_run_id,
+        )
+        if run_status is None:
+            raise HTTPException(status_code=404, detail="Run not found")
+        if run_status == "cancelled":
+            return RunCancelResponse(run_id=resolved_run_id, cancelled=True)
+        if run_status != "waiting":
+            raise HTTPException(status_code=409, detail="Run cannot be cancelled")
+        cancel_waiting = getattr(analysis_runtime, "cancel_waiting", None)
+        next_sequence = await coordinator.next_sequence(
+            tenant_id=principal.tenant_id,
+            user_id=principal.user_id,
+            run_id=resolved_run_id,
+        )
+        if not callable(cancel_waiting) or next_sequence is None:
+            raise HTTPException(status_code=409, detail="Run cannot be cancelled")
+        try:
+            event = await cancel_waiting(
+                run_id=resolved_run_id,
+                principal=_runtime_principal(principal),
+                start_sequence=next_sequence,
+            )
+        except AnalysisRuntimeError as exc:
+            raise HTTPException(
+                status_code=_status_for_error(exc.error.code),
+                detail=exc.error.model_dump(mode="json"),
+            ) from exc
+        await coordinator.append(_runtime_principal(principal), event)
     return RunCancelResponse(run_id=resolved_run_id, cancelled=True)
 
 
@@ -909,16 +1046,15 @@ async def list_conversation_messages(
 
 @router.post(
     "/api/conversations/{conversation_id}/messages",
-    response_model=AgentResponse,
+    response_model=AgentResponse | RunWaitingResponse,
 )
 async def send_conversation_message(
     conversation_id: str,
     request: ConversationMessageRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
-    data_query: DataSourceQueryService | None = Depends(
-        get_data_source_query_service
-    ),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
+    coordinator: RunCoordinator = Depends(get_run_coordinator),
 ):
     path_conversation_id = conversation_id.strip()
     if request.conversation_id not in (None, path_conversation_id):
@@ -931,66 +1067,45 @@ async def send_conversation_message(
         payload = request.model_dump(mode="python")
         payload["conversation_id"] = path_conversation_id
         agent_request = AgentRequest.model_validate(payload)
-        if agent_request.source_id is not None:
-            conversation = await runtime.get_conversation(
-                principal=runtime_principal,
-                domain_id=USER_DATASET_DOMAIN_ID,
-                conversation_id=path_conversation_id,
+        conversation = await runtime.get_conversation(
+            principal=runtime_principal,
+            domain_id=USER_DATASET_DOMAIN_ID,
+            conversation_id=path_conversation_id,
+        )
+        if conversation is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Conversation not found",
             )
-            if conversation is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Conversation not found",
-                )
-            if data_query is None:
-                response = _unavailable_dataset_response(
-                    agent_request,
-                    runtime_principal,
-                )
-            else:
-                conversation_context = await _dataset_conversation_context(
-                    runtime,
-                    runtime_principal,
-                    path_conversation_id,
-                )
-                response = await data_query.run(
-                    agent_request,
-                    runtime_principal,
-                    conversation_context=conversation_context,
-                )
-            await _record_conversation_turn(
-                runtime,
-                agent_request,
-                runtime_principal,
-                response,
-            )
-        else:
-            conversation = await runtime.get_conversation(
-                principal=runtime_principal,
-                domain_id=USER_DATASET_DOMAIN_ID,
-                conversation_id=path_conversation_id,
-            )
-            if conversation is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail="Conversation not found",
-                )
-            response = await _collect_terminal_response(
-                runtime,
-                agent_request,
-                runtime_principal,
-            )
+        await coordinator.ensure_conversation_available(
+            tenant_id=runtime_principal.tenant_id,
+            user_id=runtime_principal.user_id,
+            conversation_id=path_conversation_id,
+        )
+        result = await _collect_run_result(
+            principal=runtime_principal,
+            coordinator=coordinator,
+            events=analysis_runtime.run(agent_request, runtime_principal),
+            conversation_id=path_conversation_id,
+        )
     except HTTPException:
         raise
+    except RunConflictError:
+        return _run_conflict_response(agent_request, runtime_principal)
     except Exception:
-        response = _safe_internal_response(request, runtime_principal)
-    status_code = _status_for_response(response)
+        result = _safe_internal_response(request, runtime_principal)
+    if isinstance(result, RunWaitingResponse):
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=result.model_dump(mode="json"),
+        )
+    status_code = _status_for_response(result)
     if status_code != status.HTTP_200_OK:
         return JSONResponse(
             status_code=status_code,
-            content=response.model_dump(mode="json"),
+            content=result.model_dump(mode="json"),
         )
-    return response
+    return result
 
 
 @router.post(
@@ -1010,9 +1125,7 @@ async def stream_conversation_message(
     request: ConversationMessageRequest,
     principal: AuthPrincipal = Depends(get_bearer_principal),
     runtime: ProductRuntime = Depends(get_runtime),
-    data_query: DataSourceQueryService | None = Depends(
-        get_data_source_query_service
-    ),
+    analysis_runtime: DataAgentRuntime = Depends(get_analysis_runtime),
     coordinator: RunCoordinator = Depends(get_run_coordinator),
 ):
     path_conversation_id = conversation_id.strip()
@@ -1033,40 +1146,25 @@ async def stream_conversation_message(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
-    conversation_context = (
-        await _dataset_conversation_context(
-            runtime,
-            runtime_principal,
-            path_conversation_id,
+    try:
+        await coordinator.ensure_conversation_available(
+            tenant_id=runtime_principal.tenant_id,
+            user_id=runtime_principal.user_id,
+            conversation_id=path_conversation_id,
         )
-        if agent_request.source_id is not None
-        else None
-    )
+    except RunConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     events = _request_event_stream(
         agent_request,
         runtime_principal,
-        runtime=runtime,
-        data_query=data_query,
-        conversation_context=conversation_context,
+        analysis_runtime=analysis_runtime,
     )
-    return _sse_response(coordinator.observe(runtime_principal, events))
-
-
-def _unavailable_dataset_response(
-    request: AgentRequest,
-    principal: PrincipalContext,
-) -> AgentResponse:
-    return AgentResponse(
-        ok=False,
-        question=request.question,
-        contextualized_question=request.question,
-        conversation_id=request.conversation_id,
-        tenant_id=principal.tenant_id,
-        answer="用户数据源查询服务尚未配置模型。",
-        error=AgentError(
-            code=ErrorCode.CONFIG_INVALID,
-            message="用户数据源查询服务尚未配置模型。",
-        ),
+    return _sse_response(
+        coordinator.observe(
+            runtime_principal,
+            events,
+            conversation_id=path_conversation_id,
+        )
     )
 
 
@@ -1074,140 +1172,104 @@ def _request_event_stream(
     request: AgentRequest,
     principal: PrincipalContext,
     *,
-    runtime: ProductRuntime,
-    data_query: DataSourceQueryService | None,
-    conversation_context: DatasetConversationContext | None = None,
+    analysis_runtime: DataAgentRuntime,
 ) -> AsyncIterator[AgentEvent]:
-    if request.source_id is None:
-        return runtime.run(request, principal)
-    events = (
-        data_query.stream(
-            request,
-            principal,
-            conversation_context=conversation_context,
-        )
-        if data_query is not None
-        else _single_response_events(
-            request,
-            _unavailable_dataset_response(request, principal),
-        )
-    )
-    return _record_terminal_stream(
-        runtime,
-        request,
+    return analysis_runtime.run(request, principal)
+
+
+async def _collect_run_result(
+    *,
+    principal: PrincipalContext,
+    coordinator: RunCoordinator,
+    events: AsyncIterator[AgentEvent],
+    conversation_id: str | None,
+    existing_run: bool = False,
+) -> AgentResponse | RunWaitingResponse:
+    closing: AgentEvent | None = None
+    async for event in coordinator.observe(
         principal,
         events,
-    )
-
-
-async def _dataset_conversation_context(
-    runtime: ProductRuntime,
-    principal: PrincipalContext,
-    conversation_id: str,
-) -> DatasetConversationContext | None:
-    list_messages = getattr(runtime, "list_conversation_messages", None)
-    if not callable(list_messages):
-        return None
-    messages = await list_messages(
-        principal=principal,
-        domain_id=USER_DATASET_DOMAIN_ID,
         conversation_id=conversation_id,
-        limit=100,
+        existing_run=existing_run,
+    ):
+        if event.is_stream_closing:
+            if closing is not None:
+                raise RuntimeError("runtime emitted more than one closing event")
+            closing = event
+    if closing is None:
+        raise RuntimeError("runtime stream ended without a closing event")
+    if closing.type == AgentEventType.RUN_WAITING:
+        return RunWaitingResponse(run_id=closing.run_id, event=closing)
+    if closing.response is None:
+        raise RuntimeError("terminal runtime event omitted its response")
+    return closing.response
+
+
+async def _prepare_resume(
+    *,
+    analysis_runtime: DataAgentRuntime,
+    coordinator: RunCoordinator,
+    run_id: str,
+    response: RunResumeRequest,
+    principal: PrincipalContext,
+) -> tuple[AgentRequest, int]:
+    run_status = await coordinator.status(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        run_id=run_id,
     )
-    for index in range(len(messages) - 1, -1, -1):
-        message = messages[index]
-        if message.role != "assistant":
-            continue
-        document = message.metadata.dataset_query_plan
-        if document is None:
-            continue
-        try:
-            prior_plan = DatasetQueryPlan.model_validate(document)
-        except ValueError:
-            continue
-        if prior_plan.status != DatasetPlanStatus.READY:
-            continue
-        prior_question = message.metadata.contextualized_question
-        if prior_question is None:
-            prior_question = next(
-                (
-                    item.content
-                    for item in reversed(messages[:index])
-                    if item.role == "user"
-                ),
-                "",
+    if run_status is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if run_status != "waiting":
+        raise AnalysisRuntimeError(
+            AgentError(
+                code=ErrorCode.AGENT_RESUME_CONFLICT,
+                message="analysis run is not waiting for input",
             )
-        if not prior_question.strip():
-            continue
-        return DatasetConversationContext(
-            prior_question=prior_question,
-            prior_plan=prior_plan,
         )
-    return None
-
-
-async def _record_terminal_stream(
-    runtime: ProductRuntime,
-    request: AgentRequest,
-    principal: PrincipalContext,
-    events: AsyncIterator[AgentEvent],
-) -> AsyncIterator[AgentEvent]:
-    async for event in events:
-        if event.response is not None:
-            await _record_conversation_turn(
-                runtime,
-                request,
-                principal,
-                event.response,
+    state_loader = getattr(analysis_runtime, "state", None)
+    resume = getattr(analysis_runtime, "resume", None)
+    if not callable(state_loader) or not callable(resume):
+        raise AnalysisRuntimeError(
+            AgentError(
+                code=ErrorCode.CONFIG_INVALID,
+                message="configured runtime does not support resume",
             )
-        yield event
-
-
-async def _record_conversation_turn(
-    runtime: ProductRuntime,
-    request: AgentRequest,
-    principal: PrincipalContext,
-    response: AgentResponse,
-) -> None:
-    if request.conversation_id is None:
-        return
-    recorder = getattr(runtime, "record_conversation_turn", None)
-    if not callable(recorder):
-        return
-    await recorder(
-        request=request,
-        principal=principal,
-        response=response,
-    )
-
-
-async def _single_response_events(
-    request: AgentRequest,
-    response: AgentResponse,
-) -> AsyncIterator[AgentEvent]:
-    run_id = "api-run-" + uuid4().hex
-    yield AgentEvent(
-        type=AgentEventType.RUN_STARTED,
+        )
+    state = await state_loader(run_id, principal=principal)
+    try:
+        original_request = AgentRequest.model_validate(state["request"])
+        waiting = AgentInputRequest.model_validate(state["waiting_request"])
+        state_status = AgentStatus(state["status"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise AnalysisRuntimeError(
+            AgentError(
+                code=ErrorCode.AGENT_CHECKPOINT_UNAVAILABLE,
+                message="analysis checkpoint is invalid",
+            )
+        ) from exc
+    if state_status != AgentStatus.WAITING_INPUT:
+        raise AnalysisRuntimeError(
+            AgentError(
+                code=ErrorCode.AGENT_RESUME_CONFLICT,
+                message="analysis run is not waiting for input",
+            )
+        )
+    if waiting.interrupt_id != response.interrupt_id:
+        raise AnalysisRuntimeError(
+            AgentError(
+                code=ErrorCode.AGENT_INTERRUPT_STALE,
+                message="interrupt response does not match the latest checkpoint",
+            )
+        )
+    next_sequence = await coordinator.next_sequence(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
         run_id=run_id,
-        sequence=0,
-        data=RunStartedPayload(
-            mode=request.mode,
-            enterprise_id=request.enterprise_id,
-            domain_id=request.domain_id,
-        ),
     )
-    error_code = (
-        response.error.code
-        if response.error is not None
-        else ErrorCode.INTERNAL_ERROR
-    )
-    yield AgentEvent(
-        type=AgentEventType.RUN_FAILED,
-        run_id=run_id,
-        sequence=1,
-        data=RunFailedPayload(error_code=error_code),
-        response=response,
-    )
+    if next_sequence is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return original_request, next_sequence
 
 
 def _sse_response(
@@ -1229,23 +1291,6 @@ def _sse_response(
             "X-Accel-Buffering": "no",
         },
     )
-
-
-async def _collect_terminal_response(
-    runtime: DataAgentRuntime,
-    request: AgentRequest,
-    principal: PrincipalContext,
-) -> AgentResponse:
-    terminal: AgentResponse | None = None
-    async for event in runtime.run(request, principal):
-        if event.response is None:
-            continue
-        if terminal is not None:
-            raise RuntimeError("runtime emitted more than one terminal response")
-        terminal = event.response
-    if terminal is None:
-        raise RuntimeError("runtime stream ended without a terminal response")
-    return terminal
 
 
 def _runtime_principal(principal: AuthPrincipal) -> PrincipalContext:
@@ -1273,17 +1318,66 @@ def _safe_internal_response(
     )
 
 
+def _run_conflict_response(
+    request: AgentRequest,
+    principal: PrincipalContext,
+) -> JSONResponse:
+    response = AgentResponse(
+        ok=False,
+        question=request.question,
+        contextualized_question=request.question,
+        conversation_id=request.conversation_id,
+        tenant_id=principal.tenant_id,
+        error=AgentError(
+            code=ErrorCode.AGENT_RESUME_CONFLICT,
+            message="conversation already has an active or waiting run",
+        ),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_409_CONFLICT,
+        content=response.model_dump(mode="json"),
+    )
+
+
+def _analysis_runtime_error_response(
+    exc: AnalysisRuntimeError,
+    *,
+    principal: PrincipalContext,
+    question: str,
+) -> JSONResponse:
+    response = AgentResponse(
+        ok=False,
+        question=question,
+        contextualized_question=question,
+        tenant_id=principal.tenant_id,
+        error=exc.error,
+    )
+    return JSONResponse(
+        status_code=_status_for_error(exc.error.code),
+        content=response.model_dump(mode="json"),
+    )
+
+
 def _status_for_response(response: AgentResponse) -> int:
     if response.ok or response.error is None:
         return status.HTTP_200_OK
+    return _status_for_error(response.error.code)
+
+
+def _status_for_error(code: ErrorCode) -> int:
     return {
         ErrorCode.INVALID_REQUEST: status.HTTP_422_UNPROCESSABLE_CONTENT,
         ErrorCode.ACCESS_DENIED: status.HTTP_403_FORBIDDEN,
         ErrorCode.BUNDLE_NOT_FOUND: status.HTTP_503_SERVICE_UNAVAILABLE,
+        ErrorCode.CONFIG_INVALID: status.HTTP_503_SERVICE_UNAVAILABLE,
+        ErrorCode.AGENT_CHECKPOINT_UNAVAILABLE: status.HTTP_503_SERVICE_UNAVAILABLE,
+        ErrorCode.AGENT_INTERRUPT_STALE: status.HTTP_409_CONFLICT,
+        ErrorCode.AGENT_RESUME_CONFLICT: status.HTTP_409_CONFLICT,
+        ErrorCode.BINDING_STALE: status.HTTP_409_CONFLICT,
         ErrorCode.DEADLINE_EXCEEDED: status.HTTP_504_GATEWAY_TIMEOUT,
         ErrorCode.CANCELLED: status.HTTP_409_CONFLICT,
         ErrorCode.INTERNAL_ERROR: status.HTTP_500_INTERNAL_SERVER_ERROR,
-    }.get(response.error.code, status.HTTP_422_UNPROCESSABLE_CONTENT)
+    }.get(code, status.HTTP_422_UNPROCESSABLE_CONTENT)
 
 
 def _unauthorized() -> HTTPException:

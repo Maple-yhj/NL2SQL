@@ -11,20 +11,19 @@ then can start an analysis.
 
 ## Architecture
 
-All product adapters call the same public `DataAgentRuntime`. The default
-product is split into four layers:
+All product adapters use the native `DataAnalysisAgentRuntime` and compiled
+LangGraph. The default product is split into four layers:
 
-1. **Upload runtime** — identity-scoped conversations and a fail-closed
-   boundary when no datasource has been selected.
+1. **Analysis Agent** — a bounded plan → guard → tool → observe → evaluate →
+   replan loop with typed pause/resume and evidence-grounded synthesis.
 2. **Datasource control plane** — immutable file snapshots, PostgreSQL
    registrations, catalog versions, semantic bindings, and conversation pins.
-3. **Dataset query service** — structured Planner output, deterministic Query
-   IR compilation, read-only execution, evidence validation, and safe charts.
-4. **Run control** — typed SSE, cancellation, replay, and safe terminal errors.
-
-The Commerce/OList pack runtime remains in the repository only as an explicit
-compatibility path and deterministic regression fixture. It is not loaded by
-normal application startup.
+3. **Governed tools** — a dataset-specific Registry/Invoker backed by
+   deterministic SQLGlot compilation, read-only connectors, Artifact Store and
+   Evidence refs. Models never submit SQL or code.
+4. **State authorities** — LangGraph checkpoints for an active run,
+   conversation history for final turns, approved long-term Memory, and typed
+   event replay for clients.
 
 ## Setup
 
@@ -71,10 +70,10 @@ arguments/environment; this repository does not publish a default password.
 
 ## Analysis modes
 
-The user-selected datasource path supports `plan`, `preview`, and `execute`.
-All three require one active semantic binding. `plan` returns a structured plan
-and compiled read-only SQL; `preview` and `execute` additionally use bounded
-query execution.
+The Agent supports `plan`, `preview`, and `execute`. All modes require one
+active semantic binding. Plan mode cannot execute a query; Preview allows only
+bounded previews and marks conclusions accordingly; Execute allows governed
+read-only execution within per-run tool/query/row/time budgets.
 
 ## HTTP contract
 
@@ -98,14 +97,42 @@ Question requests must include the four immutable pins from an active binding:
 A request without these pins receives a typed validation failure asking the
 user to upload and activate a dataset. It does not query a bundled fallback.
 
-The terminal `AgentResponse` contains the logical plan, compiled SQL, bounded
-rows, answer, safe trace, pending memory proposals, and immutable version pins.
+The terminal `AgentResponse` contains the analysis plan and completed steps,
+artifact/evidence summaries, logical plan, compiled SQL, bounded rows/chart,
+answer/limitations, safe trace, pending memory proposals, and immutable version
+pins.
 
 For incremental delivery, use `POST /api/nl2sql/stream` or
 `POST /api/conversations/{id}/messages/stream`. Both return typed SSE events.
-Active runs can be cancelled through `POST /api/runs/{run_id}/cancel`, and
-persisted events can be resumed with `GET /api/runs/{run_id}/events`. Run
-control and replay are always scoped to the authenticated tenant and user.
+Active or waiting runs can be cancelled through
+`POST /api/runs/{run_id}/cancel`. A `run_waiting` event carries an interrupt ID;
+continue it through `POST /api/runs/{run_id}/resume` or `/resume/stream`.
+`GET /api/runs/{run_id}/events` replays the complete monotonic event sequence.
+Run control, checkpoints, artifacts and replay are always scoped to the
+authenticated tenant and user.
+
+Local durable state defaults to `DATA_AGENT_STATE_DIR`: SQLite LangGraph
+checkpoints, run events, conversation records and Artifact Store metadata have
+separate files and lifecycles. Production may configure the optional Postgres
+checkpointer; checkpoint serialization has no pickle fallback.
+
+## CLI and LangGraph Studio
+
+CLI Plan, Preview and Execute call the same Agent Runtime as the API. Supply the
+four active datasource pins:
+
+```powershell
+data-agent ask "Show monthly revenue" --mode execute `
+  --domain-id dataset.orders --source-id orders --source-version 1 `
+  --binding-id orders-binding-1 --binding-version 1
+```
+
+`langgraph.json` exports `src/data_agent/adapters/studio.py:graph`, the real
+compiled Agent graph. Importing it binds a deterministic offline plan-mode
+development context: it exposes the complete topology and a runnable example
+without opening a model client, checkpoint database, Artifact Store or
+production datasource. Product API/CLI execution still injects the resolved
+per-request `AnalysisGraphContext` into the same graph builder.
 
 Pending memory changes are listed with `GET /api/memory/proposals` and decided
 through `POST /api/memory/proposals/{proposal_id}/decision`. User-owned memory
@@ -160,39 +187,13 @@ python scripts/migrate_v1_binding_to_graph.py binding.json catalog.json --previe
 python scripts/migrate_v1_binding_to_graph.py binding.json catalog.json --execute --output graph-draft.json
 ```
 
-## Optional governed-pack runtime
-
-The legacy Commerce pack runtime is opt-in for compatibility and offline
-regression testing. Call `build_runtime`/`build_olist_runtime` explicitly; the
-default application factory never calls them. A custom verified deployment can
-set `DATA_AGENT_BUNDLE_PATHS_FILE` to a strict JSON descriptor:
-
-```json
-{
-  "domain_root": "domain",
-  "enterprise_root": "enterprise",
-  "deployment_profile": "deployment.yaml",
-  "pack_lock": "enterprise/pack.lock",
-  "schema_catalog": "schema-catalog.json",
-  "bundle_manifest": "bundle.json"
-}
-```
-
-Relative paths are resolved from the descriptor directory. All six inputs must
-exist and still pass the normal bundle digest, source attestation, profile, and
-schema checks before a model client or database pool is created.
-
-## Pack and contract generation
+## Contract generation
 
 ```powershell
-data-agent compile-packs
-data-agent rebuild-index
-data-agent validate-config
 python scripts/export_apifox_openapi.py
 python scripts/export_frontend_agent_response_schema.py
 ```
 
-The first two commands maintain the optional OList compatibility fixture.
 Public contract outputs are `docs/apifox-openapi.json` and the frontend files
 under `frontend/src/generated/`. Freshness tests fail when a public schema
 changes without regeneration.
@@ -201,12 +202,11 @@ changes without regeneration.
 
 ```powershell
 python -m pytest -p no:cacheprovider
-python -m pytest tests/e2e/test_olist_golden_runtime.py -q -p no:cacheprovider
+python -m pytest tests/integration/test_analysis_agent_trajectory.py tests/integration/test_analysis_agent_security.py -q -p no:cacheprovider
 npm --prefix frontend test
 npm --prefix frontend run build
 python -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 ```
 
-The offline OList golden gate is an explicit compatibility test and never
-imports or deploys OList during normal startup. Live model/database checks are
-separate release checks and are not required in CI.
+Live model/database checks are separate release checks and are not required in
+CI.

@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import sys
 from collections.abc import Awaitable, Callable, Sequence
-from pathlib import Path
 from typing import Any
 
 from data_agent.runtime import (
     AgentMode,
     AgentRequest,
     AgentResponse,
-    BundleStore,
     PrincipalContext,
 )
 
@@ -23,9 +20,9 @@ RuntimeFactory = Callable[[], Awaitable[Any]]
 
 
 async def _default_runtime_factory() -> Any:
-    from data_agent.runtime.composition_root import build_upload_runtime
+    from api.app import _default_runtime_factory as build_default_product
 
-    return await build_upload_runtime()
+    return await build_default_product()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,6 +37,10 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--enterprise-id", default="user-dataset")
     ask.add_argument("--domain-id", default="dataset")
     ask.add_argument("--conversation-id")
+    ask.add_argument("--source-id")
+    ask.add_argument("--source-version", type=int)
+    ask.add_argument("--binding-id")
+    ask.add_argument("--binding-version", type=int)
     ask.add_argument("--mode", choices=tuple(mode.value for mode in AgentMode), default="execute")
     ask.add_argument("--requested-output", default="answer")
     ask.add_argument("--include-trace", action="store_true")
@@ -47,26 +48,6 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument("--user-id", default="cli-user")
     ask.add_argument("--role", action="append", default=[])
 
-    validate = commands.add_parser(
-        "validate-config",
-        help="Verify packs and the published bundle without connecting to a database",
-    )
-    validate.add_argument("--project-root", type=Path)
-
-    compile_command = commands.add_parser(
-        "compile-packs",
-        help="Compile and atomically publish the governed Runtime bundle",
-    )
-    compile_command.add_argument("--project-root", type=Path)
-    compile_command.add_argument("--output", type=Path)
-
-    rebuild = commands.add_parser(
-        "rebuild-index",
-        aliases=["rebuild-semantic-index"],
-        help="Rebuild the deterministic canonical semantic index",
-    )
-    rebuild.add_argument("--project-root", type=Path)
-    rebuild.add_argument("--output", type=Path)
     return parser
 
 
@@ -84,12 +65,6 @@ def main(
                     runtime_factory or _default_runtime_factory,
                 )
             )
-        if arguments.command == "validate-config":
-            return _validate_config(arguments.project_root)
-        if arguments.command == "compile-packs":
-            return _compile_packs(arguments.project_root, arguments.output)
-        if arguments.command in {"rebuild-index", "rebuild-semantic-index"}:
-            return _rebuild_index(arguments.project_root, arguments.output)
         raise ValueError("unsupported command")
     except Exception:
         print("Data Agent command failed safely.", file=sys.stderr)
@@ -104,6 +79,10 @@ async def _ask(arguments: argparse.Namespace, factory: RuntimeFactory) -> int:
             enterprise_id=arguments.enterprise_id,
             domain_id=arguments.domain_id,
             conversation_id=arguments.conversation_id,
+            source_id=arguments.source_id,
+            source_version=arguments.source_version,
+            binding_id=arguments.binding_id,
+            binding_version=arguments.binding_version,
             mode=arguments.mode,
             requested_output=arguments.requested_output,
             include_trace=arguments.include_trace,
@@ -113,63 +92,28 @@ async def _ask(arguments: argparse.Namespace, factory: RuntimeFactory) -> int:
             user_id=arguments.user_id,
             roles=tuple(arguments.role),
         )
+        runtime = getattr(composition, "analysis_runtime", None)
+        if runtime is None:
+            runtime = composition.runtime
         terminal: AgentResponse | None = None
-        async for event in composition.runtime.run(request, principal):
+        waiting = None
+        async for event in runtime.run(request, principal):
+            if event.type.value == "run_waiting":
+                waiting = event
             if event.response is None:
                 continue
             if terminal is not None:
                 raise RuntimeError("runtime emitted more than one terminal response")
             terminal = event.response
+        if terminal is None and waiting is not None:
+            print(waiting.model_dump_json(indent=2))
+            return 2
         if terminal is None:
             raise RuntimeError("runtime stream ended without a terminal response")
         print(terminal.model_dump_json(indent=2))
         return 0 if terminal.ok else 1
     finally:
         await composition.close()
-
-
-def _validate_config(project_root: Path | None) -> int:
-    from data_agent.runtime.paths import resolve_bundle_paths
-
-    snapshot = BundleStore().load_and_activate(
-        resolve_bundle_paths(project_root)
-    )
-    print(
-        json.dumps(
-            {
-                "valid": True,
-                "bundle_digest": snapshot.bundle.digest,
-                "runtime_version": snapshot.bundle.runtime_version,
-                "domain": snapshot.domain_pack.metadata.name,
-                "enterprise": snapshot.enterprise_binding.metadata.name,
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-def _compile_packs(project_root: Path | None, output: Path | None) -> int:
-    from data_agent.runtime.maintenance import compile_packs
-
-    destination = compile_packs(
-        project_root=project_root,
-        output_path=output,
-    )
-    print(destination)
-    return 0
-
-
-def _rebuild_index(project_root: Path | None, output: Path | None) -> int:
-    from data_agent.runtime.maintenance import rebuild_semantic_index
-
-    destination = rebuild_semantic_index(
-        project_root=project_root,
-        output_path=output,
-    )
-    print(destination)
-    return 0
 
 
 if __name__ == "__main__":

@@ -8,14 +8,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from data_agent.execution.contracts import ExecutionCheckpoint
-
 from .contracts import MemoryManager
 from .models import (
     ApprovalContext,
     ApprovalDecision,
     ArtifactReference,
-    Checkpoint,
     ConversationMemoryContent,
     ConversationRecord,
     ConversationStatus,
@@ -64,7 +61,7 @@ class NullMemoryManager:
 
     It is intentionally useful in tests and local/offline deployments: data is
     process-local, but ownership, approval, state transitions, expiry, version
-    invalidation, budgets, checkpoints, and conversations are all enforced.
+    invalidation, budgets, and conversations are all enforced.
     """
 
     def __init__(
@@ -78,10 +75,8 @@ class NullMemoryManager:
         self._records: list[MemoryRecord] = []
         self._conversations: dict[tuple[str, str, str, str], ConversationRecord] = {}
         self._messages: list[MessageRecord] = []
-        self._checkpoints: dict[
-            tuple[str, str, str, str, str], ExecutionCheckpoint
-        ] = {}
         self._artifacts: dict[str, Any] = {}
+        self._turn_batch_digests: dict[tuple[str, str, str, str, str], str] = {}
         self._conversation_sequence = 0
         self._message_sequence = 0
 
@@ -358,7 +353,6 @@ class NullMemoryManager:
         before = (
             len(self._records)
             + len(self._messages)
-            + len(self._checkpoints)
             + len(self._artifacts)
             + len(self._conversations)
             + len(self._proposals)
@@ -382,17 +376,6 @@ class NullMemoryManager:
                 and (subject.run_id is None or message.run_id == subject.run_id)
             )
         ]
-        self._checkpoints = {
-            key: checkpoint
-            for key, checkpoint in self._checkpoints.items()
-            if not (
-                key[0] == subject.tenant_id
-                and key[2] == subject.domain_id
-                and key[1] == subject.user_id
-                and (subject.conversation_id is None or key[3] == subject.conversation_id)
-                and (subject.run_id is None or key[4] == subject.run_id)
-            )
-        }
         self._artifacts = {
             artifact_id: reference
             for artifact_id, reference in self._artifacts.items()
@@ -455,38 +438,11 @@ class NullMemoryManager:
         after = (
             len(self._records)
             + len(self._messages)
-            + len(self._checkpoints)
             + len(self._artifacts)
             + len(self._conversations)
             + len(self._proposals)
         )
         return before - after
-
-    async def save_checkpoint(self, run_id: str, state: Checkpoint) -> None:
-        if run_id != state.run_id or state.checkpoint.state.run_id != run_id:
-            raise ValueError("checkpoint run_id does not match its owner")
-        self._checkpoints[
-            (
-                state.tenant_id,
-                state.user_id,
-                state.domain_id,
-                state.conversation_id,
-                state.run_id,
-            )
-        ] = state.checkpoint
-
-    async def load_checkpoint(
-        self,
-        *,
-        tenant_id: str,
-        user_id: str,
-        domain_id: str,
-        conversation_id: str,
-        run_id: str,
-    ) -> ExecutionCheckpoint | None:
-        return self._checkpoints.get(
-            (tenant_id, user_id, domain_id, conversation_id, run_id)
-        )
 
     async def create_conversation(
         self,
@@ -616,6 +572,13 @@ class NullMemoryManager:
 
     async def save_turn(self, batch: ConversationWriteBatch) -> None:
         _ensure_batch_owner_closure(batch)
+        turn_owner = _turn_owner_tuple(batch)
+        batch_digest = _stable_digest(batch)
+        existing_digest = self._turn_batch_digests.get(turn_owner)
+        if existing_digest is not None:
+            if existing_digest == batch_digest:
+                return
+            raise MemoryConflictError("conversation run already has different content")
         key = (
             batch.tenant_id,
             batch.user_id,
@@ -660,11 +623,7 @@ class NullMemoryManager:
             self._artifacts[reference.artifact_id] = reference
         for candidate in batch.proposals:
             await self.propose(candidate)
-        if batch.checkpoint is not None:
-            await self.save_checkpoint(
-                batch.run_id,
-                batch.checkpoint,
-            )
+        self._turn_batch_digests[turn_owner] = batch_digest
 
     def _now(self) -> datetime:
         value = self._clock()
@@ -795,8 +754,6 @@ def _ensure_batch_owner_closure(batch: ConversationWriteBatch) -> None:
     )
     if any(_turn_owner_tuple(item) != expected for item in owned_items):
         raise PermissionError("turn component owner does not match")
-    if batch.checkpoint is not None and _turn_owner_tuple(batch.checkpoint) != expected:
-        raise PermissionError("checkpoint owner does not match")
     for candidate in batch.proposals:
         if not _proposal_owner_matches_turn(candidate.owner, expected):
             raise PermissionError("proposal owner does not match")
