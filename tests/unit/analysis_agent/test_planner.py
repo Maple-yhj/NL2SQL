@@ -6,7 +6,7 @@ import unittest
 from data_agent.analysis_agent.planner import AnalysisPlanner
 from data_agent.tools.providers.dataset import build_dataset_tool_registry
 
-from ._decision_support import SequenceModel, context, goal, plan
+from ._decision_support import SequenceModel, context, goal, observation, plan
 
 
 def planner_document(*, tool_name: str = "catalog.inspect") -> dict[str, object]:
@@ -109,6 +109,35 @@ class AnalysisPlannerTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(len(model.calls), 2)
 
+    async def test_act_repairs_a_plan_without_a_runnable_pending_step(self) -> None:
+        invalid = planner_document()
+        invalid["plan"] = {
+            **invalid["plan"],
+            "steps": [
+                {
+                    **step,
+                    "status": "completed",
+                }
+                for step in invalid["plan"]["steps"]
+            ],
+        }
+        invalid["plan"]["revision"] = 9
+        model = SequenceModel([invalid])
+
+        decision = await AnalysisPlanner(model).decide(
+            goal=goal(),
+            context=context(),
+            current_plan=None,
+            observations=(),
+            budget_remaining={"model_calls": 3},
+            allowed_tools=self.allowed,
+        )
+
+        self.assertEqual(decision.decision, "act")
+        self.assertEqual(decision.plan.revision, 1)
+        self.assertTrue(all(step.status == "pending" for step in decision.plan.steps))
+        self.assertEqual(len(model.calls), 1)
+
     async def test_follow_up_goal_uses_summary_not_a_prior_temporary_action(self) -> None:
         rebuilt = AnalysisPlanner.rebuild_follow_up_goal(
             question="How about last month?",
@@ -117,6 +146,73 @@ class AnalysisPlannerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rebuilt.original_question, "How about last month?")
         self.assertIn("Prior answer covered this quarter", rebuilt.contextualized_question)
         self.assertNotIn("pending_action", rebuilt.contextualized_question)
+
+    async def test_successful_observation_uses_small_next_action_contract(self) -> None:
+        action = planner_document()["next_action"]
+        model = SequenceModel([action])
+        current = plan()
+
+        decision = await AnalysisPlanner(model).decide(
+            goal=goal(),
+            context=context(),
+            current_plan=current,
+            observations=(observation(),),
+            budget_remaining={"model_calls": 3, "tool_calls": 7},
+            allowed_tools=self.allowed,
+        )
+
+        self.assertEqual(decision.decision, "act")
+        self.assertEqual(decision.plan, current)
+        self.assertEqual(decision.next_action.tool_name, "catalog.inspect")
+        request = json.loads(model.calls[0]["prompt"])
+        self.assertEqual(request["task"], "select_next_analysis_action")
+
+    async def test_ambiguous_aggregation_requests_metric_before_calling_model(self) -> None:
+        model = SequenceModel([])
+        ambiguous_goal = goal().model_copy(
+            update={
+                "original_question": "按商品类别分析一下",
+                "contextualized_question": "按商品类别分析一下",
+            }
+        )
+
+        decision = await AnalysisPlanner(model).decide(
+            goal=ambiguous_goal,
+            context=context(),
+            current_plan=None,
+            observations=(),
+            budget_remaining={"model_calls": 4},
+            allowed_tools=self.allowed,
+        )
+
+        self.assertEqual(decision.decision, "clarify")
+        self.assertIn("指标", decision.clarification.prompt)
+        self.assertEqual(len(decision.clarification.choices), 3)
+        self.assertEqual(model.calls, [])
+
+    async def test_explicit_metric_and_detail_requests_continue_to_model(self) -> None:
+        for question in (
+            "按商品类别统计销售金额",
+            "统计订单表中的订单总数",
+            "统计退款记录条数",
+            "按商品类别列出产品明细",
+        ):
+            model = SequenceModel([planner_document()])
+            decision = await AnalysisPlanner(model).decide(
+                goal=goal().model_copy(
+                    update={
+                        "original_question": question,
+                        "contextualized_question": question,
+                    }
+                ),
+                context=context(),
+                current_plan=None,
+                observations=(),
+                budget_remaining={"model_calls": 4},
+                allowed_tools=self.allowed,
+            )
+            self.assertEqual(decision.decision, "act")
+            self.assertEqual(len(model.calls), 1)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import { ApiClient, ApiError } from "./api";
 import { responseToAssistantMessage } from "./App";
 import agentResponseFixture from "./generated/agent-response.fixture.json";
 import type { AgentResponse, Conversation, StoredSession } from "./types";
-import { createAssistantViewModel } from "./viewModel";
+import { createAssistantViewModel, friendlyRuntimeMessage } from "./viewModel";
 
 describe("ApiClient", () => {
   afterEach(() => {
@@ -89,6 +89,30 @@ describe("ApiClient", () => {
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/api/data-sources/orders%202026");
     expect(init.method).toBe("DELETE");
+  });
+
+  it("renders FastAPI validation details instead of the raw HTTP status", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: false,
+      status: 422,
+      statusText: "Unprocessable Entity",
+      json: async () => ({
+        detail: [
+          {
+            type: "too_short",
+            loc: ["body", "required_node_ids"],
+            msg: "List should have at least 2 items",
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(
+      createApi().previewRelationshipRoute("orders", "graph-1", ["orders"]),
+    ).rejects.toMatchObject({
+      status: 422,
+      message: "请求参数无效：required_node_ids：List should have at least 2 items",
+    });
   });
 
   it("creates and activates a semantic binding with encoded source identifiers", async () => {
@@ -230,16 +254,31 @@ describe("ApiClient", () => {
       },
       response: null,
     };
+    const contextResolved = {
+      type: "context_resolved",
+      run_id: "dataset-run-1",
+      sequence: 1,
+      data: {
+        kind: "context_resolved",
+        source_id: "source-sales",
+        source_version: 1,
+        binding_id: "source-sales-binding-1",
+        binding_version: 1,
+        schema_fingerprint: `sha256:${"a".repeat(64)}`,
+      },
+      response: null,
+    };
     const terminal = {
       type: "run_completed",
       run_id: "dataset-run-1",
-      sequence: 1,
+      sequence: 2,
       data: { kind: "run_completed" },
       response: success,
     };
     const stream = [
       `id: 0\nevent: run_started\ndata: ${JSON.stringify(started)}\n\n`,
-      `id: 1\nevent: run_completed\ndata: ${JSON.stringify(terminal)}\n\n`,
+      `id: 1\nevent: context_resolved\ndata: ${JSON.stringify(contextResolved)}\n\n`,
+      `id: 2\nevent: run_completed\ndata: ${JSON.stringify(terminal)}\n\n`,
     ].join("");
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(stream, {
@@ -254,7 +293,7 @@ describe("ApiClient", () => {
         events.push(event.type),
       ),
     ).resolves.toEqual(success);
-    expect(events).toEqual(["run_started", "run_completed"]);
+    expect(events).toEqual(["run_started", "context_resolved", "run_completed"]);
   });
 
   it("returns a waiting result and resumes with the typed stream endpoint", async () => {
@@ -386,9 +425,15 @@ describe("ApiClient", () => {
         limitations: failure.limitations,
       },
     });
-    expect(viewModel.answer).toBe(failure.error?.message);
+    const localizedError = friendlyRuntimeMessage(
+      failure.error?.code ?? "INTERNAL_ERROR",
+      failure.error?.message ?? "",
+    );
+    expect(viewModel.answer).toBe(localizedError);
     expect(viewModel.rows).toEqual(failure.rows);
-    expect(viewModel.error).toEqual(failure.error);
+    expect(viewModel.error).toEqual(
+      failure.error ? { ...failure.error, message: localizedError } : null,
+    );
     expect(viewModel.logicalPlan).toEqual(failure.logical_plan);
     expect(viewModel.sql).toBe(failure.sql);
     expect(viewModel.trace).toEqual(failure.trace);

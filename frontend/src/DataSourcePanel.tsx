@@ -40,6 +40,41 @@ interface DataSourcePanelProps {
   onClose: () => void;
 }
 
+export function isGraphBinding(
+  binding: AnySemanticBinding | null | undefined,
+): boolean {
+  return Boolean(
+    binding &&
+      "schema_version" in binding &&
+      binding.schema_version === 2,
+  );
+}
+
+export function selectPreferredActiveBinding(
+  bindings: AnySemanticBinding[],
+  selectedBinding: AnySemanticBinding | null,
+): AnySemanticBinding | null {
+  const active = bindings.filter((binding) => binding.status === "active");
+  const selected = active.find(
+    (binding) => binding.binding_id === selectedBinding?.binding_id,
+  );
+  if (selected) return selected;
+  return (
+    [...active].sort((left, right) => {
+      const graphPriority = Number(isGraphBinding(right)) - Number(isGraphBinding(left));
+      return (
+        graphPriority ||
+        right.version - left.version ||
+        right.updated_at.localeCompare(left.updated_at)
+      );
+    })[0] ?? null
+  );
+}
+
+function bindingStatusLabel(status: AnySemanticBinding["status"]): string {
+  return { active: "已激活", draft: "草稿", retired: "已停用" }[status];
+}
+
 export function DataSourcePanel({
   api,
   sources,
@@ -86,8 +121,10 @@ export function DataSourcePanel({
     ])
       .then(([payload, bindingPayload]) => {
         if (active) {
-          const activeSemanticBinding =
-            bindingPayload.items.find((item) => item.status === "active") ?? null;
+          const activeSemanticBinding = selectPreferredActiveBinding(
+            bindingPayload.items,
+            selectedBinding,
+          );
           setCatalog(payload);
           setBindings(bindingPayload.items);
           onBindingSelect(activeSemanticBinding);
@@ -405,7 +442,7 @@ export function DataSourcePanel({
   }
 
   const selectedSource = sources.find((source) => source.source_id === selectedId) ?? null;
-  const activeBinding = bindings.find((binding) => binding.status === "active") ?? null;
+  const activeBinding = selectPreferredActiveBinding(bindings, selectedBinding);
   const currentStep = activeBinding ? 4 : catalog ? 3 : selectedSource ? 2 : 1;
   const selectedRelation =
     catalog?.catalog.relations.find((relation) => relation.relation === relationName) ??
@@ -681,6 +718,13 @@ export function DataSourcePanel({
                   </div>
                 </div>
                 {selectedId && <RelationshipGraphEditor api={api} sourceId={selectedId} onActivated={(binding) => { setBindings((current) => [...current.filter((item) => item.binding_id !== binding.binding_id), binding]); onBindingSelect(binding); setJustActivated(true); }} />}
+                {isGraphBinding(activeBinding) ? (
+                  <div className="single-table-note" role="status">
+                    <ShieldCheck size={16} />
+                    当前分析范围使用已激活的 v2 关系图。旧版线性组合编辑器已停用，
+                    请在上方关系图中维护跨表路径。
+                  </div>
+                ) : (
                 <form className="datasource-binding-form" onSubmit={confirmBinding}>
                   <div className="datasource-binding-controls">
                     <label>
@@ -926,6 +970,7 @@ export function DataSourcePanel({
                     </button>
                   </div>
                 </form>
+                )}
 
                 <div className="datasource-binding-history">
                   <div className="history-heading">
@@ -937,7 +982,7 @@ export function DataSourcePanel({
                       <span>
                         <strong>v{binding.version}</strong>
                         {binding.domain_id}
-                        <small>{binding.status === "active" ? "已激活" : "草稿"}</small>
+                        <small>{bindingStatusLabel(binding.status)}</small>
                       </span>
                       {binding.status === "draft" && (
                         <button

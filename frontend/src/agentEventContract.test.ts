@@ -4,6 +4,38 @@ import { isAgentEvent } from "./api";
 
 
 describe("Agent event contract", () => {
+  it("accepts the prefixed schema fingerprint emitted by context resolution", () => {
+    expect(isAgentEvent({
+      type: "context_resolved",
+      run_id: "analysis-run-1",
+      sequence: 1,
+      data: {
+        kind: "context_resolved",
+        source_id: "source-1",
+        source_version: 1,
+        binding_id: "source-1-binding-1",
+        binding_version: 1,
+        schema_fingerprint: `sha256:${"a".repeat(64)}`,
+      },
+      response: null,
+    })).toBe(true);
+
+    expect(isAgentEvent({
+      type: "context_resolved",
+      run_id: "analysis-run-1",
+      sequence: 1,
+      data: {
+        kind: "context_resolved",
+        source_id: "source-1",
+        source_version: 1,
+        binding_id: "source-1-binding-1",
+        binding_version: 1,
+        schema_fingerprint: "sha256:not-a-digest",
+      },
+      response: null,
+    })).toBe(false);
+  });
+
   it("accepts a strict waiting event without a terminal response", () => {
     expect(isAgentEvent({
       type: "run_waiting",

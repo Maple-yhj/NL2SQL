@@ -181,6 +181,7 @@ class RelationshipFinding(RelationshipModel):
     code: NonBlankText
     severity: Literal["info", "warning", "error"]
     edge_id: StableIdentifier | None = None
+    node_id: StableIdentifier | None = None
     message: NonBlankText
 
 

@@ -24,7 +24,7 @@ from data_agent.relationships.candidates import prefilter_candidates
 from data_agent.relationships.models import ActivatedRelationshipGraph
 from data_agent.datasources import SemanticGraphBindingRecord, SemanticGraphFieldMapping, SemanticBindingStatus
 from data_agent.tools.schemas import CatalogColumn, CatalogKey, CatalogRelation, CatalogSnapshot, catalog_schema_fingerprint
-from data_agent.dataset_query import DatasetQueryCompiler, DatasetQueryPlan
+from data_agent.dataset_query import DatasetAggregation, DatasetQueryCompiler, DatasetQueryPlan
 
 
 def _graph(edges: tuple[RelationshipEdge, ...]) -> RelationshipGraphDraft:
@@ -207,6 +207,67 @@ class RelationshipGraphTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(report.activation_allowed)
         self.assertEqual(report.edge_quality[0][1].evidence_level, "blocked")
+
+    def test_activation_requires_reviewed_known_cardinality_and_acyclic_routes(self) -> None:
+        pending = _edge("ab", "a", "b").model_copy(
+            update={
+                "cardinality": "unknown",
+                "provenance": RelationshipProvenance(source="llm", run_id="run-1"),
+            }
+        )
+        pending_report = validate_graph(_graph((pending,)))
+        self.assertFalse(pending_report.activation_allowed)
+        self.assertIn(
+            "RELATIONSHIP_REVIEW_REQUIRED",
+            {item.code for item in pending_report.findings},
+        )
+
+        accepted_unknown = pending.model_copy(
+            update={
+                "provenance": pending.provenance.model_copy(
+                    update={"user_edited": True}
+                )
+            }
+        )
+        unknown_report = validate_graph(_graph((accepted_unknown,)))
+        self.assertFalse(unknown_report.activation_allowed)
+        self.assertIn(
+            "RELATIONSHIP_UNKNOWN_CARDINALITY",
+            {item.code for item in unknown_report.findings},
+        )
+
+        cycle = _graph(
+            (
+                _edge("ab", "a", "b"),
+                _edge("bc", "b", "c"),
+                _edge("ca", "c", "a"),
+            )
+        )
+        cycle_report = validate_graph(cycle)
+        self.assertFalse(cycle_report.activation_allowed)
+        self.assertIn(
+            "RELATIONSHIP_CYCLE_UNRESOLVED",
+            {item.code for item in cycle_report.findings},
+        )
+
+    def test_rejected_recommendations_do_not_block_activation(self) -> None:
+        rejected = _edge("ab", "a", "b").model_copy(
+            update={
+                "enabled": False,
+                "provenance": RelationshipProvenance(
+                    source="llm",
+                    run_id="run-1",
+                    user_edited=True,
+                    rejected=True,
+                ),
+            }
+        )
+        report = validate_graph(_graph((rejected,)))
+        self.assertTrue(report.activation_allowed)
+        self.assertNotIn(
+            "RELATIONSHIP_BLOCKED",
+            {item.code for item in report.findings},
+        )
 
     def test_profiled_different_names_can_be_allowlisted_for_llm(self) -> None:
         catalog = CatalogSnapshot(schema_fingerprint="sha256:profiles", relations=(
@@ -394,6 +455,87 @@ class RelationshipGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(prepared.allowed_relations, ("main.employee",))
         self.assertIn('AS "node_employee_1"', prepared.executable_sql)
         self.assertIn('AS "node_manager_2"', prepared.executable_sql)
+
+    def test_graph_compiler_limits_synthetic_binding_to_single_node_route(self) -> None:
+        catalog = CatalogSnapshot(
+            schema_fingerprint="sha256:single-route",
+            relations=(
+                CatalogRelation(
+                    relation="main.orders",
+                    columns=(CatalogColumn(name="order_id", data_type="TEXT", nullable=False),),
+                ),
+                CatalogRelation(
+                    relation="main.products",
+                    columns=(CatalogColumn(name="product_id", data_type="TEXT", nullable=False),),
+                ),
+            ),
+        )
+        orders, products = catalog.relations
+        order_id = orders.columns[0].column_id
+        product_id = products.columns[0].column_id
+        order_node = RelationshipGraphNode(
+            node_id="orders",
+            relation_id=orders.relation_id,
+            role_name="orders",
+            logical_entity="Orders",
+        )
+        product_node = RelationshipGraphNode(
+            node_id="products",
+            relation_id=products.relation_id,
+            role_name="products",
+            logical_entity="Products",
+        )
+        binding = SemanticGraphBindingRecord(
+            binding_id="single-route-graph",
+            tenant_id="tenant",
+            source_id="source",
+            source_snapshot_version=1,
+            schema_fingerprint=catalog.schema_fingerprint,
+            domain_id="dataset.orders",
+            version=1,
+            status=SemanticBindingStatus.ACTIVE,
+            graph=ActivatedRelationshipGraph(
+                graph_id="single-route",
+                revision=1,
+                nodes=(order_node, product_node),
+                edges=(),
+                components=(),
+            ),
+            mappings=(
+                SemanticGraphFieldMapping(
+                    logical_ref="dataset.Orders.order_id",
+                    node_id="orders",
+                    column_id=order_id,
+                ),
+                SemanticGraphFieldMapping(
+                    logical_ref="dataset.Products.product_id",
+                    node_id="products",
+                    column_id=product_id,
+                ),
+            ),
+            validation_report_digest="sha256:report",
+        )
+
+        prepared = DatasetQueryCompiler().compile(
+            plan=DatasetQueryPlan(
+                analysis_type="aggregate",
+                aggregations=(
+                    DatasetAggregation(
+                        ref="dataset.Orders.order_id",
+                        operation="count",
+                        alias="order_count",
+                    ),
+                ),
+            ),
+            binding=binding,
+            catalog=catalog,
+            dialect="sqlite",
+            schema_fingerprint=catalog.schema_fingerprint,
+            bundle_digest="sha256:bundle",
+        )
+
+        self.assertEqual(prepared.allowed_relations, ("main.orders",))
+        self.assertNotIn("products", prepared.executable_sql)
 
     def test_graph_compiler_preserves_composite_join_conditions(self) -> None:
         catalog = CatalogSnapshot(

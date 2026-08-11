@@ -33,6 +33,64 @@ def evaluation_document(
 
 
 class AnalysisEvaluatorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_successful_intermediate_tool_continues_without_another_model_call(self) -> None:
+        model = SequenceModel([])
+        current_plan = plan(status="completed").model_copy(
+            update={
+                "steps": (
+                    plan(status="completed").steps[0],
+                    plan(status="pending").steps[0].model_copy(
+                        update={"step_id": "next_query"}
+                    ),
+                )
+            }
+        )
+        result = await AnalysisEvaluator(model).evaluate(
+            run_id="run-1",
+            plan=current_plan,
+            authority=authority(),
+            observations=(
+                observation(
+                    artifact_refs=(artifact(kind="catalog", row_count=None),),
+                    evidence_refs=(),
+                    safe_preview=(),
+                ),
+            ),
+            artifacts=(artifact(kind="catalog", row_count=None),),
+            evidence=(),
+        )
+
+        self.assertEqual(result.decision, "continue")
+        self.assertEqual(result.completed_step_ids, ("query",))
+        self.assertEqual(model.calls, [])
+
+    async def test_completed_query_without_evidence_continues_to_binding_without_model(self) -> None:
+        model = SequenceModel([])
+        evaluator = AnalysisEvaluator(model)
+        completed_plan = plan(status="completed")
+        result_artifact = artifact(kind="query_preview", row_count=8)
+        result_observation = observation(
+            tool_name="query.preview",
+            artifact_refs=(result_artifact,),
+            evidence_refs=(),
+            safe_preview=({"order_status": "delivered", "order_count": 96478},),
+        )
+        kwargs = {
+            "run_id": "run-1",
+            "plan": completed_plan,
+            "authority": authority(mode="preview"),
+            "observations": (result_observation,),
+            "artifacts": (result_artifact,),
+            "evidence": (),
+        }
+
+        self.assertFalse(evaluator.requires_model_call(**kwargs))
+        decision = await evaluator.evaluate(**kwargs)
+
+        self.assertEqual(decision.decision, "continue")
+        self.assertIn("evidence binding", decision.rationale_summary)
+        self.assertEqual(model.calls, [])
+
     async def test_tool_failure_empty_result_and_mismatch_override_the_model(self) -> None:
         model = SequenceModel([])
         evaluator = AnalysisEvaluator(model)

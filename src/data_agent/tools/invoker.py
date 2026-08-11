@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from time import monotonic
@@ -32,6 +33,7 @@ from .registry import ToolRegistry
 
 
 AuditSink = Callable[[ToolTrace], None | Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 def stable_grant_id(decision: str, tool_name: str, issued_at: datetime) -> str:
@@ -292,6 +294,26 @@ class ToolInvoker:
                 retryable = False
             else:
                 code, retryable = self._provider_error_classification(exc)
+            diagnostic_id = stable_digest(
+                {
+                    "call_id": call.call_id,
+                    "tool_name": call.tool_name,
+                    "stage": stage,
+                    "error_type": f"{type(exc).__module__}.{type(exc).__qualname__}",
+                    "provider_code": str(getattr(exc, "code", "")),
+                    "message": str(exc)[:2000],
+                }
+            )[:16]
+            logger.error(
+                "tool invocation failed call_id=%s tool_name=%s stage=%s "
+                "error_type=%s provider_code=%s diagnostic_id=%s",
+                call.call_id,
+                call.tool_name,
+                stage,
+                f"{type(exc).__module__}.{type(exc).__qualname__}",
+                str(getattr(exc, "code", "unavailable"))[:80],
+                diagnostic_id,
+            )
             return await self._error_result(
                 call,
                 spec,
@@ -299,9 +321,10 @@ class ToolInvoker:
                 started_clock,
                 code,
                 (
-                    "credential broker could not issue a lease"
+                    "credential broker could not issue a lease "
+                    f"(diagnostic_id={diagnostic_id})"
                     if stage == "credential"
-                    else "tool provider failed"
+                    else f"tool provider failed (diagnostic_id={diagnostic_id})"
                 ),
                 attempts=attempts,
                 policy_decision_id=grant.policy_decision_id,
@@ -433,7 +456,8 @@ class ToolInvoker:
     def _provider_error_classification(
         exc: Exception,
     ) -> tuple[ToolErrorCode, bool]:
-        raw_code = getattr(getattr(exc, "code", None), "value", None)
+        exception_code = getattr(exc, "code", None)
+        raw_code = getattr(exception_code, "value", exception_code)
         mapping = {
             "GRANT_EXPIRED": (ToolErrorCode.GRANT_EXPIRED, False),
             "GRANT_MISMATCH": (ToolErrorCode.GRANT_INVALID, False),
@@ -445,6 +469,9 @@ class ToolInvoker:
             "UNKNOWN_RELATION": (ToolErrorCode.BINDING_STALE, True),
             "SQL_COMPILE_ERROR": (ToolErrorCode.SQL_COMPILE_ERROR, True),
             "LOGICAL_PLAN_INVALID": (ToolErrorCode.LOGICAL_PLAN_INVALID, True),
+            "GRAPH_NO_PATH": (ToolErrorCode.GRAPH_NO_PATH, False),
+            "GRAPH_AMBIGUOUS_PATH": (ToolErrorCode.GRAPH_AMBIGUOUS_PATH, True),
+            "GRAPH_UNSAFE_FANOUT": (ToolErrorCode.GRAPH_UNSAFE_FANOUT, False),
             "UNKNOWN_REFERENCE": (ToolErrorCode.LOGICAL_PLAN_INVALID, True),
             "DISCONNECTED_PLAN": (ToolErrorCode.LOGICAL_PLAN_INVALID, True),
             "POLICY_INVALID": (ToolErrorCode.POLICY_VIOLATION, False),

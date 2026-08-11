@@ -30,6 +30,7 @@ from data_agent.tools import (
     ToolRegistry,
     ToolSpec,
 )
+from data_agent.relationships.router import GraphRouteError
 
 
 class _Payload(BaseModel):
@@ -205,6 +206,17 @@ class ToolRegistryTests(unittest.TestCase):
 
 
 class ToolInvokerTests(unittest.IsolatedAsyncioTestCase):
+    def test_graph_route_errors_keep_their_actionable_codes(self) -> None:
+        self.assertEqual(
+            ToolInvoker._provider_error_classification(
+                GraphRouteError(
+                    "GRAPH_AMBIGUOUS_PATH",
+                    "multiple equally safe relationship paths exist",
+                )
+            ),
+            (ToolErrorCode.GRAPH_AMBIGUOUS_PATH, True),
+        )
+
     async def test_invoker_validates_input_and_output_and_issues_short_grant(self) -> None:
         spec = _spec()
         provider = _Provider(spec)

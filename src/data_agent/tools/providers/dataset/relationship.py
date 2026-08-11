@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
+
 from data_agent.datasources import SemanticGraphBindingRecord
 from data_agent.relationships.router import GraphRouteRequest, GraphRouteResolver
 from data_agent.tools.models import ProviderContext, ToolSpec
@@ -50,7 +52,7 @@ class RelationshipRouteProvider:
                 runtime.binding.graph,
                 GraphRouteRequest(required_node_ids=required),
             )
-            document = route.model_dump(mode="json")
+            document = asdict(route)
             summary = f"Resolved {len(route.steps)} relationship steps"
         else:
             relations = tuple(

@@ -17,6 +17,7 @@ from tests.integration.test_analysis_agent_runtime import (
     TestAnalysisResolver,
     clarification_decision,
 )
+from data_agent.analysis_agent.models import AgentInputRequest
 from tests.test_api_runtime_contract import (
     TEST_JWT_SECRET,
     _RecordingRuntime,
@@ -184,6 +185,57 @@ class ApiResumeTests(unittest.TestCase):
                 resumed_events[0]["sequence"],
                 waiting_events[-1]["sequence"] + 1,
             )
+        finally:
+            self._close(resources)
+
+    def test_selected_clarification_choice_is_accepted_and_validated(self) -> None:
+        clarification = clarification_decision()
+        clarification = clarification.model_copy(
+            update={
+                "clarification": AgentInputRequest(
+                    interrupt_id="interrupt-time-range",
+                    reason="clarification",
+                    prompt="Which time range should be used?",
+                    choices=("Last 30 days", "This quarter"),
+                )
+            }
+        )
+        resources = self._open(
+            [clarification, finish_decision(analysis_plan("pending"))]
+        )
+        client = resources[3]
+        try:
+            waiting = client.post(
+                "/api/nl2sql",
+                headers=_auth_headers(),
+                json=_request_body(),
+            ).json()
+            run_id = waiting["run_id"]
+            interrupt_id = waiting["event"]["data"]["input_request"]["interrupt_id"]
+
+            invalid = client.post(
+                f"/api/runs/{run_id}/resume",
+                headers=_auth_headers(),
+                json={
+                    "interrupt_id": interrupt_id,
+                    "message": "Unknown range",
+                    "selected_choice": "Unknown range",
+                },
+            )
+            self.assertEqual(invalid.status_code, 409, invalid.text)
+            self.assertEqual(invalid.json()["error"]["code"], "AGENT_INTERRUPT_STALE")
+
+            resumed = client.post(
+                f"/api/runs/{run_id}/resume",
+                headers=_auth_headers(),
+                json={
+                    "interrupt_id": interrupt_id,
+                    "message": "Last 30 days",
+                    "selected_choice": "Last 30 days",
+                },
+            )
+            self.assertEqual(resumed.status_code, 200, resumed.text)
+            self.assertTrue(resumed.json()["ok"])
         finally:
             self._close(resources)
 

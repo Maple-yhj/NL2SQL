@@ -790,18 +790,22 @@ async def cancel_run(
             raise HTTPException(status_code=404, detail="Run not found")
         if run_status == "cancelled":
             return RunCancelResponse(run_id=resolved_run_id, cancelled=True)
-        if run_status != "waiting":
+        if run_status not in {"waiting", "running"}:
             raise HTTPException(status_code=409, detail="Run cannot be cancelled")
-        cancel_waiting = getattr(analysis_runtime, "cancel_waiting", None)
+        cancel_checkpoint = getattr(
+            analysis_runtime,
+            "cancel_waiting" if run_status == "waiting" else "cancel_orphaned",
+            None,
+        )
         next_sequence = await coordinator.next_sequence(
             tenant_id=principal.tenant_id,
             user_id=principal.user_id,
             run_id=resolved_run_id,
         )
-        if not callable(cancel_waiting) or next_sequence is None:
+        if not callable(cancel_checkpoint) or next_sequence is None:
             raise HTTPException(status_code=409, detail="Run cannot be cancelled")
         try:
-            event = await cancel_waiting(
+            event = await cancel_checkpoint(
                 run_id=resolved_run_id,
                 principal=_runtime_principal(principal),
                 start_sequence=next_sequence,
@@ -1260,6 +1264,16 @@ async def _prepare_resume(
             AgentError(
                 code=ErrorCode.AGENT_INTERRUPT_STALE,
                 message="interrupt response does not match the latest checkpoint",
+            )
+        )
+    if response.selected_choice is not None and (
+        response.selected_choice not in waiting.choices
+        or response.message != response.selected_choice
+    ):
+        raise AnalysisRuntimeError(
+            AgentError(
+                code=ErrorCode.AGENT_INTERRUPT_STALE,
+                message="selected clarification choice is not valid for this checkpoint",
             )
         )
     next_sequence = await coordinator.next_sequence(

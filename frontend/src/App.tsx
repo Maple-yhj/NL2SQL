@@ -66,6 +66,9 @@ import {
 } from "./agent/agentRunState";
 import {
   applyConversationUpdate,
+  conversationMatchesSearch,
+  conversationTitleFromQuestion,
+  isDefaultConversationTitle,
   removeConversationFromList,
   resolveConversationDeletionState,
 } from "./conversationState";
@@ -75,11 +78,14 @@ import { createSendMessagePayload } from "./requestPayload";
 import { paginateRows } from "./tablePagination";
 import {
   createAssistantViewModel,
+  formatChartLabel,
   formatCellValueForColumn,
+  formatChartValue,
   formatColumnLabel,
   getColumnClassName,
 } from "./viewModel";
 import {
+  buildEvidenceBadge,
   buildEvidenceRoute,
   type EvidenceStep,
   type RunStage,
@@ -187,11 +193,13 @@ export function App() {
       return conversations;
     }
     return conversations.filter((conversation) =>
-      (conversation.title || "未命名分析")
-        .toLocaleLowerCase("zh-CN")
-        .includes(query),
+      conversationMatchesSearch(
+        conversation,
+        query,
+        conversation.conversation_id === activeConversationId ? messages : [],
+      ),
     );
-  }, [conversationQuery, conversations]);
+  }, [activeConversationId, conversationQuery, conversations, messages]);
   const evidenceMessage =
     messages.find((message) => message.id === evidenceMessageId) ?? latestAssistant;
   const runBlocksNewMessage =
@@ -529,10 +537,28 @@ export function App() {
     try {
       let conversationId = activeConversationId;
       if (!conversationId) {
-        const conversation = await api.createConversation(question.slice(0, 54));
+        const conversation = await api.createConversation(
+          conversationTitleFromQuestion(question),
+        );
         conversationId = conversation.conversation_id;
         setActiveConversationId(conversationId);
         setConversations((items) => [conversation, ...items]);
+      } else {
+        const currentConversation = conversations.find(
+          (conversation) => conversation.conversation_id === conversationId,
+        );
+        if (isDefaultConversationTitle(currentConversation?.title)) {
+          void api
+            .updateConversation(conversationId, {
+              title: conversationTitleFromQuestion(question),
+            })
+            .then((updated) =>
+              setConversations((items) =>
+                applyConversationUpdate(items, updated),
+              ),
+            )
+            .catch(() => undefined);
+        }
       }
 
       const response = await api.streamMessage(
@@ -1366,13 +1392,13 @@ function EvidenceDrawer({
             </section>
           )}
 
-          {(message.metadata.evidence?.length ?? 0) > 0 && (
-            <section className="evidence-section">
-              <div className="evidence-section-heading">
-                <ShieldCheck size={16} />
-                <h3>证据引用</h3>
-                <span>{message.metadata.evidence?.length}</span>
-              </div>
+          <section className="evidence-section">
+            <div className="evidence-section-heading">
+              <ShieldCheck size={16} />
+              <h3>证据引用</h3>
+              <span>{message.metadata.evidence?.length ?? 0}</span>
+            </div>
+            {(message.metadata.evidence?.length ?? 0) > 0 ? (
               <ul className="agent-evidence-list">
                 {message.metadata.evidence?.map((evidence) => (
                   <li key={evidence.evidence_id}>
@@ -1382,8 +1408,10 @@ function EvidenceDrawer({
                   </li>
                 ))}
               </ul>
-            </section>
-          )}
+            ) : (
+              <p className="evidence-empty">本次运行没有生成可核查的证据引用。</p>
+            )}
+          </section>
 
           <section className="evidence-section">
             <div className="evidence-section-heading">
@@ -1394,9 +1422,33 @@ function EvidenceDrawer({
               <div><dt>消息类型</dt><dd>{viewModel.messageType}</dd></div>
               <div><dt>返回行数</dt><dd>{viewModel.rows.length}</dd></div>
               <div><dt>图表</dt><dd>{viewModel.chart ? "已生成" : "未生成"}</dd></div>
-              <div><dt>状态</dt><dd>{viewModel.status === "error" ? "失败" : "已验证"}</dd></div>
+              <div>
+                <dt>状态</dt>
+                <dd>
+                  {viewModel.status === "error"
+                    ? "失败"
+                    : viewModel.status === "validated"
+                      ? "已验证"
+                      : "待验证"}
+                </dd>
+              </div>
             </dl>
           </section>
+
+          {viewModel.limitations.length > 0 && (
+            <section className="evidence-section">
+              <div className="evidence-section-heading">
+                <AlertTriangle size={16} />
+                <h3>结果限制</h3>
+                <span>{viewModel.limitations.length}</span>
+              </div>
+              <ul className="evidence-limitations">
+                {viewModel.limitations.map((item, index) => (
+                  <li key={`${item}-${index}`}>{item}</li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {pins && (
             <details className="evidence-section">
@@ -1579,14 +1631,7 @@ function AssistantBubble({
   const viewModel = createAssistantViewModel(message);
   const answerText = viewModel.answer || (viewModel.showTable ? "" : viewModel.status);
   const needsClarification = viewModel.messageType === "clarification";
-  const hasEvidence = Boolean(
-    viewModel.logicalPlan ||
-      viewModel.showSqlCard ||
-      viewModel.trace.length ||
-      viewModel.rows.length ||
-      viewModel.pendingMemoryUpdates.length ||
-      message.metadata.version_pins,
-  );
+  const evidenceBadge = buildEvidenceBadge(message);
 
   return (
     <div className="message ai">
@@ -1651,17 +1696,21 @@ function AssistantBubble({
                 </div>
               </div>
             )}
-            {hasEvidence && (
+            {viewModel.limitations.length > 0 && (
+              <div className="answer-limitations" aria-label="结果限制">
+                <strong>结果说明</strong>
+                <ul>
+                  {viewModel.limitations.map((item, index) => (
+                    <li key={`${item}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {evidenceBadge && (
               <button className="evidence-link" type="button" onClick={onShowEvidence}>
                 <ShieldCheck size={15} />
                 查看证据路径
-                <span>
-                  {viewModel.rows.length
-                    ? `${viewModel.rows.length} 条结果`
-                    : viewModel.trace.length
-                      ? `${viewModel.trace.length} 个运行节点`
-                      : "可核查"}
-                </span>
+                <span>{evidenceBadge}</span>
               </button>
             )}
           </>
@@ -1680,7 +1729,7 @@ function SafeBarChart({
 }) {
   const points = rows
     .map((row) => ({
-      label: String(row[chart.x_field] ?? ""),
+      label: formatChartLabel(row[chart.x_field]),
       value: finiteNumber(row[chart.y_field]),
     }))
     .filter(
@@ -1703,7 +1752,7 @@ function SafeBarChart({
           <div
             className="safe-chart-row"
             key={`${point.label}-${index}`}
-            title={`${point.label}: ${point.value}`}
+            title={`${point.label}: ${formatChartValue(point.value)}`}
           >
             <span>{point.label}</span>
             <div>
@@ -1713,7 +1762,7 @@ function SafeBarChart({
                 }}
               />
             </div>
-            <strong>{point.value}</strong>
+            <strong>{formatChartValue(point.value)}</strong>
           </div>
         ))}
       </div>
@@ -1910,6 +1959,14 @@ function friendlyRuntimeError(code: string): string {
     DEADLINE_EXCEEDED: "查询运行超时",
     CANCELLED: "运行已取消",
     SQL_POLICY_VIOLATION: "查询不符合只读策略",
+    SQL_COMPILE_ERROR: "查询计划无法编译",
+    GRAPH_NO_PATH: "数据表之间没有可用关联路径",
+    GRAPH_AMBIGUOUS_PATH: "数据表之间存在多条关联路径",
+    GRAPH_UNSAFE_FANOUT: "关联可能造成结果重复放大",
+    AGENT_EVIDENCE_INSUFFICIENT: "证据不足，运行已停止",
+    AGENT_BUDGET_EXCEEDED: "分析范围超出安全上限",
+    AGENT_MAX_STEPS_EXCEEDED: "分析步骤超出安全上限",
+    AGENT_DECISION_INVALID: "分析计划无法继续",
     INTERNAL_ERROR: "运行安全终止",
     REQUEST_FAILED: "请求未能完成",
   };

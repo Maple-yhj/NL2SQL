@@ -375,15 +375,39 @@ class DataSourceService:
             raise ValueError("graph binding mapping references an unknown graph field")
         existing = await self._registry.list_bindings(tenant_id=tenant_id, source_id=source_id)
         graph_bindings = await self._registry.list_graph_bindings(tenant_id=tenant_id, source_id=source_id)
+        activated_graph = ActivatedRelationshipGraph(
+            graph_id=graph.graph_id,
+            revision=graph.revision,
+            nodes=graph.nodes,
+            edges=graph.edges,
+            components=graph.components,
+            route_rules=graph.route_rules,
+        )
+        for current in graph_bindings:
+            if (
+                current.domain_id == domain_id
+                and current.status == SemanticBindingStatus.ACTIVE
+                and current.source_snapshot_version == snapshot.version
+                and current.schema_fingerprint == snapshot.fingerprint
+                and current.graph == activated_graph
+                and current.mappings == mappings
+                and current.validation_report_digest == report.report_digest
+            ):
+                return current
         version = max(
             (item.version for item in (*existing, *graph_bindings) if item.domain_id == domain_id),
             default=0,
         ) + 1
+        domain_digest = hashlib.sha256(domain_id.encode("utf-8")).hexdigest()[:12]
         binding = SemanticGraphBindingRecord(
-            binding_id=binding_id or f"{source_id}-graph-binding-{version}", tenant_id=tenant_id,
+            binding_id=(
+                binding_id
+                or f"{source_id}-graph-{domain_digest}-binding-{version}"
+            ),
+            tenant_id=tenant_id,
             source_id=source_id, source_snapshot_version=snapshot.version, schema_fingerprint=snapshot.fingerprint,
             domain_id=domain_id, version=version,
-            graph=ActivatedRelationshipGraph(graph_id=graph.graph_id, revision=graph.revision, nodes=graph.nodes, edges=graph.edges, components=graph.components, route_rules=graph.route_rules),
+            graph=activated_graph,
             mappings=mappings, validation_report_digest=report.report_digest,
         )
         return await self._registry.activate_graph_binding(binding)

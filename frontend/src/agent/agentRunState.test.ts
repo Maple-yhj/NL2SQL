@@ -137,6 +137,50 @@ describe("agentRunReducer", () => {
     expect(state.toolCalls[0].displayName).toBe("执行受治理查询");
     expect(state.observations[0].summary).toBe("Returned 12 grouped rows.");
   });
+
+  it("marks in-flight work terminal when cancellation succeeds", () => {
+    const running = hydrateAgentRun([
+      started,
+      event({
+        type: "plan_updated",
+        sequence: 1,
+        data: {
+          kind: "plan_updated",
+          plan: {
+            plan_id: "plan-cancel",
+            revision: 1,
+            steps: [
+              {
+                step_id: "step-running",
+                objective: "Inspect semantics",
+                status: "running",
+                depends_on: [],
+                expected_evidence: [],
+              },
+            ],
+            completion_criteria: ["Inspection complete"],
+          },
+        },
+      }),
+      event({
+        type: "tool_started",
+        sequence: 2,
+        data: {
+          kind: "tool_started",
+          call_id: "call-running",
+          action_id: "action-running",
+          tool_name: "semantic.inspect",
+          display_name: "检查语义范围",
+          safe_arguments_digest: "b".repeat(64),
+        },
+      }),
+    ]);
+
+    const cancelled = agentRunReducer(running, { type: "cancelled" });
+
+    expect(cancelled.plan?.steps[0].status).toBe("blocked");
+    expect(cancelled.toolCalls[0].status).toBe("failed");
+  });
 });
 
 function event<T extends AgentEvent>(

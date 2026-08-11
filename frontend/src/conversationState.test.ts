@@ -1,12 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
   applyConversationUpdate,
+  conversationMatchesSearch,
+  conversationTitleFromQuestion,
+  isDefaultConversationTitle,
   removeConversationFromList,
   resolveConversationDeletionState,
 } from "./conversationState";
 import type { ChatMessage, Conversation } from "./types";
 
 describe("conversation state helpers", () => {
+  it("derives a compact first-question title and recognizes placeholders", () => {
+    expect(conversationTitleFromQuestion("  按地区\n统计销售金额  ")).toBe(
+      "按地区 统计销售金额",
+    );
+    expect(isDefaultConversationTitle("New analysis")).toBe(true);
+    expect(isDefaultConversationTitle("订单分析")).toBe(false);
+  });
+
+  it("matches the active conversation by visible message content", () => {
+    const item = conversation("conv-search", "订单分析");
+    expect(
+      conversationMatchesSearch(item, "退款金额", [
+        { id: "m-1", role: "user", content: "统计退款金额", metadata: {} },
+      ]),
+    ).toBe(true);
+  });
   it("updates a renamed conversation without changing list order", () => {
     const first = conversation("conv-1", "Old title");
     const second = conversation("conv-2", "Second title");

@@ -85,7 +85,11 @@ export function agentRunReducer(
     return { ...state, status: "resuming" };
   }
   if (action.type === "cancelled") {
-    return { ...state, status: "cancelled", inputRequest: null };
+    return terminateActiveWork({
+      ...state,
+      status: "cancelled",
+      inputRequest: null,
+    });
   }
   return applyEvent(state, action.event);
 }
@@ -203,9 +207,29 @@ function applyEvent(state: AgentRunState, event: AgentEvent): AgentRunState {
       next.status =
         event.data.error_code === "CANCELLED" ? "cancelled" : "failed";
       next.inputRequest = null;
+      next = terminateActiveWork(next);
       break;
   }
   return next;
+}
+
+function terminateActiveWork(state: AgentRunState): AgentRunState {
+  return {
+    ...state,
+    plan: state.plan
+      ? {
+          ...state.plan,
+          steps: state.plan.steps.map((step) =>
+            step.status === "running"
+              ? { ...step, status: "blocked" as const }
+              : step,
+          ),
+        }
+      : null,
+    toolCalls: state.toolCalls.map((call) =>
+      call.status === "running" ? { ...call, status: "failed" as const } : call,
+    ),
+  };
 }
 
 function applyResponse(state: AgentRunState, response: AgentResponse): AgentRunState {

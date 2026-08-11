@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  ChevronDown,
   Database,
   GitBranch,
   GitMerge,
@@ -60,6 +61,39 @@ const cardinalityLabels: Record<RelationshipEdge["cardinality"], string> = {
   many_to_many: "多对多",
   unknown: "基数待确认",
 };
+
+type RelationshipFinding = RelationshipValidationReport["findings"][number];
+
+function relationshipFindingText(
+  finding: RelationshipFinding,
+  nodeName: (nodeId: string) => string,
+): string {
+  const messages: Record<string, string> = {
+    RELATIONSHIP_REVIEW_REQUIRED: "AI 推荐关系必须先接受或拒绝。",
+    RELATIONSHIP_BLOCKED: "关系证据未通过结构或统计校验。",
+    RELATIONSHIP_MANY_TO_MANY: "多对多关系必须先声明明确的数据粒度。",
+    RELATIONSHIP_UNKNOWN_CARDINALITY: "请先确认关系基数。",
+    RELATIONSHIP_HIGH_FANOUT: "关系展开倍数过高，无法安全激活。",
+    RELATIONSHIP_LOW_MATCH_RATE: "关系键的观测匹配率较低。",
+    RELATIONSHIP_CYCLE_UNRESOLVED: "关系图存在环路，请设置首选路径或移除冗余边。",
+  };
+  if (finding.code === "RELATIONSHIP_ISOLATED_ROLE" && finding.node_id) {
+    return `角色 ${nodeName(finding.node_id)} 未连接，只能进行单表查询。`;
+  }
+  return messages[finding.code] ?? finding.message;
+}
+
+function relationshipErrorText(error: unknown, fallback: string): string {
+  if (!(error instanceof Error)) return fallback;
+  const messages: Record<string, string> = {
+    "required graph nodes are not connected by safe edges":
+      "所选角色之间没有已审核且安全的连接路径。",
+    "graph binding already exists": "相同的关系绑定已经存在。",
+    "relationship graph validation does not permit activation":
+      "关系图仍有阻断项，暂时无法激活。",
+  };
+  return messages[error.message] ?? error.message;
+}
 
 export function RelationshipGraphEditor({
   api,
@@ -352,6 +386,27 @@ export function RelationshipGraphEditor({
     });
   };
 
+  const setEdgeCardinality = (
+    edge: RelationshipEdge,
+    cardinality: RelationshipEdge["cardinality"],
+  ) => {
+    dispatch({
+      type: "updateEdge",
+      edge: {
+        ...edge,
+        cardinality,
+        enabled: true,
+        provenance: {
+          ...edge.provenance,
+          user_edited: true,
+          rejected: false,
+        },
+      },
+    });
+    resetDerivedState();
+    setNotice({ tone: "info", text: "关联基数已更新，保存后重新验证。" });
+  };
+
   const validate = async () => {
     if (!graph || hasUnsavedChanges) return;
     setActiveAction("validate");
@@ -410,7 +465,7 @@ export function RelationshipGraphEditor({
       setRoute(null);
       setNotice({
         tone: "error",
-        text: error instanceof Error ? error.message : "无法解析这条查询路径。",
+        text: relationshipErrorText(error, "无法解析这条查询路径。"),
       });
     } finally {
       setActiveAction("");
@@ -465,7 +520,7 @@ export function RelationshipGraphEditor({
     } catch (error) {
       setNotice({
         tone: "error",
-        text: error instanceof Error ? error.message : "关系图激活失败。",
+        text: relationshipErrorText(error, "关系图激活失败。"),
       });
     } finally {
       setActiveAction("");
@@ -961,6 +1016,16 @@ export function RelationshipGraphEditor({
           <div className="relationship-edge-list">
             {graph.edges.map((edge) => {
               const source = String(edge.provenance.source ?? "unknown");
+              const reviewed = Boolean(edge.provenance.user_edited);
+              const rejected = Boolean(edge.provenance.rejected);
+              const reviewState =
+                source !== "llm"
+                  ? "neutral"
+                  : rejected
+                    ? "rejected"
+                    : reviewed
+                      ? "accepted"
+                      : "pending";
               return (
                 <div
                   className={`relationship-edge-row${edge.enabled ? "" : " disabled"}`}
@@ -979,24 +1044,46 @@ export function RelationshipGraphEditor({
                       {edge.conditions.length} 个字段条件 · {cardinalityLabels[edge.cardinality]}
                     </span>
                   </div>
-                  <span className="relationship-edge-source">
+                  <span className={`relationship-edge-source ${reviewState}`}>
                     {provenanceLabels[source] ?? "来源未知"}
+                    {source === "llm" &&
+                      ` · ${rejected ? "已拒绝" : reviewed ? "已接受" : "待审核"}`}
                   </span>
                   <div className="relationship-row-actions">
+                    <label className="relationship-cardinality-control">
+                      <span>关系基数</span>
+                      <select
+                        aria-label={`${nodeName(edge.from_node_id)} 到 ${nodeName(edge.to_node_id)} 的关系基数`}
+                        value={edge.cardinality}
+                        onChange={(event) =>
+                          setEdgeCardinality(
+                            edge,
+                            event.target.value as RelationshipEdge["cardinality"],
+                          )
+                        }
+                      >
+                        {Object.entries(cardinalityLabels).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                      <ChevronDown size={13} aria-hidden="true" />
+                    </label>
                     {source === "llm" && (
                       <>
                         <button
-                          className="relationship-text-button"
+                          className="relationship-text-button relationship-review-button accept"
                           type="button"
                           onClick={() => setRecommendationState(edge, false)}
+                          disabled={reviewed && !rejected}
                         >
                           <Check size={14} />
                           接受
                         </button>
                         <button
-                          className="relationship-text-button"
+                          className="relationship-text-button relationship-review-button reject"
                           type="button"
                           onClick={() => setRecommendationState(edge, true)}
+                          disabled={rejected}
                         >
                           <X size={14} />
                           拒绝
@@ -1162,10 +1249,10 @@ export function RelationshipGraphEditor({
               {validation.activation_allowed ? "验证通过" : "存在阻断项"}
             </strong>
             <span>报告 {validation.report_digest}</span>
-            {validation.findings.map((finding) => (
-              <p key={`${finding.code}-${finding.edge_id}`}>
+            {validation.findings.map((finding, index) => (
+              <p key={`${finding.code}-${finding.edge_id ?? finding.node_id ?? index}`}>
                 {finding.severity === "error" ? "错误" : "警告"}：
-                {finding.message}
+                {relationshipFindingText(finding, nodeName)}
               </p>
             ))}
           </div>

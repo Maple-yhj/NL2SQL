@@ -507,7 +507,7 @@ function validateEventPayload(
       return isExactRecord(data, ["kind", "source_id", "source_version", "binding_id", "binding_version", "schema_fingerprint"]) &&
         isNonBlankString(data.source_id) && isPositiveInteger(data.source_version) &&
         isNonBlankString(data.binding_id) && isPositiveInteger(data.binding_version) &&
-        isDigest(data.schema_fingerprint);
+        isSchemaFingerprint(data.schema_fingerprint);
     case "plan_updated":
       return isExactRecord(data, ["kind", "plan"]) && validateAnalysisPlan(data.plan);
     case "step_started":
@@ -600,6 +600,10 @@ function isDigest(value: unknown): boolean {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value);
 }
 
+function isSchemaFingerprint(value: unknown): boolean {
+  return typeof value === "string" && /^(?:sha256:)?[0-9a-f]{64}$/.test(value);
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isNonBlankString) &&
     new Set(value).size === value.length;
@@ -621,6 +625,27 @@ function readErrorMessage(body: unknown, statusText: string): string {
   if (isRecord(body)) {
     if (typeof body.detail === "string") {
       return body.detail;
+    }
+    if (isRecord(body.detail) && typeof body.detail.message === "string") {
+      return body.detail.message;
+    }
+    if (Array.isArray(body.detail)) {
+      const issues = body.detail
+        .map((issue) => {
+          if (!isRecord(issue) || typeof issue.msg !== "string") return "";
+          const location = Array.isArray(issue.loc)
+            ? issue.loc
+                .filter((part) => typeof part === "string" || typeof part === "number")
+                .filter((part) => part !== "body" && part !== "query")
+                .join(".")
+            : "";
+          return location ? `${location}：${issue.msg}` : issue.msg;
+        })
+        .filter(Boolean);
+      if (issues.length) {
+        return `请求参数无效：${issues.join("；")}`;
+      }
+      return "请求参数无效，请检查所选节点后重试";
     }
     if (
       isRecord(body.error) &&

@@ -169,7 +169,12 @@ class AnalysisAgentRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 raise AssertionError("unreachable")
 
         with tempfile.TemporaryDirectory() as directory:
-            resolver = TestAnalysisResolver([])
+            persisted: list[dict[str, object]] = []
+
+            async def persist_turn(state) -> None:
+                persisted.append(dict(state))
+
+            resolver = TestAnalysisResolver([], persist_turn=persist_turn)
             planner = BlockingPlanner()
             resolver._planner = planner
             composition = await build_analysis_runtime_from_resolver(
@@ -218,6 +223,9 @@ class AnalysisAgentRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     principal=PRINCIPAL,
                 )
                 self.assertEqual(str(state["status"]), "cancelled")
+                self.assertEqual(len(persisted), 1)
+                self.assertEqual(str(persisted[0]["status"]), "cancelled")
+                self.assertEqual(persisted[0]["error"].code, ErrorCode.CANCELLED)
             finally:
                 if not task.done():
                     task.cancel()

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   createAssistantViewModel,
+  formatChartLabel,
   formatCellValue,
   formatCellValueForColumn,
+  formatChartValue,
   formatColumnLabel,
+  friendlyRuntimeMessage,
   getColumnClassName,
 } from "./viewModel";
 import type { ChatMessage } from "./types";
@@ -313,8 +316,58 @@ describe("createAssistantViewModel", () => {
     ).toBe("3\u592910\u5c0f\u65f619\u5206\u949f");
     expect(formatCellValueForColumn("PT45S", "avg_duration")).toBe("\u4e0d\u8db31\u5206\u949f");
     expect(formatCellValueForColumn(1751.6, "amount")).toBe("1751.60");
+    expect(formatCellValueForColumn(1258681.3399999682, "total_order_amount")).toBe(
+      "1258681.34",
+    );
     expect(formatCellValueForColumn(2, "quantity")).toBe("2");
     expect(formatCellValue(["a", "b"])).toBe("[\"a\",\"b\"]");
+  });
+
+  it("formats chart numbers without exposing floating-point tails", () => {
+    expect(formatChartValue(1258681.3399999682)).toBe("1,258,681.34");
+    expect(formatChartValue(2)).toBe("2");
+  });
+
+  it("labels null and blank chart categories explicitly", () => {
+    expect(formatChartLabel(null)).toBe("未分类");
+    expect(formatChartLabel("  ")).toBe("未分类");
+    expect(formatChartLabel("beauty")).toBe("beauty");
+  });
+
+  it("localizes common runtime failures while preserving a diagnostic id", () => {
+    expect(friendlyRuntimeMessage("CANCELLED", "Analysis run was cancelled."))
+      .toBe("分析运行已取消。");
+    expect(
+      friendlyRuntimeMessage(
+        "INTERNAL_ERROR",
+        "analysis graph node failed safely (diagnostic_id=0a1b2c3d4e5f6789)",
+      ),
+    ).toContain("diagnostic_id=0a1b2c3d4e5f6789");
+    expect(friendlyRuntimeMessage("UNKNOWN", "safe fallback")).toBe("safe fallback");
+    expect(
+      friendlyRuntimeMessage(
+        "AGENT_EVIDENCE_INSUFFICIENT",
+        "analysis evaluation selected the terminal failure route",
+      ),
+    ).toContain("证据");
+  });
+
+  it("keeps backend result limitations available to the answer surface", () => {
+    const message: ChatMessage = {
+      id: "assistant-preview-limit",
+      role: "assistant",
+      content: "预览完成",
+      metadata: {
+        ok: true,
+        message_type: "table",
+        rows: [{ status: "delivered", count: 2 }],
+        limitations: ["结论基于预览数据，完整结果可能不同。"],
+      },
+    };
+
+    expect(createAssistantViewModel(message).limitations).toEqual([
+      "结论基于预览数据，完整结果可能不同。",
+    ]);
   });
 
   it("marks numeric table columns for right alignment", () => {

@@ -7,6 +7,11 @@ import re
 from typing import Protocol
 
 from data_agent.datasources import SemanticBindingRecord, SemanticGraphBindingRecord
+from data_agent.relationships.router import (
+    GraphRouteError,
+    GraphRouteRequest,
+    GraphRouteResolver,
+)
 from data_agent.tools.schemas import CatalogSnapshot
 
 from .models import (
@@ -38,13 +43,15 @@ _SYSTEM_PROMPT = (
     "not defined by the catalog, return needs_clarification or unsupported instead "
     "of silently replacing it with another metric. For follow-ups, return only a "
     "DatasetPlanPatch and preserve every prior plan field not explicitly changed. "
+    "For multi-field plans, use logical refs from one connected routeComponent; "
+    "do not add fields from isolated components merely for optional enrichment. "
     "Prefer a small result and never exceed the schema limit."
 )
 _FENCED_JSON = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL | re.IGNORECASE)
 
 
 class DatasetLogicalPlanner:
-    def __init__(self, model_client: ModelClient, *, max_attempts: int = 2) -> None:
+    def __init__(self, model_client: ModelClient, *, max_attempts: int = 3) -> None:
         if max_attempts < 1:
             raise ValueError("max_attempts must be positive")
         self._model_client = model_client
@@ -86,6 +93,7 @@ class DatasetLogicalPlanner:
                 for relation in catalog.relations
                 for column in relation.columns
             }
+            route_components = _route_components(binding)
             logical_catalog = [
                 {
                     "ref": mapping.logical_ref,
@@ -93,6 +101,7 @@ class DatasetLogicalPlanner:
                         column_by_id.get(mapping.column_id, ("", "")),
                         "unknown",
                     ),
+                    "routeComponent": route_components.get(mapping.node_id),
                 }
                 for mapping in binding.mappings
                 if relation_by_node.get(mapping.node_id) in relation_by_id
@@ -135,6 +144,11 @@ class DatasetLogicalPlanner:
                     document,
                     conversation_context=conversation_context,
                 )
+                self._validate_plan_scope(
+                    plan=plan,
+                    logical_refs=tuple(item["ref"] for item in logical_catalog),
+                    binding=binding,
+                )
                 if conversation_context is not None and inherited:
                     contextualized_question = (
                         f"{conversation_context.prior_question}；追问：{question}"
@@ -163,6 +177,45 @@ class DatasetLogicalPlanner:
                     separators=(",", ":"),
                 )
         raise ValueError("model failed to produce a valid DatasetQueryPlan: " + failure)
+
+    @staticmethod
+    def _validate_plan_scope(
+        *,
+        plan: DatasetQueryPlan,
+        logical_refs: tuple[str, ...],
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
+    ) -> None:
+        if plan.status != DatasetPlanStatus.READY:
+            return
+        referenced = _plan_logical_refs(plan)
+        aliases = {item.alias for item in plan.aggregations}
+        unknown = set(referenced) - set(logical_refs) - aliases
+        if unknown:
+            raise ValueError(
+                "dataset query references logical refs outside logicalCatalog: "
+                + ", ".join(sorted(unknown))
+            )
+        if not isinstance(binding, SemanticGraphBindingRecord):
+            return
+        mapping_by_ref = {item.logical_ref: item for item in binding.mappings}
+        required_nodes = tuple(
+            dict.fromkeys(
+                mapping_by_ref[ref].node_id
+                for ref in referenced
+                if ref not in aliases
+            )
+        )
+        try:
+            GraphRouteResolver().resolve(
+                binding.graph,
+                GraphRouteRequest(required_node_ids=required_nodes),
+            )
+        except GraphRouteError as exc:
+            raise ValueError(
+                "dataset query logical refs do not share a safe active relationship "
+                f"route ({exc.code}): "
+                + ", ".join(referenced)
+            ) from exc
 
     @staticmethod
     def _parse_plan(
@@ -250,6 +303,46 @@ class DatasetLogicalPlanner:
         if not isinstance(document, dict):
             raise ValueError("dataset query plan must be a JSON object")
         return document
+
+
+def _plan_logical_refs(plan: DatasetQueryPlan) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            (
+                *plan.select,
+                *(item.ref for item in plan.aggregations),
+                *plan.group_by,
+                *(item.ref for item in plan.filters),
+                *(item.ref for item in plan.order_by),
+            )
+        )
+    )
+
+
+def _route_components(binding: SemanticGraphBindingRecord) -> dict[str, str]:
+    adjacency = {node.node_id: set() for node in binding.graph.nodes}
+    for edge in binding.graph.edges:
+        if not edge.enabled or (
+            edge.quality is not None and edge.quality.evidence_level == "blocked"
+        ):
+            continue
+        adjacency[edge.from_node_id].add(edge.to_node_id)
+        adjacency[edge.to_node_id].add(edge.from_node_id)
+    components: dict[str, str] = {}
+    index = 0
+    for node_id in sorted(adjacency):
+        if node_id in components:
+            continue
+        index += 1
+        label = f"component-{index}"
+        pending = [node_id]
+        while pending:
+            current = pending.pop()
+            if current in components:
+                continue
+            components[current] = label
+            pending.extend(sorted(adjacency[current] - set(components), reverse=True))
+    return components
 
 
 __all__ = ["DatasetLogicalPlanner", "ModelClient"]

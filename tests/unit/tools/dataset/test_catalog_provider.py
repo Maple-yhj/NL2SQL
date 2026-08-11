@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
+from data_agent.datasources import (
+    SemanticBindingStatus,
+    SemanticGraphBindingRecord,
+    SemanticGraphFieldMapping,
+)
+from data_agent.relationships.models import ActivatedRelationshipGraph, RelationshipGraphNode
 from data_agent.runtime.models import AgentMode
 from data_agent.tools.providers.dataset.contracts import EmptyInput, RelationshipRouteInput
 
@@ -69,6 +76,60 @@ class DatasetCatalogProviderTests(unittest.IsolatedAsyncioTestCase):
             run_id="run-1",
         )
         self.assertEqual({item.kind.value for item in refs}, {"catalog", "logical_plan"})
+
+    async def test_relationship_route_serializes_graph_binding_result(self) -> None:
+        runtime, invoker, context = self.harness.invocation(AgentMode.PLAN)
+        relation = self.harness.catalog.relations[0]
+        amount = next(column for column in relation.columns if column.name == "amount")
+        graph_binding = SemanticGraphBindingRecord(
+            binding_id=self.harness.binding_id,
+            tenant_id=self.harness.tenant_id,
+            source_id=self.harness.source_id,
+            source_snapshot_version=self.harness.source_version,
+            schema_fingerprint=self.harness.schema_fingerprint,
+            domain_id="dataset-orders",
+            version=self.harness.binding_version,
+            status=SemanticBindingStatus.ACTIVE,
+            graph=ActivatedRelationshipGraph(
+                graph_id="orders-graph",
+                revision=1,
+                nodes=(
+                    RelationshipGraphNode(
+                        node_id="orders",
+                        relation_id=relation.relation_id,
+                        role_name="orders",
+                        logical_entity="Orders",
+                    ),
+                ),
+                edges=(),
+                components=(),
+            ),
+            mappings=(
+                SemanticGraphFieldMapping(
+                    logical_ref="dataset.orders.amount",
+                    node_id="orders",
+                    column_id=amount.column_id,
+                ),
+            ),
+            validation_report_digest="sha256:test-report",
+        )
+        graph_runtime = replace(runtime, binding=graph_binding)
+        graph_context = replace(context, runtime_resources=graph_runtime)
+
+        result = await invoke(
+            invoker,
+            graph_context,
+            call_id="relationship-route-graph",
+            tool_name="relationship.route",
+            input_data=RelationshipRouteInput(logical_refs=("dataset.orders.amount",)),
+        )
+
+        self.assertEqual(result.status, "success")
+        assert result.typed_data is not None
+        self.assertEqual(result.typed_data.summary, "Resolved 0 relationship steps")
+        preview = result.typed_data.safe_preview
+        self.assertIsInstance(preview, dict)
+        self.assertEqual(preview["root_node_id"], "orders")
 
 
 if __name__ == "__main__":

@@ -47,7 +47,8 @@ class AnalysisEvaluator:
         completed = tuple(
             step.step_id for step in plan.steps if step.status == "completed"
         )
-        deterministic = self._deterministic_decision(
+        deterministic = self._pre_model_decision(
+            plan=plan,
             authority=authority,
             run_id=run_id,
             observations=observations,
@@ -57,6 +58,9 @@ class AnalysisEvaluator:
             deterministic_contradictions=deterministic_contradictions,
             budget_exhausted=budget_exhausted,
             completed_step_ids=completed,
+            required_step_ids=tuple(
+                step.step_id for step in plan.steps if step.status != "skipped"
+            ),
         )
         if deterministic is not None:
             return deterministic
@@ -113,6 +117,90 @@ class AnalysisEvaluator:
             validator=validate,
         )
 
+    def requires_model_call(
+        self,
+        *,
+        run_id: str,
+        plan: AnalysisPlan,
+        authority: DatasetAuthority,
+        observations: Sequence[AgentObservation],
+        artifacts: Sequence[AgentArtifactRef],
+        evidence: Sequence[EvidenceRef],
+        required_evidence_keys: Sequence[str] = (),
+        deterministic_contradictions: Sequence[str] = (),
+        budget_exhausted: bool = False,
+        **_: object,
+    ) -> bool:
+        required_keys = tuple(dict.fromkeys(required_evidence_keys))
+        completed = tuple(
+            step.step_id for step in plan.steps if step.status == "completed"
+        )
+        return self._pre_model_decision(
+            plan=plan,
+            authority=authority,
+            run_id=run_id,
+            observations=observations,
+            artifacts=artifacts,
+            evidence=evidence,
+            required_evidence_keys=required_keys,
+            deterministic_contradictions=deterministic_contradictions,
+            budget_exhausted=budget_exhausted,
+            completed_step_ids=completed,
+            required_step_ids=tuple(
+                step.step_id for step in plan.steps if step.status != "skipped"
+            ),
+        ) is None
+
+    @classmethod
+    def _pre_model_decision(
+        cls,
+        *,
+        plan: AnalysisPlan,
+        authority: DatasetAuthority,
+        run_id: str,
+        observations: Sequence[AgentObservation],
+        artifacts: Sequence[AgentArtifactRef],
+        evidence: Sequence[EvidenceRef],
+        required_evidence_keys: Sequence[str],
+        deterministic_contradictions: Sequence[str],
+        budget_exhausted: bool,
+        completed_step_ids: tuple[str, ...],
+        required_step_ids: tuple[str, ...],
+    ) -> EvaluationDecision | None:
+        deterministic = cls._deterministic_decision(
+            authority=authority,
+            run_id=run_id,
+            observations=observations,
+            artifacts=artifacts,
+            evidence=evidence,
+            required_evidence_keys=required_evidence_keys,
+            deterministic_contradictions=deterministic_contradictions,
+            budget_exhausted=budget_exhausted,
+            completed_step_ids=completed_step_ids,
+            required_step_ids=required_step_ids,
+        )
+        if deterministic is not None:
+            return deterministic
+        if observations and not evidence:
+            incomplete = any(
+                step.status not in {"completed", "skipped"}
+                for step in plan.steps
+            )
+            return EvaluationDecision(
+                decision="continue",
+                evidence_sufficient=False,
+                completed_step_ids=completed_step_ids,
+                missing_evidence=tuple(required_evidence_keys),
+                contradictions=(),
+                rationale_summary=(
+                    "The latest governed tool succeeded and the finite plan still "
+                    "has executable steps."
+                    if incomplete
+                    else "The governed result still requires evidence binding."
+                ),
+            )
+        return None
+
     @staticmethod
     def _deterministic_decision(
         *,
@@ -125,6 +213,7 @@ class AnalysisEvaluator:
         deterministic_contradictions: Sequence[str],
         budget_exhausted: bool,
         completed_step_ids: tuple[str, ...],
+        required_step_ids: tuple[str, ...],
     ) -> EvaluationDecision | None:
         evidence_claims = {item.claim_key for item in evidence}
         missing = tuple(
@@ -220,6 +309,21 @@ class AnalysisEvaluator:
                 missing_evidence=missing or ("finite numeric result",),
                 contradictions=("non_finite_result",),
                 rationale_summary="The latest result contains a non-finite number.",
+            )
+        if (
+            evidence
+            and not missing
+            and set(required_step_ids).issubset(set(completed_step_ids))
+        ):
+            return EvaluationDecision(
+                decision="finish",
+                evidence_sufficient=True,
+                completed_step_ids=completed_step_ids,
+                missing_evidence=(),
+                contradictions=(),
+                rationale_summary=(
+                    "All finite plan steps completed with authority-matched evidence."
+                ),
             )
         return None
 

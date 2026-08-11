@@ -29,6 +29,31 @@
   --focus: #2563eb;
 }
 
+.answer-limitations {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.answer-limitations strong {
+  color: var(--ink);
+}
+
+.answer-limitations ul,
+.evidence-limitations {
+  margin: 7px 0 0;
+  padding-left: 18px;
+}
+
+.answer-limitations li + li,
+.evidence-limitations li + li {
+  margin-top: 4px;
+}
+
 /* Native analysis Agent run surface. Kept isolated from relationship editor styles. */
 .agent-run-panel {
   width: min(760px, calc(100% - 32px));
@@ -755,7 +780,8 @@ p {
 }
 
 .relationship-edge-row {
-  grid-template-columns: auto minmax(160px, 1fr) auto auto;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  padding: 9px 10px;
 }
 
 .relationship-edge-row.disabled {
@@ -812,6 +838,111 @@ p {
   background: var(--surface-soft);
   font-size: 8px !important;
   font-weight: 750;
+}
+
+.relationship-edge-source.pending {
+  color: #86540a !important;
+  background: var(--amber-soft);
+}
+
+.relationship-edge-source.accepted {
+  color: #087358 !important;
+  background: var(--green-soft);
+}
+
+.relationship-edge-source.rejected {
+  color: var(--danger) !important;
+  background: var(--danger-soft);
+}
+
+.relationship-edge-row > .relationship-row-actions {
+  grid-column: 2 / -1;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.relationship-cardinality-control {
+  position: relative;
+  min-width: 164px;
+  min-height: 32px;
+  display: inline-grid;
+  grid-template-columns: auto minmax(92px, 1fr);
+  align-items: center;
+  gap: 7px;
+  padding-left: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.relationship-cardinality-control > span {
+  display: inline !important;
+  margin: 0 !important;
+  overflow: visible !important;
+  color: var(--muted) !important;
+  font-size: 8px !important;
+  font-weight: 700;
+  white-space: nowrap !important;
+}
+
+.relationship-cardinality-control select {
+  width: 100%;
+  height: 30px;
+  padding: 0 27px 0 8px;
+  appearance: none;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0 7px 7px 0;
+  color: var(--ink);
+  background: transparent;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.relationship-cardinality-control:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.1);
+}
+
+.relationship-cardinality-control select:focus-visible {
+  outline: 0;
+}
+
+.relationship-cardinality-control > svg {
+  position: absolute;
+  right: 8px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.relationship-review-button {
+  min-height: 30px;
+  padding-inline: 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.relationship-review-button.accept {
+  color: #087358;
+}
+
+.relationship-review-button.accept:hover:not(:disabled) {
+  border-color: #a5dccd;
+  color: #087358;
+  background: var(--green-soft);
+}
+
+.relationship-review-button.reject {
+  color: var(--muted);
+}
+
+.relationship-review-button.reject:hover:not(:disabled) {
+  border-color: #efb5ae;
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .relationship-form-grid {

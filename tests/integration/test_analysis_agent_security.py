@@ -228,7 +228,10 @@ class AnalysisAgentSecurityTests(unittest.IsolatedAsyncioTestCase):
                 input_data=QueryCompileInput(plan=malicious_plan),
             )
             self.assertEqual(denied.structured_error.code, ToolErrorCode.PROVIDER_ERROR)
-            self.assertEqual(denied.structured_error.message, "tool provider failed")
+            self.assertRegex(
+                denied.structured_error.message,
+                r"^tool provider failed \(diagnostic_id=[a-f0-9]{16}\)$",
+            )
             self.assertNotIn("DROP TABLE", denied.structured_error.message)
         finally:
             harness.close()

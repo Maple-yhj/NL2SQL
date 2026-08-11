@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from collections.abc import Awaitable, Callable
+import re
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
 from data_agent.analysis_agent.artifacts import SQLiteArtifactStore
 from data_agent.dataset_query import (
+    DatasetLogicalPlanner,
+    DatasetPlanStatus,
     DatasetQueryCompiler,
     DatasetQueryExecutor,
     DatasetQueryPlan,
@@ -30,6 +33,7 @@ from data_agent.runtime.models import (
     PrincipalContext,
 )
 from data_agent.tools import ToolInvoker
+from data_agent.tools.models import ToolSpec
 from data_agent.tools.providers.dataset import (
     DatasetCredentialBroker,
     DatasetToolRuntime,
@@ -49,10 +53,17 @@ from .checkpoints import (
 from .evaluator import AnalysisEvaluator
 from .graph import build_analysis_agent_graph, build_dataset_version_pins
 from .models import (
+    AgentAction,
     AgentContextSnapshot,
+    AgentInputReason,
+    AgentInputRequest,
     AgentRunBudget,
     AgentStatus,
+    AnalysisGoal,
+    AnalysisPlan,
+    AnalysisStep,
     DatasetAuthority,
+    PlannerDecision,
     stable_digest,
 )
 from .nodes import AnalysisGraphContext, DatasetAgentToolInvoker
@@ -84,6 +95,430 @@ async def _no_conversation_summary(
 ) -> str | None:
     del request, principal
     return None
+
+
+class _DatasetNextActionResolver:
+    """Translate a high-level Agent plan into schema-valid dataset tool actions."""
+
+    def __init__(self, *, model_client: object, binding: object, catalog: object) -> None:
+        self._logical_planner = DatasetLogicalPlanner(model_client)  # type: ignore[arg-type]
+        self._binding = binding
+        self._catalog = catalog
+        self._query_plan: DatasetQueryPlan | None = None
+
+    def requires_model_call(self, *, state: object) -> bool:
+        if not isinstance(state, dict):
+            return False
+        if state.get("replan_requested"):
+            plan_value = state.get("plan")
+            goal_value = state.get("goal")
+            if plan_value is not None and goal_value is not None:
+                plan = AnalysisPlan.model_validate(plan_value)
+                goal = AnalysisGoal.model_validate(goal_value)
+                if (
+                    plan.plan_id.startswith("metric-clarification-")
+                    and "Clarification response:" in goal.contextualized_question
+                ):
+                    return False
+        observations = tuple(state.get("observations", ()))
+        if not observations or observations[-1].status != "succeeded":
+            return False
+        plan = AnalysisPlan.model_validate(state["plan"])
+        completed = {
+            step.step_id
+            for step in plan.steps
+            if step.status in {"completed", "skipped"}
+        }
+        step = next(
+            (
+                item
+                for item in plan.steps
+                if item.status == "pending"
+                and set(item.depends_on).issubset(completed)
+            ),
+            None,
+        )
+        if step is not None:
+            objective = step.objective.casefold()
+            successful_tools = {
+                item.tool_name for item in observations if item.status == "succeeded"
+            }
+            if "catalog" in objective and "catalog.inspect" not in successful_tools:
+                return False
+            if (
+                any(token in objective for token in ("semantic", "binding", "logical field"))
+                and "semantic.inspect" not in successful_tools
+            ):
+                return False
+        has_prepared = any(
+            item.kind.value == "prepared_query"
+            for item in state.get("artifact_refs", ())
+        )
+        return not has_prepared and self._query_plan is None
+
+    async def __call__(
+        self,
+        *,
+        state,
+        allowed_tools: Sequence[ToolSpec],
+    ) -> PlannerDecision | None:
+        plan = AnalysisPlan.model_validate(state["plan"])
+        goal = AnalysisGoal.model_validate(state["goal"])
+        authority = DatasetAuthority.model_validate(state["authority"])
+        allowed = {spec.name for spec in allowed_tools}
+        if (
+            state.get("replan_requested")
+            and plan.plan_id.startswith("metric-clarification-")
+            and "Clarification response:" in goal.contextualized_question
+        ):
+            resumed = self._clarified_metric_plan(
+                prior=plan,
+                allowed=allowed,
+                run_id=state["run_id"],
+            )
+            return self._act(
+                resumed,
+                resumed.steps[0],
+                "semantic.inspect",
+                {},
+            )
+
+        observations = tuple(state.get("observations", ()))
+        if not observations or observations[-1].status != "succeeded":
+            return None
+        completed = {
+            step.step_id
+            for step in plan.steps
+            if step.status in {"completed", "skipped"}
+        }
+        step = next(
+            (
+                item
+                for item in plan.steps
+                if item.status == "pending"
+                and set(item.depends_on).issubset(completed)
+            ),
+            None,
+        )
+        successful_tools = {
+            item.tool_name for item in observations if item.status == "succeeded"
+        }
+        objective = step.objective.casefold() if step is not None else ""
+
+        if (
+            step is not None
+            and "catalog" in objective
+            and "catalog.inspect" in allowed
+            and "catalog.inspect" not in successful_tools
+        ):
+            return self._act(plan, step, "catalog.inspect", {})
+        if (
+            step is not None
+            and any(token in objective for token in ("semantic", "binding", "logical field"))
+            and "semantic.inspect" in allowed
+            and "semantic.inspect" not in successful_tools
+        ):
+            return self._act(plan, step, "semantic.inspect", {})
+
+        prepared = next(
+            (
+                item
+                for item in state.get("artifact_refs", ())
+                if item.kind.value == "prepared_query"
+            ),
+            None,
+        )
+        result = next(
+            (
+                item
+                for item in reversed(tuple(state.get("artifact_refs", ())))
+                if item.kind.value in {"query_preview", "query_result"}
+            ),
+            None,
+        )
+
+        if prepared is None:
+            query_plan = await self._plan_query(goal)
+            if query_plan.status != DatasetPlanStatus.READY:
+                prompt = query_plan.clarification_question or (
+                    "Please clarify the requested dataset calculation."
+                )
+                return PlannerDecision(
+                    plan=plan,
+                    decision="clarify",
+                    clarification=AgentInputRequest(
+                        interrupt_id=(
+                            "query-clarification-"
+                            + stable_digest({"run_id": state["run_id"], "prompt": prompt})[:16]
+                        ),
+                        reason=AgentInputReason.CLARIFICATION,
+                        prompt=prompt,
+                        allow_free_text=True,
+                    ),
+                    rationale_summary="The logical query needs explicit user clarification.",
+                )
+            refs = _dataset_plan_refs(query_plan)
+            if (
+                step is not None
+                and any(token in objective for token in ("relationship", "route", "join path"))
+                and "relationship.route" in allowed
+                and "relationship.route" not in successful_tools
+            ):
+                return self._act(
+                    plan,
+                    step,
+                    "relationship.route",
+                    {"logical_refs": list(refs or ("analysis_result",))},
+                )
+            if "query.compile" in allowed and step is not None:
+                return self._act(
+                    plan,
+                    step,
+                    "query.compile",
+                    {"plan": query_plan.model_dump(mode="json")},
+                )
+
+        if prepared is not None and result is None:
+            run_tool = (
+                "query.execute"
+                if "query.execute" in allowed
+                else "query.preview"
+                if "query.preview" in allowed
+                else None
+            )
+            if run_tool is not None and step is not None:
+                return self._act(
+                    plan,
+                    step,
+                    run_tool,
+                    {"artifact_id": prepared.artifact_id, "preview_rows": 100},
+                )
+            if authority.mode.value == "plan":
+                return self._finish_plan_mode(plan, goal=goal)
+            return self._fail_missing_runtime_tool(plan, "query execution")
+
+        if result is not None and not state.get("evidence_refs"):
+            if "evidence.collect" in allowed:
+                if step is None:
+                    plan, step = self._append_evidence_step(plan)
+                refs = _dataset_plan_refs(self._query_plan) if self._query_plan else ()
+                if not refs and observations[-1].safe_preview:
+                    refs = tuple(observations[-1].safe_preview[0])
+                return self._act(
+                    plan,
+                    step,
+                    "evidence.collect",
+                    {
+                        "artifact_id": result.artifact_id,
+                        "claim_key": _dataset_claim_key(self._query_plan),
+                        "field_refs": list(refs or ("analysis_result",)),
+                    },
+                )
+            return self._fail_missing_runtime_tool(plan, "evidence collection")
+        return None
+
+    async def _plan_query(self, goal: AnalysisGoal) -> DatasetQueryPlan:
+        if self._query_plan is None:
+            result = await self._logical_planner.build_plan(
+                question=goal.contextualized_question,
+                binding=self._binding,  # type: ignore[arg-type]
+                catalog=self._catalog,  # type: ignore[arg-type]
+            )
+            self._query_plan = result.plan
+        return self._query_plan
+
+    @staticmethod
+    def _clarified_metric_plan(
+        *,
+        prior: AnalysisPlan,
+        allowed: set[str],
+        run_id: str,
+    ) -> AnalysisPlan:
+        steps = [
+            AnalysisStep(
+                step_id="inspect_semantic",
+                objective="Inspect the active semantic binding for the clarified metric",
+                status="pending",
+                expected_evidence=("clarified semantic fields",),
+            ),
+            AnalysisStep(
+                step_id="compile_query",
+                objective="Compile a governed query for the clarified metric",
+                status="pending",
+                depends_on=("inspect_semantic",),
+                expected_evidence=("prepared query artifact",),
+            ),
+        ]
+        run_tool = (
+            "query.execute"
+            if "query.execute" in allowed
+            else "query.preview"
+            if "query.preview" in allowed
+            else None
+        )
+        if run_tool is not None:
+            steps.extend(
+                (
+                    AnalysisStep(
+                        step_id="run_query",
+                        objective=(
+                            "Execute the clarified governed query"
+                            if run_tool == "query.execute"
+                            else "Preview the clarified governed query"
+                        ),
+                        status="pending",
+                        depends_on=("compile_query",),
+                        expected_evidence=("governed query result",),
+                    ),
+                    AnalysisStep(
+                        step_id="bind_evidence",
+                        objective="Bind the clarified result to verifiable evidence",
+                        status="pending",
+                        depends_on=("run_query",),
+                        expected_evidence=("verified result evidence",),
+                    ),
+                )
+            )
+        return AnalysisPlan(
+            plan_id="clarified-" + stable_digest({"run_id": run_id})[:20],
+            revision=prior.revision + 1,
+            steps=tuple(steps),
+            completion_criteria=(
+                "Answer the clarified question with governed evidence",
+            ),
+        )
+
+    @staticmethod
+    def _act(
+        plan: AnalysisPlan,
+        step,
+        tool_name: str,
+        arguments: dict[str, object],
+    ) -> PlannerDecision:
+        action_id = "action-" + stable_digest(
+            {
+                "plan_id": plan.plan_id,
+                "revision": plan.revision,
+                "step_id": step.step_id,
+                "tool": tool_name,
+                "arguments": arguments,
+            }
+        )[:24]
+        return PlannerDecision(
+            plan=plan,
+            decision="act",
+            next_action=AgentAction(
+                action_id=action_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                purpose=step.objective,
+                expected_evidence=step.expected_evidence,
+            ),
+            rationale_summary="Selected a schema-valid governed dataset action.",
+        )
+
+    @staticmethod
+    def _finish_plan_mode(
+        plan: AnalysisPlan,
+        *,
+        goal: AnalysisGoal,
+    ) -> PlannerDecision:
+        completed = plan.model_copy(
+            update={
+                "revision": plan.revision + 1,
+                "steps": tuple(
+                    step.model_copy(update={"status": "skipped"})
+                    if step.status == "pending"
+                    else step
+                    for step in plan.steps
+                ),
+            }
+        )
+        chinese = bool(re.search(r"[\u3400-\u9fff]", goal.contextualized_question))
+        return PlannerDecision(
+            plan=completed,
+            decision="finish",
+            completion_summary=(
+                "受治理查询计划已就绪；规划模式未执行或预览任何数据。"
+                if chinese
+                else (
+                    "The governed query plan is ready; plan mode did not execute "
+                    "or preview any data."
+                )
+            ),
+            rationale_summary=(
+                "规划模式在受治理查询编译完成后停止，未读取数据。"
+                if chinese
+                else "Plan mode stops after compiling the governed query without reading data."
+            ),
+        )
+
+    @staticmethod
+    def _append_evidence_step(
+        plan: AnalysisPlan,
+    ) -> tuple[AnalysisPlan, AnalysisStep]:
+        step_ids = {step.step_id for step in plan.steps}
+        base_id = "bind_evidence"
+        step_id = base_id
+        suffix = 2
+        while step_id in step_ids:
+            step_id = f"{base_id}_{suffix}"
+            suffix += 1
+        dependencies = tuple(
+            step.step_id for step in plan.steps if step.status != "skipped"
+        )
+        evidence_step = AnalysisStep(
+            step_id=step_id,
+            objective="Bind the governed query result to verifiable evidence",
+            status="pending",
+            depends_on=dependencies,
+            expected_evidence=("validated result evidence",),
+        )
+        revised = plan.model_copy(
+            update={
+                "revision": plan.revision + 1,
+                "steps": (*plan.steps, evidence_step),
+                "completion_criteria": tuple(
+                    dict.fromkeys(
+                        (*plan.completion_criteria, "Every result claim has validated evidence")
+                    )
+                ),
+            }
+        )
+        return revised, evidence_step
+
+    @staticmethod
+    def _fail_missing_runtime_tool(
+        plan: AnalysisPlan,
+        capability: str,
+    ) -> PlannerDecision:
+        return PlannerDecision(
+            plan=plan,
+            decision="fail",
+            rationale_summary=f"The active runtime does not allow required {capability}.",
+        )
+
+
+def _dataset_plan_refs(plan: DatasetQueryPlan | None) -> tuple[str, ...]:
+    if plan is None or plan.status != DatasetPlanStatus.READY:
+        return ()
+    aliases = {item.alias for item in plan.aggregations}
+    refs = dict.fromkeys(
+        (
+            *plan.select,
+            *(item.ref for item in plan.aggregations),
+            *plan.group_by,
+            *(item.ref for item in plan.filters),
+            *(item.ref for item in plan.order_by),
+        )
+    )
+    return tuple(ref for ref in refs if ref not in aliases)
+
+
+def _dataset_claim_key(plan: DatasetQueryPlan | None) -> str:
+    if plan is not None and plan.aggregations:
+        return plan.aggregations[0].alias
+    return "analysis_result"
 
 
 class DatasetAnalysisRunResolver:
@@ -244,6 +679,11 @@ class DatasetAnalysisRunResolver:
             "tool_specs": registry.specs(),
             "version_pins": pins,
             "budget_limits": self._budget_limits,
+            "next_action_resolver": _DatasetNextActionResolver(
+                model_client=self._model_client,
+                binding=binding,
+                catalog=catalog,
+            ),
         }
         if self._response_builder is not None:
             response_builder = self._response_builder
@@ -259,12 +699,27 @@ class DatasetAnalysisRunResolver:
         context_values["response_builder"] = response_builder
         if self._persist_turn is not None:
             async def persist_turn(state):
-                completed_state = dict(state)
-                completed_state["status"] = AgentStatus.COMPLETED
-                response = response_builder(completed_state, True)
+                terminal_state = dict(state)
+                error = terminal_state.get("error")
+                try:
+                    status = AgentStatus(terminal_state.get("status", AgentStatus.RUNNING))
+                except (TypeError, ValueError):
+                    status = AgentStatus.FAILED if error is not None else AgentStatus.COMPLETED
+                ok = error is None and status not in {
+                    AgentStatus.FAILED,
+                    AgentStatus.CANCELLED,
+                }
+                if ok:
+                    status = AgentStatus.COMPLETED
+                elif getattr(error, "code", None) == ErrorCode.CANCELLED:
+                    status = AgentStatus.CANCELLED
+                else:
+                    status = AgentStatus.FAILED
+                terminal_state["status"] = status
+                response = response_builder(terminal_state, ok)
                 if inspect.isawaitable(response):
                     response = await response
-                persisted = self._persist_turn(completed_state, response)
+                persisted = self._persist_turn(terminal_state, response)
                 if inspect.isawaitable(persisted):
                     await persisted
 
@@ -443,6 +898,15 @@ async def _build_dataset_response(
         )
     artifact_refs = tuple(state.get("artifact_refs", ()))
     evidence_refs = tuple(state.get("evidence_refs", ()))
+    message_type = (
+        "error"
+        if not ok
+        else "chart"
+        if chart is not None and rows
+        else "table"
+        if rows
+        else "analysis"
+    )
     return AgentResponse(
         ok=ok,
         question=state["request"].question,
@@ -460,7 +924,7 @@ async def _build_dataset_response(
             else None
         ),
         sql=prepared.logical_sql if prepared is not None else None,
-        message_type="analysis" if ok else "error",
+        message_type=message_type,
         rows=rows,
         chart=chart,
         answer=draft.answer if ok and draft is not None else None,

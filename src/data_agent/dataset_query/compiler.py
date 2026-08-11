@@ -390,6 +390,7 @@ class DatasetQueryCompiler:
                 physical_column=columns[mapping.column_id],
             )
             for mapping in binding.mappings
+            if mapping.node_id in route_node_ids
         ]
         mapped_nodes = {mapping.physical_relation for mapping in synthetic_mappings}
         for node_id in route_node_ids:

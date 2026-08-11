@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+import logging
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -26,14 +28,77 @@ from data_agent.runtime.events import (
 from data_agent.runtime.models import AgentRequest, AgentResponse, PrincipalContext
 
 from .graph import CompiledAnalysisGraph
-from .models import AgentStatus, DatasetAuthority
+from .models import AgentStatus, AnalysisPlan, DatasetAuthority, stable_digest
 from .nodes import AnalysisGraphContext
+
+
+logger = logging.getLogger(__name__)
+
+
+def _terminal_state(
+    state: dict[str, object],
+    *,
+    status: AgentStatus,
+    error: AgentError,
+) -> dict[str, object]:
+    terminal = dict(state)
+    terminal.update(
+        {
+            "status": status,
+            "error": error,
+            "waiting_request": None,
+        }
+    )
+    value = terminal.get("plan")
+    if value is not None:
+        try:
+            plan = AnalysisPlan.model_validate(value)
+        except (TypeError, ValueError):
+            plan = None
+        if plan is not None:
+            terminal["plan"] = plan.model_copy(
+                update={
+                    "steps": tuple(
+                        step.model_copy(update={"status": "blocked"})
+                        if step.status == "running"
+                        else step
+                        for step in plan.steps
+                    )
+                }
+            )
+    return terminal
+
+
+async def _persist_terminal_best_effort(
+    context: AnalysisGraphContext,
+    state: dict[str, object],
+) -> None:
+    try:
+        persisted = context.persist_turn(state)
+        if inspect.isawaitable(persisted):
+            await persisted
+    except Exception as exc:
+        diagnostic_id = stable_digest(
+            {
+                "operation": "persist_terminal",
+                "error_type": f"{type(exc).__module__}.{type(exc).__qualname__}",
+                "run_id": str(state.get("run_id", "unknown")),
+            }
+        )[:16]
+        logger.error(
+            "analysis terminal persistence failed run_id=%s error_type=%s "
+            "diagnostic_id=%s",
+            state.get("run_id", "unknown"),
+            f"{type(exc).__module__}.{type(exc).__qualname__}",
+            diagnostic_id,
+        )
 
 
 class AgentResumeRequest(PublicContractModel):
     interrupt_id: NonBlankText
     decision: Literal["respond"] = "respond"
     message: NonBlankText = Field(max_length=4000)
+    selected_choice: NonBlankText | None = Field(default=None, max_length=4000)
     edited_action: None = None
 
 
@@ -197,6 +262,11 @@ class DataAnalysisAgentRuntime:
                 resume={
                     "interrupt_id": response.interrupt_id,
                     "message": response.message,
+                    **(
+                        {"selected_choice": response.selected_choice}
+                        if response.selected_choice is not None
+                        else {}
+                    ),
                 }
             )
             async for event in self._stream(
@@ -219,7 +289,7 @@ class DataAnalysisAgentRuntime:
     ) -> AgentEvent:
         self._require_open()
         principal = PrincipalContext.model_validate(principal)
-        state, request, _, config = await self._load_resumable_state(
+        state, request, authority, config = await self._load_resumable_state(
             run_id=run_id,
             principal=principal,
             interrupt_id=None,
@@ -231,17 +301,48 @@ class DataAnalysisAgentRuntime:
                     message="only a waiting analysis run can be cancelled",
                 )
             )
+        error = AgentError(
+            code=ErrorCode.CANCELLED,
+            message="analysis run was cancelled while waiting for input",
+        )
+        terminal = _terminal_state(
+            state,
+            status=AgentStatus.CANCELLED,
+            error=error,
+        )
         await self._graph.compiled_graph.aupdate_state(
             config,
             {
-                "status": AgentStatus.CANCELLED,
-                "error": AgentError(
-                    code=ErrorCode.CANCELLED,
-                    message="analysis run was cancelled while waiting for input",
-                ),
+                "status": terminal["status"],
+                "error": terminal["error"],
                 "waiting_request": None,
+                **({"plan": terminal["plan"]} if terminal.get("plan") is not None else {}),
             },
         )
+        try:
+            resolved = await self._resolver.resolve(
+                request=request,
+                principal=principal,
+                run_id=run_id,
+            )
+            self._validate_resolved(request, principal, resolved)
+            if resolved.authority == authority:
+                await _persist_terminal_best_effort(resolved.graph_context, terminal)
+        except Exception as exc:
+            diagnostic_id = stable_digest(
+                {
+                    "operation": "cancel_waiting.resolve_persistence",
+                    "error_type": f"{type(exc).__module__}.{type(exc).__qualname__}",
+                    "run_id": run_id,
+                }
+            )[:16]
+            logger.error(
+                "waiting cancellation persistence context unavailable run_id=%s "
+                "error_type=%s diagnostic_id=%s",
+                run_id,
+                f"{type(exc).__module__}.{type(exc).__qualname__}",
+                diagnostic_id,
+            )
         return self._failure_event(
             run_id=run_id,
             sequence=start_sequence,
@@ -249,6 +350,79 @@ class DataAnalysisAgentRuntime:
             principal=principal,
             code=ErrorCode.CANCELLED,
             message="analysis run was cancelled while waiting for input",
+        )
+
+    async def cancel_orphaned(
+        self,
+        *,
+        run_id: str,
+        principal: PrincipalContext,
+        start_sequence: int = 0,
+    ) -> AgentEvent:
+        """Cancel a checkpointed run whose owning stream disappeared after restart."""
+
+        self._require_open()
+        principal = PrincipalContext.model_validate(principal)
+        state, request, authority, config = await self._load_checkpoint_state(
+            run_id=run_id,
+            principal=principal,
+        )
+        if AgentStatus(state["status"]) != AgentStatus.RUNNING:
+            raise AnalysisRuntimeError(
+                AgentError(
+                    code=ErrorCode.AGENT_RESUME_CONFLICT,
+                    message="only an orphaned running analysis can be cancelled",
+                )
+            )
+        error = AgentError(
+            code=ErrorCode.CANCELLED,
+            message="analysis run was cancelled after its execution stream ended",
+        )
+        terminal = _terminal_state(
+            state,
+            status=AgentStatus.CANCELLED,
+            error=error,
+        )
+        await self._graph.compiled_graph.aupdate_state(
+            config,
+            {
+                "status": terminal["status"],
+                "error": terminal["error"],
+                "waiting_request": None,
+                **({"plan": terminal["plan"]} if terminal.get("plan") is not None else {}),
+            },
+        )
+        try:
+            resolved = await self._resolver.resolve(
+                request=request,
+                principal=principal,
+                run_id=run_id,
+            )
+            self._validate_resolved(request, principal, resolved)
+            if resolved.authority == authority:
+                await _persist_terminal_best_effort(resolved.graph_context, terminal)
+        except Exception as exc:
+            diagnostic_id = stable_digest(
+                {
+                    "operation": "cancel_orphaned.resolve_persistence",
+                    "error_type": f"{type(exc).__module__}.{type(exc).__qualname__}",
+                    "run_id": run_id,
+                }
+            )[:16]
+            logger.error(
+                "orphaned cancellation persistence context unavailable run_id=%s "
+                "error_type=%s diagnostic_id=%s",
+                run_id,
+                f"{type(exc).__module__}.{type(exc).__qualname__}",
+                diagnostic_id,
+            )
+        return self._failure_event(
+            run_id=run_id,
+            sequence=start_sequence,
+            request=request,
+            principal=principal,
+            code=ErrorCode.CANCELLED,
+            message="analysis run was cancelled after its execution stream ended",
         )
 
     async def state(
@@ -301,20 +475,17 @@ class DataAnalysisAgentRuntime:
                 if event.is_stream_closing:
                     closed = True
         except asyncio.CancelledError:
-            try:
-                await self._graph.compiled_graph.aupdate_state(
-                    config,
-                    {
-                        "status": AgentStatus.CANCELLED,
-                        "error": AgentError(
-                            code=ErrorCode.CANCELLED,
-                            message="analysis run was cancelled",
-                        ),
-                        "waiting_request": None,
-                    },
-                )
-            except Exception:
-                pass
+            error = AgentError(
+                code=ErrorCode.CANCELLED,
+                message="analysis run was cancelled",
+            )
+            terminal = await self._checkpoint_terminal_state(
+                config=config,
+                status=AgentStatus.CANCELLED,
+                error=error,
+            )
+            if terminal is not None:
+                await _persist_terminal_best_effort(context, terminal)
             event = self._failure_event(
                 run_id=run_id,
                 sequence=next_sequence,
@@ -328,6 +499,17 @@ class DataAnalysisAgentRuntime:
             yield event
         except Exception:
             if not closed:
+                error = AgentError(
+                    code=ErrorCode.INTERNAL_ERROR,
+                    message="analysis runtime failed safely",
+                )
+                terminal = await self._checkpoint_terminal_state(
+                    config=config,
+                    status=AgentStatus.FAILED,
+                    error=error,
+                )
+                if terminal is not None:
+                    await _persist_terminal_best_effort(context, terminal)
                 event = self._failure_event(
                     run_id=run_id,
                     sequence=next_sequence,
@@ -340,6 +522,17 @@ class DataAnalysisAgentRuntime:
                 closed = True
                 yield event
         if not closed:
+            error = AgentError(
+                code=ErrorCode.INTERNAL_ERROR,
+                message="analysis runtime ended without a terminal or waiting event",
+            )
+            terminal = await self._checkpoint_terminal_state(
+                config=config,
+                status=AgentStatus.FAILED,
+                error=error,
+            )
+            if terminal is not None:
+                await _persist_terminal_best_effort(context, terminal)
             event = self._failure_event(
                 run_id=run_id,
                 sequence=next_sequence,
@@ -351,6 +544,37 @@ class DataAnalysisAgentRuntime:
             next_sequence += 1
             yield event
         self._next_sequences[run_id] = next_sequence
+
+    async def _checkpoint_terminal_state(
+        self,
+        *,
+        config: dict[str, object],
+        status: AgentStatus,
+        error: AgentError,
+    ) -> dict[str, object] | None:
+        terminal: dict[str, object] | None = None
+        try:
+            snapshot = await self._graph.compiled_graph.aget_state(config)
+            if snapshot.values:
+                terminal = _terminal_state(
+                    dict(snapshot.values),
+                    status=status,
+                    error=error,
+                )
+        except Exception:
+            terminal = None
+        update: dict[str, object] = {
+            "status": status,
+            "error": error,
+            "waiting_request": None,
+        }
+        if terminal is not None and terminal.get("plan") is not None:
+            update["plan"] = terminal["plan"]
+        try:
+            await self._graph.compiled_graph.aupdate_state(config, update)
+        except Exception:
+            return terminal
+        return terminal
 
     async def _load_resumable_state(
         self,

@@ -242,8 +242,16 @@ class AnalysisAgentResumeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await composition.close()
 
     async def test_cancelled_and_completed_runs_cannot_resume(self) -> None:
+        persisted: list[dict[str, object]] = []
+
+        async def persist_turn(state) -> None:
+            persisted.append(dict(state))
+
         waiting = await build_analysis_runtime_from_resolver(
-            resolver=TestAnalysisResolver([clarification_decision()]),
+            resolver=TestAnalysisResolver(
+                [clarification_decision()],
+                persist_turn=persist_turn,
+            ),
             checkpointer_factory=InMemoryCheckpointerFactory(),
         )
         try:
@@ -264,6 +272,11 @@ class AnalysisAgentResumeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 principal=PRINCIPAL,
             )
             self.assertEqual(AgentStatus(state["status"]), AgentStatus.CANCELLED)
+            self.assertEqual(len(persisted), 1)
+            self.assertEqual(
+                AgentStatus(persisted[0]["status"]),
+                AgentStatus.CANCELLED,
+            )
             with self.assertRaises(AnalysisRuntimeError) as cancelled:
                 await collect(
                     waiting.runtime.resume(
@@ -278,6 +291,48 @@ class AnalysisAgentResumeIntegrationTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             await waiting.close()
+
+        orphaned_persisted: list[dict[str, object]] = []
+
+        async def persist_orphaned(state) -> None:
+            orphaned_persisted.append(dict(state))
+
+        orphaned = await build_analysis_runtime_from_resolver(
+            resolver=TestAnalysisResolver(
+                [clarification_decision()],
+                persist_turn=persist_orphaned,
+            ),
+            checkpointer_factory=InMemoryCheckpointerFactory(),
+        )
+        try:
+            await collect(
+                orphaned.runtime.run(
+                    analysis_request(), PRINCIPAL, run_id="run-cancel-orphaned"
+                )
+            )
+            await orphaned.runtime._graph.compiled_graph.aupdate_state(  # type: ignore[attr-defined]
+                {"configurable": {"thread_id": "run-cancel-orphaned"}},
+                {"status": AgentStatus.RUNNING, "waiting_request": None},
+            )
+            cancelled_event = await orphaned.runtime.cancel_orphaned(
+                run_id="run-cancel-orphaned",
+                principal=PRINCIPAL,
+                start_sequence=7,
+            )
+            self.assertEqual(cancelled_event.sequence, 7)
+            self.assertEqual(cancelled_event.data.error_code, ErrorCode.CANCELLED)
+            state = await orphaned.runtime.state(
+                "run-cancel-orphaned",
+                principal=PRINCIPAL,
+            )
+            self.assertEqual(AgentStatus(state["status"]), AgentStatus.CANCELLED)
+            self.assertEqual(len(orphaned_persisted), 1)
+            self.assertEqual(
+                AgentStatus(orphaned_persisted[0]["status"]),
+                AgentStatus.CANCELLED,
+            )
+        finally:
+            await orphaned.close()
 
         completed = await build_analysis_runtime_from_resolver(
             resolver=TestAnalysisResolver([finish_decision(analysis_plan("pending"))]),

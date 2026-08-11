@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -71,13 +72,26 @@ from .models import (
     stable_digest,
 )
 from .planner import AnalysisPlanner
+from .prompts import bounded_text
 from .routing import AgentRoute
 from .state import AnalysisAgentState
 from .synthesizer import AnalysisSynthesizer
 
 
+logger = logging.getLogger(__name__)
+
+
 class PlannerPort(Protocol):
     async def decide(self, **kwargs: object) -> PlannerDecision: ...
+
+
+class NextActionResolver(Protocol):
+    async def __call__(
+        self,
+        *,
+        state: AnalysisAgentState,
+        allowed_tools: Sequence[ToolSpec],
+    ) -> PlannerDecision | None: ...
 
 
 class EvaluatorPort(Protocol):
@@ -221,6 +235,7 @@ class AnalysisGraphContext:
     cancelled: Callable[[], bool] = _not_cancelled
     persist_turn: PersistenceHook = _no_persistence
     response_builder: ResponseBuilder | None = None
+    next_action_resolver: NextActionResolver | None = None
 
     def specs_by_name(self) -> Mapping[str, ToolSpec]:
         return {spec.name: spec for spec in self.tool_specs}
@@ -248,7 +263,12 @@ def _entry_guard(
     )
 
 
-def _failure(exc: BaseException) -> dict[str, object]:
+def _failure(
+    exc: BaseException,
+    *,
+    node: str,
+    run_id: str | None,
+) -> dict[str, object]:
     if isinstance(exc, AgentGuardError):
         error = AgentError(
             code=exc.code,
@@ -256,9 +276,28 @@ def _failure(exc: BaseException) -> dict[str, object]:
             retryable=exc.retryable,
         )
     else:
+        diagnostic_id = stable_digest(
+            {
+                "node": node,
+                "error_type": f"{type(exc).__module__}.{type(exc).__qualname__}",
+                "message": str(exc)[:2000],
+            }
+        )[:16]
+        logger.error(
+            "analysis graph node failed node=%s run_id=%s error_type=%s "
+            "diagnostic_id=%s safe_error=%s",
+            node,
+            run_id or "unknown",
+            f"{type(exc).__module__}.{type(exc).__qualname__}",
+            diagnostic_id,
+            bounded_text(exc, max_chars=1200),
+        )
         error = AgentError(
             code=ErrorCode.INTERNAL_ERROR,
-            message="analysis graph node failed safely",
+            message=(
+                "analysis graph node failed safely "
+                f"(diagnostic_id={diagnostic_id})"
+            ),
             retryable=False,
         )
     return {"error": error, "next_route": AgentRoute.FAIL.value}
@@ -334,7 +373,7 @@ async def initialize_run(
             "next_route": "load_context",
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="initialize_run", run_id=state.get("run_id"))
 
 
 async def load_context(
@@ -372,7 +411,7 @@ async def load_context(
             "next_route": AgentRoute.PLAN_OR_REPLAN.value,
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="load_context", run_id=state.get("run_id"))
 
 
 async def plan_or_replan(
@@ -382,7 +421,7 @@ async def plan_or_replan(
     context = _context(runtime)
     try:
         _entry_guard(state, context)
-        counters = ["agent_steps", "model_calls"]
+        counters = ["agent_steps"]
         if state.get("replan_requested"):
             counters.append("replans")
         budget = consume_budget(state["budget"], context.budget_limits, *counters)
@@ -390,15 +429,35 @@ async def plan_or_replan(
         allowed_specs = tuple(
             spec for spec in context.tool_specs if spec.name in allowed_names
         )
-        decision = await context.planner.decide(
-            goal=state["goal"],
-            context=state["context"],
-            current_plan=state.get("plan"),
-            observations=tuple(state.get("observations", ())),
-            budget_remaining=_budget_remaining(budget, context.budget_limits),
-            allowed_tools=allowed_specs,
-            max_observation_cells=context.budget_limits.max_observation_cells_for_model,
-        )
+        decision = None
+        if (
+            context.next_action_resolver is not None
+            and state.get("plan") is not None
+            and (state.get("observations") or state.get("replan_requested"))
+        ):
+            requires_model_call = getattr(
+                context.next_action_resolver,
+                "requires_model_call",
+                None,
+            )
+            if callable(requires_model_call) and requires_model_call(state=state):
+                budget = consume_budget(budget, context.budget_limits, "model_calls")
+            decision = await context.next_action_resolver(
+                state=state,
+                allowed_tools=allowed_specs,
+            )
+        if decision is None:
+            budget = consume_budget(budget, context.budget_limits, "model_calls")
+            decision = await context.planner.decide(
+                goal=state["goal"],
+                context=state["context"],
+                current_plan=state.get("plan"),
+                observations=tuple(state.get("observations", ())),
+                budget_remaining=_budget_remaining(budget, context.budget_limits),
+                allowed_tools=allowed_specs,
+                max_observation_cells=context.budget_limits.max_observation_cells_for_model,
+                replan_requested=bool(state.get("replan_requested")),
+            )
         plan = decision.plan
         action_step_ids = dict(state.get("action_step_ids", {}))
         step_started: AnalysisStep | None = None
@@ -462,7 +521,7 @@ async def plan_or_replan(
             "next_route": None,
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="plan_or_replan", run_id=state.get("run_id"))
 
 
 async def guard_decision(
@@ -496,7 +555,7 @@ async def guard_decision(
             }
         return {"next_route": route.value}
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="guard_decision", run_id=state.get("run_id"))
 
 
 async def execute_tool(
@@ -560,7 +619,7 @@ async def execute_tool(
             "next_route": "observe_result",
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="execute_tool", run_id=state.get("run_id"))
 
 
 async def observe_result(
@@ -613,7 +672,7 @@ async def observe_result(
             "next_route": "evaluate_progress",
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="observe_result", run_id=state.get("run_id"))
 
 
 async def evaluate_progress(
@@ -623,26 +682,28 @@ async def evaluate_progress(
     context = _context(runtime)
     try:
         _entry_guard(state, context)
-        budget = consume_budget(state["budget"], context.budget_limits, "model_calls")
         required = tuple(
-            dict.fromkeys(
-                expectation
-                for step in state["plan"].steps
-                for expectation in step.expected_evidence
-            )
+            dict.fromkeys(item.claim_key for item in state.get("evidence_refs", ()))
         )
-        decision = await context.evaluator.evaluate(
-            run_id=state["run_id"],
-            plan=state["plan"],
-            authority=state["authority"],
-            observations=tuple(state.get("observations", ())),
-            artifacts=tuple(state.get("artifact_refs", ())),
-            evidence=tuple(state.get("evidence_refs", ())),
-            required_evidence_keys=required,
-            deterministic_contradictions=(),
-            budget_exhausted=False,
-            max_observation_cells=context.budget_limits.max_observation_cells_for_model,
-        )
+        evaluation_kwargs = {
+            "run_id": state["run_id"],
+            "plan": state["plan"],
+            "authority": state["authority"],
+            "observations": tuple(state.get("observations", ())),
+            "artifacts": tuple(state.get("artifact_refs", ())),
+            "evidence": tuple(state.get("evidence_refs", ())),
+            "required_evidence_keys": required,
+            "deterministic_contradictions": (),
+            "budget_exhausted": False,
+            "max_observation_cells": (
+                context.budget_limits.max_observation_cells_for_model
+            ),
+        }
+        budget = state["budget"]
+        requires_model_call = getattr(context.evaluator, "requires_model_call", None)
+        if not callable(requires_model_call) or requires_model_call(**evaluation_kwargs):
+            budget = consume_budget(budget, context.budget_limits, "model_calls")
+        decision = await context.evaluator.evaluate(**evaluation_kwargs)
         route = {
             "continue": AgentRoute.PLAN_OR_REPLAN,
             "replan": AgentRoute.PLAN_OR_REPLAN,
@@ -669,7 +730,7 @@ async def evaluate_progress(
             )
         return update
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="evaluate_progress", run_id=state.get("run_id"))
 
 
 async def request_input(
@@ -707,7 +768,7 @@ async def request_input(
     except GraphInterrupt:
         raise
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="request_input", run_id=state.get("run_id"))
 
 
 async def synthesize_answer(
@@ -756,7 +817,7 @@ async def synthesize_answer(
             "next_route": "validate_answer",
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="synthesize_answer", run_id=state.get("run_id"))
 
 
 async def validate_answer(
@@ -781,7 +842,7 @@ async def validate_answer(
             )
         return {"answer_draft": draft, "next_route": "persist_turn"}
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="validate_answer", run_id=state.get("run_id"))
 
 
 async def persist_turn(
@@ -796,7 +857,7 @@ async def persist_turn(
             await persisted
         return {"next_route": "finalize_run"}
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="persist_turn", run_id=state.get("run_id"))
 
 
 async def finalize_run(
@@ -816,7 +877,7 @@ async def finalize_run(
             "next_route": None,
         }
     except Exception as exc:
-        return _failure(exc)
+        return _failure(exc, node="finalize_run", run_id=state.get("run_id"))
 
 
 async def fail(
@@ -835,11 +896,43 @@ async def fail(
         if error.code == ErrorCode.CANCELLED
         else AgentStatus.FAILED
     )
+    plan = failed_state.get("plan")
+    if plan is not None:
+        failed_state["plan"] = plan.model_copy(
+            update={
+                "steps": tuple(
+                    step.model_copy(update={"status": "blocked"})
+                    if step.status == "running"
+                    else step
+                    for step in plan.steps
+                )
+            }
+        )
+    try:
+        persisted = context.persist_turn(failed_state)
+        if inspect.isawaitable(persisted):
+            await persisted
+    except Exception as exc:
+        diagnostic_id = stable_digest(
+            {
+                "node": "fail.persist_turn",
+                "error_type": f"{type(exc).__module__}.{type(exc).__qualname__}",
+                "run_id": str(state.get("run_id", "unknown")),
+            }
+        )[:16]
+        logger.error(
+            "analysis terminal persistence failed node=fail run_id=%s "
+            "error_type=%s diagnostic_id=%s",
+            state.get("run_id", "unknown"),
+            f"{type(exc).__module__}.{type(exc).__qualname__}",
+            diagnostic_id,
+        )
     response = await _response(context, failed_state, ok=False)
     _emit(runtime, RunFailedPayload(error_code=error.code))
     return {
         "error": error,
         "status": failed_state["status"],
+        "plan": failed_state.get("plan"),
         "final_response": response,
         "next_route": None,
     }
@@ -1016,6 +1109,9 @@ def _public_tool_error(code: ToolErrorCode) -> ErrorCode:
         ToolErrorCode.TOOL_NOT_ALLOWED: ErrorCode.AGENT_ACTION_NOT_ALLOWED,
         ToolErrorCode.BUDGET_EXCEEDED: ErrorCode.AGENT_BUDGET_EXCEEDED,
         ToolErrorCode.LOGICAL_PLAN_INVALID: ErrorCode.LOGICAL_PLAN_INVALID,
+        ToolErrorCode.GRAPH_NO_PATH: ErrorCode.GRAPH_NO_PATH,
+        ToolErrorCode.GRAPH_AMBIGUOUS_PATH: ErrorCode.GRAPH_AMBIGUOUS_PATH,
+        ToolErrorCode.GRAPH_UNSAFE_FANOUT: ErrorCode.GRAPH_UNSAFE_FANOUT,
         ToolErrorCode.BINDING_STALE: ErrorCode.BINDING_STALE,
         ToolErrorCode.SQL_COMPILE_ERROR: ErrorCode.SQL_COMPILE_ERROR,
         ToolErrorCode.ACCESS_DENIED: ErrorCode.ACCESS_DENIED,

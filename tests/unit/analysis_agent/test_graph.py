@@ -182,15 +182,24 @@ class NativeAnalysisGraphTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(output["budget"].tool_calls, 2)
 
     async def test_model_failure_and_mode_bypass_end_safely(self) -> None:
+        persisted: list[dict[str, object]] = []
+
+        async def persist_turn(state) -> None:
+            persisted.append(dict(state))
+
         failed = await build_analysis_agent_graph().ainvoke(
             graph_input(AgentMode.PREVIEW, run_id="run-invalid-model"),
             context=graph_context(
                 mode=AgentMode.PREVIEW,
                 planner=SequencePlanner([ValueError("invalid structured decision")]),
+                persist_turn=persist_turn,
             ),
         )
         self.assertFalse(failed["final_response"].ok)
         self.assertEqual(failed["final_response"].error.code, ErrorCode.INTERNAL_ERROR)
+        self.assertEqual(len(persisted), 1)
+        self.assertEqual(persisted[0]["status"].value, "failed")
+        self.assertEqual(persisted[0]["error"].code, ErrorCode.INTERNAL_ERROR)
 
         for mode, tool_name in (
             (AgentMode.PLAN, "query.preview"),

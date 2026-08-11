@@ -238,6 +238,7 @@ def graph_context(
     budget_limits=None,
     clock=None,
     cancelled=None,
+    persist_turn=None,
 ) -> AnalysisGraphContext:
     registry = build_dataset_tool_registry()
     auth = authority(mode.value)
@@ -266,4 +267,6 @@ def graph_context(
         values["clock"] = clock
     if cancelled is not None:
         values["cancelled"] = cancelled
+    if persist_turn is not None:
+        values["persist_turn"] = persist_turn
     return AnalysisGraphContext(**values)

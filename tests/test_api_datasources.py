@@ -301,6 +301,63 @@ class ApiDatasourceTests(unittest.TestCase):
         self.assertEqual(activated.status_code, 200, activated.text)
         self.assertEqual(activated.json()["status"], "active")
 
+    def test_graph_activation_is_idempotent_and_ids_are_unique_across_domains(self) -> None:
+        uploaded = self.client.post(
+            "/api/data-sources/files",
+            headers=self.headers,
+            data={"name": "Graph domains", "source_id": "graph-domains"},
+            files={
+                "files": (
+                    "orders.csv",
+                    b"order_id,amount\nO-1,10\n",
+                    "text/csv",
+                )
+            },
+        )
+        self.assertEqual(uploaded.status_code, 201, uploaded.text)
+        graph_response = self.client.get(
+            "/api/data-sources/graph-domains/relationship-graphs/draft",
+            headers=self.headers,
+        )
+        self.assertEqual(graph_response.status_code, 200, graph_response.text)
+        graph = graph_response.json()
+        catalog = self.client.get(
+            "/api/data-sources/graph-domains/catalog",
+            headers=self.headers,
+        ).json()
+        node = graph["nodes"][0]
+        column = catalog["catalog"]["relations"][0]["columns"][0]
+
+        def activate(domain_id: str):
+            return self.client.post(
+                (
+                    "/api/data-sources/graph-domains/relationship-graphs/"
+                    f"{graph['graph_id']}/activate"
+                ),
+                headers=self.headers,
+                json={
+                    "domain_id": domain_id,
+                    "mappings": [
+                        {
+                            "logical_ref": f"{domain_id}.Order.order_id",
+                            "node_id": node["node_id"],
+                            "column_id": column["column_id"],
+                        }
+                    ],
+                },
+            )
+
+        first = activate("dataset.orders")
+        second = activate("dataset.reporting")
+        repeated = activate("dataset.reporting")
+
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(repeated.status_code, 200, repeated.text)
+        self.assertNotEqual(first.json()["binding_id"], second.json()["binding_id"])
+        self.assertEqual(repeated.json()["binding_id"], second.json()["binding_id"])
+        self.assertEqual(repeated.json()["version"], second.json()["version"])
+
     def test_multi_file_upload_error_names_the_invalid_file_and_reason(self) -> None:
         response = self.client.post(
             "/api/data-sources/files",

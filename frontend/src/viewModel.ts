@@ -19,6 +19,7 @@ export interface AssistantViewModel {
   sql: string;
   error: AgentError | null;
   pendingMemoryUpdates: PendingMemoryUpdate[];
+  limitations: string[];
   status: "validated" | "error" | "pending";
   showSqlCard: boolean;
   showTable: boolean;
@@ -34,7 +35,12 @@ export function createAssistantViewModel(message: ChatMessage): AssistantViewMod
   const isThinking = messageType === "thinking";
   const showTable =
     (messageType === "table" || messageType === "chart") && rows.length > 0;
-  const rawAnswer = metadata.answer || message.content || metadata.error?.message || "";
+  const safeError = metadata.error
+    ? friendlyRuntimeMessage(metadata.error.code, metadata.error.message)
+    : "";
+  const rawAnswer = metadata.error
+    ? safeError
+    : metadata.answer || message.content || "";
   const answer = isThinking ? "" : formatAnswer(rawAnswer, showTable, rows);
 
   return {
@@ -44,8 +50,11 @@ export function createAssistantViewModel(message: ChatMessage): AssistantViewMod
     trace,
     logicalPlan: metadata.logical_plan ?? null,
     sql: metadata.sql ?? "",
-    error: metadata.error ?? null,
+    error: metadata.error
+      ? { ...metadata.error, message: safeError }
+      : null,
     pendingMemoryUpdates: metadata.pending_memory_updates ?? [],
+    limitations: metadata.limitations ?? [],
     status: resolveStatus(metadata.ok, metadata.error),
     showSqlCard: Boolean(metadata.sql),
     showTable,
@@ -81,6 +90,40 @@ export function formatCellValueForColumn(value: JsonValue, column: string): stri
     return JSON.stringify(value);
   }
   return String(value);
+}
+
+const chartNumberFormatter = new Intl.NumberFormat("zh-CN", {
+  maximumFractionDigits: 2,
+});
+
+export function formatChartValue(value: number): string {
+  return chartNumberFormatter.format(value);
+}
+
+export function formatChartLabel(value: JsonValue | undefined): string {
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return "未分类";
+  }
+  return String(value);
+}
+
+export function friendlyRuntimeMessage(code: string, fallback: string): string {
+  const diagnostic = fallback.match(/\(diagnostic_id=[a-f0-9]+\)/i)?.[0] ?? "";
+  const messages: Record<string, string> = {
+    CANCELLED: "分析运行已取消。",
+    GRAPH_NO_PATH: "所选数据表之间没有已激活的关联路径，请先检查关系图。",
+    GRAPH_AMBIGUOUS_PATH: "数据表之间存在多条同等可行的关联路径，请先明确使用哪条关系。",
+    GRAPH_UNSAFE_FANOUT: "当前关联可能造成数据重复放大，已停止执行以保护结果准确性。",
+    BINDING_STALE: "数据源或语义绑定已发生变化，请刷新绑定后重试。",
+    SQL_COMPILE_ERROR: "查询计划无法编译，请调整问题或检查字段映射。",
+    AGENT_EVIDENCE_INSUFFICIENT: "未能获得足够证据，请检查字段或关系图后重试。",
+    AGENT_BUDGET_EXCEEDED: "分析步骤超过安全上限，请缩小问题范围后重试。",
+    AGENT_MAX_STEPS_EXCEEDED: "分析步骤超过安全上限，请缩小问题范围后重试。",
+    AGENT_DECISION_INVALID: "分析计划无法继续，请调整问题后重试。",
+    INTERNAL_ERROR: `系统已安全终止本次运行，请重试。${diagnostic ? ` ${diagnostic}` : ""}`,
+    REQUEST_FAILED: `请求未能完成，请重试。${diagnostic ? ` ${diagnostic}` : ""}`,
+  };
+  return messages[code] ?? fallback;
 }
 
 export function formatColumnLabel(column: string): string {
@@ -353,7 +396,11 @@ function isDurationColumn(column: string): boolean {
 }
 
 function isMoneyColumn(column: string): boolean {
-  return MONEY_COLUMNS.has(column);
+  const normalized = column.toLowerCase();
+  return (
+    MONEY_COLUMNS.has(normalized) ||
+    /(?:^|_)(?:amount|price|gmv|revenue|sales|cost|fee)$/.test(normalized)
+  );
 }
 
 function isNumericColumn(column: string): boolean {
