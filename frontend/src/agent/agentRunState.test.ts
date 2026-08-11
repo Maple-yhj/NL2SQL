@@ -181,6 +181,29 @@ describe("agentRunReducer", () => {
     expect(cancelled.plan?.steps[0].status).toBe("blocked");
     expect(cancelled.toolCalls[0].status).toBe("failed");
   });
+
+  it("converges in-flight work to failed when the event stream is invalid", () => {
+    const running = hydrateAgentRun([
+      started,
+      event({
+        type: "tool_started",
+        sequence: 1,
+        data: {
+          kind: "tool_started",
+          call_id: "call-stream",
+          action_id: "action-stream",
+          tool_name: "query.execute",
+          display_name: "Execute query",
+          safe_arguments_digest: "c".repeat(64),
+        },
+      }),
+    ]);
+
+    const failed = agentRunReducer(running, { type: "stream_failed" });
+
+    expect(failed.status).toBe("failed");
+    expect(failed.toolCalls[0].status).toBe("failed");
+  });
 });
 
 function event<T extends AgentEvent>(

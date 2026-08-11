@@ -23,6 +23,7 @@ from data_agent.datasources import (
     SemanticFieldMapping,
     SemanticRelationship,
     SemanticGraphFieldMapping,
+    SemanticMetricDefinition,
 )
 from data_agent.tools.schemas import CatalogSnapshot
 
@@ -223,6 +224,7 @@ class SemanticBindingCreateRequest(StrictApiModel):
     binding_id: str | None = None
     domain_id: str = Field(min_length=1)
     mappings: tuple[SemanticFieldMapping, ...] = Field(min_length=1)
+    metrics: tuple[SemanticMetricDefinition, ...] = ()
     primary_relation: str | None = None
     relationships: tuple[SemanticRelationship, ...] = ()
 
@@ -240,6 +242,7 @@ class SemanticBindingCreateRequest(StrictApiModel):
 class RelationshipGraphActivateRequest(StrictApiModel):
     domain_id: str = Field(min_length=1)
     mappings: tuple[SemanticGraphFieldMapping, ...] = Field(min_length=1)
+    metrics: tuple[SemanticMetricDefinition, ...] = ()
     binding_id: str | None = None
 
 

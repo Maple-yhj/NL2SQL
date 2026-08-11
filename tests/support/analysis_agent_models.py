@@ -20,6 +20,43 @@ class AgentTrajectoryModel:
         del system, max_output_tokens
         document = json.loads(prompt)
         task = document["task"]
+        if task in {"create_dataset_query_program", "repair_dataset_query_program"}:
+            return json.dumps(
+                {
+                    "schema_version": 2,
+                    "status": "ready",
+                    "stages": [
+                        {
+                            "kind": "query",
+                            "stage_id": "summary",
+                            "input": {
+                                "kind": "dataset",
+                                "anchor_ref": "dataset.Orders.total",
+                            },
+                            "projections": [
+                                {
+                                    "alias": "total_amount",
+                                    "expression": {
+                                        "kind": "aggregate",
+                                        "operation": "sum",
+                                        "operand": {
+                                            "kind": "field",
+                                            "ref": "dataset.Orders.total",
+                                        },
+                                        "filter": None,
+                                    },
+                                }
+                            ],
+                            "filters": [],
+                            "group_by": [],
+                            "order_by": [],
+                            "limit": None,
+                        }
+                    ],
+                    "output_stage_id": "summary",
+                    "clarification_question": None,
+                }
+            )
         untrusted = document["untrustedData"]
         if task == "plan_or_replan_analysis":
             observations = untrusted["safeObservations"]

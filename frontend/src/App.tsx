@@ -601,6 +601,8 @@ export function App() {
       setConversations(refreshed);
     } catch (err) {
       setRunStage("failed");
+      dispatchAgentRun({ type: "stream_failed" });
+      localStorage.removeItem(ACTIVE_RUN_KEY_PREFIX + activeConversationId);
       handleAuthOrError(err, clearSession, setError);
       setMessages((items) =>
         items.map((item) =>
@@ -660,6 +662,7 @@ export function App() {
         setRunStage(response.ok ? "complete" : "failed");
       }
     } catch (err) {
+      dispatchAgentRun({ type: "stream_failed" });
       handleAuthOrError(err, clearSession, setError);
       await recoverConversationRun(activeConversationId);
     } finally {

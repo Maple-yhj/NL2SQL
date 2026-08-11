@@ -12,11 +12,14 @@ from typing import Any, Protocol
 
 from data_agent.analysis_agent.artifacts import SQLiteArtifactStore
 from data_agent.dataset_query import (
-    DatasetLogicalPlanner,
     DatasetPlanStatus,
     DatasetQueryCompiler,
     DatasetQueryExecutor,
     DatasetQueryPlan,
+    DatasetQueryProgram,
+    DatasetQueryProgramPlanner,
+    DatasetQueryStage,
+    DatasetUnionStage,
     chart_for_result,
     tabular_rows,
 )
@@ -52,6 +55,7 @@ from .checkpoints import (
 )
 from .evaluator import AnalysisEvaluator
 from .graph import build_analysis_agent_graph, build_dataset_version_pins
+from .guard import AgentGuardError
 from .models import (
     AgentAction,
     AgentContextSnapshot,
@@ -101,28 +105,81 @@ class _DatasetNextActionResolver:
     """Translate a high-level Agent plan into schema-valid dataset tool actions."""
 
     def __init__(self, *, model_client: object, binding: object, catalog: object) -> None:
-        self._logical_planner = DatasetLogicalPlanner(model_client)  # type: ignore[arg-type]
+        self._logical_planner = DatasetQueryProgramPlanner(model_client)  # type: ignore[arg-type]
         self._binding = binding
         self._catalog = catalog
-        self._query_plan: DatasetQueryPlan | None = None
+        self._query_plan: DatasetQueryPlan | DatasetQueryProgram | None = None
+
+    def initial_decision(
+        self,
+        *,
+        state: object,
+        allowed_tools: Sequence[ToolSpec],
+    ) -> PlannerDecision:
+        if not isinstance(state, dict):
+            raise ValueError("dataset initial state must be a mapping")
+        allowed = {spec.name for spec in allowed_tools}
+        if "catalog.inspect" not in allowed:
+            plan = AnalysisPlan(
+                plan_id="dataset-" + stable_digest({"run_id": state["run_id"]})[:20],
+                revision=1,
+                steps=(
+                    AnalysisStep(
+                        step_id="inspect_catalog",
+                        objective="Inspect the pinned dataset catalog",
+                        status="pending",
+                        expected_evidence=("catalog artifact",),
+                    ),
+                ),
+                completion_criteria=("Answer with validated governed evidence",),
+            )
+            return self._fail_missing_runtime_tool(plan, "catalog inspection")
+        objective, expected_evidence = _canonical_tool_step("catalog.inspect")
+        step = AnalysisStep(
+            step_id="inspect_catalog",
+            objective=objective,
+            status="pending",
+            expected_evidence=expected_evidence,
+        )
+        plan = AnalysisPlan(
+            plan_id="dataset-" + stable_digest({"run_id": state["run_id"]})[:20],
+            revision=1,
+            steps=(step,),
+            completion_criteria=("Answer with validated governed evidence",),
+        )
+        return self._act(plan, step, "catalog.inspect", {})
 
     def requires_model_call(self, *, state: object) -> bool:
         if not isinstance(state, dict):
             return False
-        if state.get("replan_requested"):
-            plan_value = state.get("plan")
-            goal_value = state.get("goal")
-            if plan_value is not None and goal_value is not None:
-                plan = AnalysisPlan.model_validate(plan_value)
-                goal = AnalysisGoal.model_validate(goal_value)
-                if (
-                    plan.plan_id.startswith("metric-clarification-")
-                    and "Clarification response:" in goal.contextualized_question
-                ):
-                    return False
+        turns = tuple(state.get("clarification_turns", ()))
+        if (
+            state.get("replan_requested")
+            and turns
+            and turns[-1].origin == "dataset_query"
+        ):
+            return True
         observations = tuple(state.get("observations", ()))
         if not observations or observations[-1].status != "succeeded":
             return False
+        goal = AnalysisGoal.model_validate(state["goal"])
+        if _needs_semantic_evidence(goal.original_question):
+            semantic_artifact_ids = {
+                artifact.artifact_id
+                for observation in observations
+                if observation.status == "succeeded"
+                and observation.tool_name == "semantic.inspect"
+                for artifact in observation.artifact_refs
+            }
+            evidenced_artifact_ids = {
+                item.artifact_id for item in state.get("evidence_refs", ())
+            }
+            if (
+                not semantic_artifact_ids
+                or not semantic_artifact_ids.issubset(evidenced_artifact_ids)
+                or _is_semantic_only_question(goal.original_question)
+            ):
+                return False
         plan = AnalysisPlan.model_validate(state["plan"])
         completed = {
             step.step_id
@@ -166,25 +223,20 @@ class _DatasetNextActionResolver:
         goal = AnalysisGoal.model_validate(state["goal"])
         authority = DatasetAuthority.model_validate(state["authority"])
         allowed = {spec.name for spec in allowed_tools}
-        if (
+        turns = tuple(state.get("clarification_turns", ()))
+        dataset_query_resume = bool(
             state.get("replan_requested")
-            and plan.plan_id.startswith("metric-clarification-")
-            and "Clarification response:" in goal.contextualized_question
-        ):
-            resumed = self._clarified_metric_plan(
-                prior=plan,
-                allowed=allowed,
-                run_id=state["run_id"],
-            )
-            return self._act(
-                resumed,
-                resumed.steps[0],
-                "semantic.inspect",
-                {},
-            )
+            and turns
+            and turns[-1].origin == "dataset_query"
+        )
+        if dataset_query_resume:
+            self._query_plan = None
 
         observations = tuple(state.get("observations", ()))
-        if not observations or observations[-1].status != "succeeded":
+        if (
+            (not observations or observations[-1].status != "succeeded")
+            and not dataset_query_resume
+        ):
             return None
         completed = {
             step.step_id
@@ -236,13 +288,77 @@ class _DatasetNextActionResolver:
             ),
             None,
         )
+        semantic_artifact = next(
+            (
+                artifact
+                for observation in reversed(observations)
+                if observation.status == "succeeded"
+                and observation.tool_name == "semantic.inspect"
+                for artifact in observation.artifact_refs
+            ),
+            None,
+        )
+        semantic_evidence_needed = _needs_semantic_evidence(goal.original_question)
+        semantic_only = _is_semantic_only_question(goal.original_question)
+        evidenced_artifact_ids = {
+            item.artifact_id for item in state.get("evidence_refs", ())
+        }
+
+        if prepared is None and semantic_evidence_needed and semantic_artifact is None:
+            if "semantic.inspect" not in allowed:
+                return self._fail_missing_runtime_tool(plan, "semantic inspection")
+            if step is None:
+                plan, step = self._append_tool_step(plan, "semantic.inspect")
+            return self._act(plan, step, "semantic.inspect", {})
+
+        if (
+            prepared is None
+            and semantic_evidence_needed
+            and semantic_artifact is not None
+            and semantic_artifact.artifact_id not in evidenced_artifact_ids
+        ):
+            if "evidence.collect" not in allowed:
+                return self._fail_missing_runtime_tool(plan, "metadata evidence collection")
+            if step is None:
+                plan, step = self._append_tool_step(plan, "evidence.collect")
+            return self._act(
+                plan,
+                step,
+                "evidence.collect",
+                {
+                    "artifact_id": semantic_artifact.artifact_id,
+                    "claim_key": "semantic_definition",
+                    "field_refs": list(
+                        _semantic_field_refs_for_question(
+                            goal.original_question,
+                            self._binding,
+                        )
+                    ),
+                },
+            )
+
+        if (
+            prepared is None
+            and semantic_only
+            and semantic_artifact is not None
+            and semantic_artifact.artifact_id in evidenced_artifact_ids
+        ):
+            return self._finish_evidence_mode(plan, goal=goal)
 
         if prepared is None:
-            query_plan = await self._plan_query(goal)
+            query_plan = await self._plan_query(
+                goal,
+                clarification_turns=turns,
+            )
             if query_plan.status != DatasetPlanStatus.READY:
                 prompt = query_plan.clarification_question or (
                     "Please clarify the requested dataset calculation."
                 )
+                if query_plan.status == DatasetPlanStatus.UNSUPPORTED:
+                    raise AgentGuardError(
+                        ErrorCode.QUERY_UNSUPPORTED,
+                        prompt,
+                    )
                 return PlannerDecision(
                     plan=plan,
                     decision="clarify",
@@ -252,31 +368,25 @@ class _DatasetNextActionResolver:
                             + stable_digest({"run_id": state["run_id"], "prompt": prompt})[:16]
                         ),
                         reason=AgentInputReason.CLARIFICATION,
+                        origin="dataset_query",
                         prompt=prompt,
                         allow_free_text=True,
                     ),
                     rationale_summary="The logical query needs explicit user clarification.",
                 )
-            refs = _dataset_plan_refs(query_plan)
-            if (
-                step is not None
-                and any(token in objective for token in ("relationship", "route", "join path"))
-                and "relationship.route" in allowed
-                and "relationship.route" not in successful_tools
-            ):
-                return self._act(
-                    plan,
-                    step,
-                    "relationship.route",
-                    {"logical_refs": list(refs or ("analysis_result",))},
-                )
-            if "query.compile" in allowed and step is not None:
+            # query.compile is the single source of truth for per-stage relationship
+            # validation. A separate, global relationship route can both disagree
+            # with the compiler and incorrectly combine independent stage roots.
+            if "query.compile" in allowed:
+                if step is None:
+                    plan, step = self._append_tool_step(plan, "query.compile")
                 return self._act(
                     plan,
                     step,
                     "query.compile",
                     {"plan": query_plan.model_dump(mode="json")},
                 )
+            return self._fail_missing_runtime_tool(plan, "query compilation")
 
         if prepared is not None and result is None:
             run_tool = (
@@ -286,7 +396,9 @@ class _DatasetNextActionResolver:
                 if "query.preview" in allowed
                 else None
             )
-            if run_tool is not None and step is not None:
+            if run_tool is not None:
+                if step is None:
+                    plan, step = self._append_tool_step(plan, run_tool)
                 return self._act(
                     plan,
                     step,
@@ -297,11 +409,11 @@ class _DatasetNextActionResolver:
                 return self._finish_plan_mode(plan, goal=goal)
             return self._fail_missing_runtime_tool(plan, "query execution")
 
-        if result is not None and not state.get("evidence_refs"):
+        if result is not None and result.artifact_id not in evidenced_artifact_ids:
             if "evidence.collect" in allowed:
                 if step is None:
-                    plan, step = self._append_evidence_step(plan)
-                refs = _dataset_plan_refs(self._query_plan) if self._query_plan else ()
+                    plan, step = self._append_tool_step(plan, "evidence.collect")
+                refs = _dataset_output_refs(self._query_plan)
                 if not refs and observations[-1].safe_preview:
                     refs = tuple(observations[-1].safe_preview[0])
                 return self._act(
@@ -315,16 +427,37 @@ class _DatasetNextActionResolver:
                     },
                 )
             return self._fail_missing_runtime_tool(plan, "evidence collection")
+        if result is not None and result.artifact_id in evidenced_artifact_ids:
+            return self._finish_evidence_mode(plan, goal=goal)
         return None
 
-    async def _plan_query(self, goal: AnalysisGoal) -> DatasetQueryPlan:
+    async def _plan_query(
+        self,
+        goal: AnalysisGoal,
+        *,
+        clarification_turns=(),
+    ) -> DatasetQueryPlan | DatasetQueryProgram:
         if self._query_plan is None:
-            result = await self._logical_planner.build_plan(
-                question=goal.contextualized_question,
+            result = await self._logical_planner.build_program(
+                # Query compilation should be driven by the current request.
+                # Conversation summaries can contain large prior answers or
+                # diagnostics and are neither schema evidence nor an explicit
+                # clarification. Dataset-query clarification turns are passed
+                # separately below, so this remains generic across datasets.
+                question=goal.original_question,
+                policy_question=goal.original_question,
                 binding=self._binding,  # type: ignore[arg-type]
                 catalog=self._catalog,  # type: ignore[arg-type]
+                clarification_history=tuple(
+                    {
+                        "prompt": item.prompt,
+                        "response": item.response,
+                    }
+                    for item in clarification_turns
+                    if item.origin == "dataset_query"
+                ),
             )
-            self._query_plan = result.plan
+            self._query_plan = result.program
         return self._query_plan
 
     @staticmethod
@@ -395,6 +528,26 @@ class _DatasetNextActionResolver:
         tool_name: str,
         arguments: dict[str, object],
     ) -> PlannerDecision:
+        objective, expected_evidence = _canonical_tool_step(tool_name)
+        if (
+            step.objective != objective
+            or step.expected_evidence != expected_evidence
+        ):
+            step = step.model_copy(
+                update={
+                    "objective": objective,
+                    "expected_evidence": expected_evidence,
+                }
+            )
+            plan = plan.model_copy(
+                update={
+                    "revision": plan.revision + 1,
+                    "steps": tuple(
+                        step if item.step_id == step.step_id else item
+                        for item in plan.steps
+                    ),
+                }
+            )
         action_id = "action-" + stable_digest(
             {
                 "plan_id": plan.plan_id,
@@ -415,6 +568,42 @@ class _DatasetNextActionResolver:
                 expected_evidence=step.expected_evidence,
             ),
             rationale_summary="Selected a schema-valid governed dataset action.",
+        )
+
+    @staticmethod
+    def _finish_evidence_mode(
+        plan: AnalysisPlan,
+        *,
+        goal: AnalysisGoal,
+    ) -> PlannerDecision:
+        completed = plan.model_copy(
+            update={
+                "revision": plan.revision + 1,
+                "steps": tuple(
+                    step.model_copy(update={"status": "skipped"})
+                    if step.status in {"pending", "blocked"}
+                    else step
+                    for step in plan.steps
+                ),
+            }
+        )
+        chinese = bool(re.search(r"[\u3400-\u9fff]", goal.original_question))
+        return PlannerDecision(
+            plan=completed,
+            decision="finish",
+            completion_summary=(
+                "所需受治理证据已收集完成。"
+                if chinese
+                else "The required governed evidence has been collected."
+            ),
+            rationale_summary=(
+                "结果工件已绑定为可验证证据，剩余描述性步骤无需再次执行。"
+                if chinese
+                else (
+                    "The result artifact is bound to verifiable evidence; remaining "
+                    "descriptive steps do not require duplicate execution."
+                )
+            ),
         )
 
     @staticmethod
@@ -457,22 +646,41 @@ class _DatasetNextActionResolver:
     def _append_evidence_step(
         plan: AnalysisPlan,
     ) -> tuple[AnalysisPlan, AnalysisStep]:
+        return _DatasetNextActionResolver._append_tool_step(
+            plan,
+            "evidence.collect",
+        )
+
+    @staticmethod
+    def _append_tool_step(
+        plan: AnalysisPlan,
+        tool_name: str,
+    ) -> tuple[AnalysisPlan, AnalysisStep]:
         step_ids = {step.step_id for step in plan.steps}
-        base_id = "bind_evidence"
+        base_id = {
+            "semantic.inspect": "inspect_semantic",
+            "query.compile": "compile_query",
+            "query.execute": "run_query",
+            "query.preview": "preview_query",
+            "evidence.collect": "bind_evidence",
+        }.get(tool_name, tool_name.replace(".", "_"))
         step_id = base_id
         suffix = 2
         while step_id in step_ids:
             step_id = f"{base_id}_{suffix}"
             suffix += 1
         dependencies = tuple(
-            step.step_id for step in plan.steps if step.status != "skipped"
+            step.step_id
+            for step in plan.steps
+            if step.status in {"completed", "skipped"}
         )
+        objective, expected_evidence = _canonical_tool_step(tool_name)
         evidence_step = AnalysisStep(
             step_id=step_id,
-            objective="Bind the governed query result to verifiable evidence",
+            objective=objective,
             status="pending",
             depends_on=dependencies,
-            expected_evidence=("validated result evidence",),
+            expected_evidence=expected_evidence,
         )
         revised = plan.model_copy(
             update={
@@ -499,9 +707,29 @@ class _DatasetNextActionResolver:
         )
 
 
-def _dataset_plan_refs(plan: DatasetQueryPlan | None) -> tuple[str, ...]:
+def _dataset_plan_refs(
+    plan: DatasetQueryPlan | DatasetQueryProgram | None,
+) -> tuple[str, ...]:
     if plan is None or plan.status != DatasetPlanStatus.READY:
         return ()
+    if isinstance(plan, DatasetQueryProgram):
+        refs: list[str] = []
+
+        def visit(value: object) -> None:
+            if isinstance(value, dict):
+                if value.get("kind") == "field" and isinstance(value.get("ref"), str):
+                    refs.append(value["ref"])
+                anchor = value.get("anchor_ref")
+                if isinstance(anchor, str):
+                    refs.append(anchor)
+                for item in value.values():
+                    visit(item)
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    visit(item)
+
+        visit(plan.model_dump(mode="python"))
+        return tuple(dict.fromkeys(refs))
     aliases = {item.alias for item in plan.aggregations}
     refs = dict.fromkeys(
         (
@@ -515,10 +743,177 @@ def _dataset_plan_refs(plan: DatasetQueryPlan | None) -> tuple[str, ...]:
     return tuple(ref for ref in refs if ref not in aliases)
 
 
-def _dataset_claim_key(plan: DatasetQueryPlan | None) -> str:
-    if plan is not None and plan.aggregations:
-        return plan.aggregations[0].alias
-    return "analysis_result"
+def _dataset_claim_key(
+    plan: DatasetQueryPlan | DatasetQueryProgram | None,
+) -> str:
+    outputs = _dataset_output_refs(plan)
+    return outputs[0] if len(outputs) == 1 else "analysis_result"
+
+
+def _dataset_output_refs(
+    plan: DatasetQueryPlan | DatasetQueryProgram | None,
+) -> tuple[str, ...]:
+    if plan is None or plan.status != DatasetPlanStatus.READY:
+        return ()
+    if isinstance(plan, DatasetQueryProgram) and plan.output_stage_id is not None:
+        stages = {item.stage_id: item for item in plan.stages}
+        output = stages.get(plan.output_stage_id)
+        if isinstance(output, DatasetUnionStage) and output.input_stage_ids:
+            output = stages.get(output.input_stage_ids[0])
+        if isinstance(output, DatasetQueryStage):
+            return tuple(item.alias for item in output.projections)
+        return ()
+    if isinstance(plan, DatasetQueryPlan):
+        return tuple(
+            dict.fromkeys(
+                (
+                    *plan.select,
+                    *plan.group_by,
+                    *(item.alias for item in plan.aggregations),
+                )
+            )
+        )
+    return ()
+
+
+def _dataset_routing_refs(
+    plan: DatasetQueryPlan | DatasetQueryProgram | None,
+    binding: object,
+) -> tuple[str, ...]:
+    refs = list(_dataset_plan_refs(plan))
+    if not isinstance(plan, DatasetQueryProgram):
+        return tuple(refs)
+    metric_refs: list[str] = []
+
+    def visit(value: object) -> None:
+        if isinstance(value, dict):
+            if value.get("kind") == "metric" and isinstance(value.get("ref"), str):
+                metric_refs.append(value["ref"])
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                visit(item)
+
+    visit(plan.model_dump(mode="python"))
+    metrics = {item.metric_ref: item for item in getattr(binding, "metrics", ())}
+    refs.extend(
+        metrics[ref].field_ref
+        for ref in metric_refs
+        if ref in metrics and metrics[ref].field_ref is not None
+    )
+    return tuple(dict.fromkeys(refs))
+
+
+def _is_semantic_metadata_question(question: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:字段|列|指标|状态|取值).{0,12}(?:含义|定义|口径|语义|是什么|表示)"
+            r"|(?:含义|定义|口径|语义).{0,12}(?:字段|列|指标|状态|取值)"
+            r"|\b(?:meaning|definition|semantics?|metadata|describe)\b",
+            question,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _is_semantic_capability_question(question: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:能否|能不能|是否能|可以|可否).{0,12}(?:回答|计算|得到|判断)"
+            r"|(?:回答|计算|得到).{0,12}(?:吗|么|？|\?)"
+            r"|\bcan\b.{0,24}\b(?:answer|calculate|determine|derive)\b",
+            question,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _is_field_lifecycle_question(question: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:数据泄漏|特征泄漏|目标泄漏|下单时|预测时|当时可用|可用字段|生命周期)"
+            r"|(?:字段|特征).{0,16}(?:泄漏|可用|不可用|预测)"
+            r"|\b(?:data|target|feature) leakage\b"
+            r"|\b(?:available|known) at (?:prediction|scoring|order) time\b"
+            r"|\bfield lifecycle\b",
+            question,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _is_semantic_only_question(question: str) -> bool:
+    if _is_semantic_capability_question(question) or _is_field_lifecycle_question(question):
+        return True
+    return _is_semantic_metadata_question(question) and not _is_quantitative_request(question)
+
+
+def _needs_semantic_evidence(question: str) -> bool:
+    return bool(
+        _is_semantic_metadata_question(question)
+        or _is_semantic_capability_question(question)
+        or _is_field_lifecycle_question(question)
+    )
+
+
+def _is_quantitative_request(question: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:多少|几(?:个|条|行)|数量|计数|统计|占比|比例|平均|均值|总数|最大|最小|唯一值)"
+            r"|\b(?:how many|count|average|mean|total|ratio|rate|maximum|minimum|distinct)\b",
+            question,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _canonical_tool_step(tool_name: str) -> tuple[str, tuple[str, ...]]:
+    return {
+        "catalog.inspect": (
+            "Inspect the pinned dataset catalog",
+            ("catalog artifact",),
+        ),
+        "semantic.inspect": (
+            "Inspect the pinned semantic binding",
+            ("semantic definition artifact",),
+        ),
+        "query.compile": (
+            "Compile the governed query program",
+            ("prepared query artifact",),
+        ),
+        "query.execute": (
+            "Execute the compiled governed query",
+            ("governed query result",),
+        ),
+        "query.preview": (
+            "Preview the compiled governed query",
+            ("governed query preview",),
+        ),
+        "evidence.collect": (
+            "Bind the governed result artifact to verifiable evidence",
+            ("validated result evidence",),
+        ),
+    }.get(tool_name, (f"Run governed tool {tool_name}", ("governed tool output",)))
+
+
+def _semantic_field_refs_for_question(question: str, binding: object) -> tuple[str, ...]:
+    lowered = question.casefold()
+    matched: list[str] = []
+    mappings = tuple(getattr(binding, "mappings", ()))
+    for mapping in mappings:
+        candidates = (
+            mapping.logical_ref,
+            mapping.logical_ref.rsplit(".", 1)[-1],
+            mapping.display_name,
+            *mapping.synonyms,
+        )
+        if any(
+            candidate and str(candidate).casefold() in lowered
+            for candidate in candidates
+        ):
+            matched.append(mapping.logical_ref)
+    return tuple(matched or [item.logical_ref for item in mappings[:50]])
 
 
 class DatasetAnalysisRunResolver:
@@ -844,7 +1239,33 @@ def _semantic_summary(binding) -> dict[str, object]:
     return {
         "bindingId": binding.binding_id,
         "bindingVersion": binding.version,
-        "logicalFields": [mapping.logical_ref for mapping in binding.mappings[:400]],
+        "logicalFields": [
+            {
+                "ref": mapping.logical_ref,
+                "displayName": mapping.display_name,
+                "description": mapping.description,
+                "semanticRole": mapping.semantic_role,
+                "entity": mapping.entity,
+                "grain": mapping.grain,
+                "unit": mapping.unit,
+                "lifecycleStage": mapping.lifecycle_stage,
+                "synonyms": list(mapping.synonyms),
+            }
+            for mapping in binding.mappings[:400]
+        ],
+        "metrics": [
+            {
+                "ref": metric.metric_ref,
+                "displayName": metric.display_name,
+                "description": metric.description,
+                "operation": metric.operation,
+                "fieldRef": metric.field_ref,
+                "unit": metric.unit,
+                "grain": metric.grain,
+                "synonyms": list(metric.synonyms),
+            }
+            for metric in binding.metrics[:200]
+        ],
         "relationshipCount": (
             len(binding.graph.edges)
             if isinstance(binding, SemanticGraphBindingRecord)
@@ -861,7 +1282,7 @@ async def _build_dataset_response(
     ok: bool,
 ) -> AgentResponse:
     prepared: PreparedQuery | None = None
-    dataset_plan: DatasetQueryPlan | None = None
+    dataset_plan: DatasetQueryPlan | DatasetQueryProgram | None = None
     result: TabularResult | None = None
     for reference in tuple(state.get("artifact_refs", ())):
         try:

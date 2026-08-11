@@ -230,6 +230,7 @@ export type AgentEventType =
 export interface AgentInputRequest {
   interrupt_id: string;
   reason: "clarification" | "approval" | "conflict_resolution";
+  origin?: "planner" | "evaluation" | "dataset_query";
   prompt: string;
   choices: string[];
   allow_free_text: boolean;
@@ -373,8 +374,45 @@ export interface RelationshipGraphDraft { graph_id: string; tenant_id: string; s
 export interface RelationshipRecommendationRun { run_id: string; source_id: string; graph_id: string; status: "queued" | "running" | "succeeded" | "failed" | "retryable_failed"; error_message: string | null; }
 export interface RelationshipValidationReport { report_digest: string; activation_allowed: boolean; findings: Array<{ code: string; severity: "warning" | "error"; edge_id: string | null; node_id: string | null; message: string }>; }
 export interface RelationshipRoutePreview { root_node_id: string; included_node_ids: string[]; route_digest: string; route_rule_id: string | null; steps: Array<{ edge_id: string; existing_node_id: string; introduced_node_id: string; traversal: "forward" | "reverse" }>; }
-export interface SemanticGraphFieldMapping { logical_ref: string; node_id: string; column_id: string; }
-export interface SemanticGraphBinding { schema_version: 2; binding_id: string; tenant_id: string; source_id: string; source_snapshot_version: number; schema_fingerprint: string; domain_id: string; version: number; status: SemanticBindingStatus; mappings: SemanticGraphFieldMapping[]; validation_report_digest: string; created_at: string; updated_at: string; }
+export type SemanticRole =
+  | "identifier"
+  | "dimension"
+  | "measure"
+  | "time"
+  | "status"
+  | "attribute";
+
+export interface SemanticFieldMetadata {
+  display_name?: string | null;
+  description?: string | null;
+  semantic_role?: SemanticRole | null;
+  entity?: string | null;
+  grain?: string | null;
+  unit?: string | null;
+  lifecycle_stage?: string | null;
+  synonyms?: string[];
+}
+
+export interface SemanticMetricDefinition {
+  metric_ref: string;
+  display_name: string;
+  description: string;
+  operation:
+    | "count"
+    | "count_distinct"
+    | "sum"
+    | "avg"
+    | "min"
+    | "max"
+    | "median";
+  field_ref?: string | null;
+  unit?: string | null;
+  grain?: string | null;
+  synonyms?: string[];
+}
+
+export interface SemanticGraphFieldMapping extends SemanticFieldMetadata { logical_ref: string; node_id: string; column_id: string; }
+export interface SemanticGraphBinding { schema_version: 2; binding_id: string; tenant_id: string; source_id: string; source_snapshot_version: number; schema_fingerprint: string; domain_id: string; version: number; status: SemanticBindingStatus; mappings: SemanticGraphFieldMapping[]; metrics?: SemanticMetricDefinition[]; validation_report_digest: string; created_at: string; updated_at: string; }
 
 export interface DataSourceCatalog {
   source_id: string;
@@ -388,7 +426,7 @@ export interface DataSourceCatalog {
 
 export type SemanticBindingStatus = "draft" | "active" | "retired";
 
-export interface SemanticFieldMapping {
+export interface SemanticFieldMapping extends SemanticFieldMetadata {
   logical_ref: string;
   physical_relation: string;
   physical_column: string;
@@ -415,6 +453,7 @@ export interface SemanticBinding {
   version: number;
   status: SemanticBindingStatus;
   mappings: SemanticFieldMapping[];
+  metrics?: SemanticMetricDefinition[];
   primary_relation?: string | null;
   relationships?: SemanticRelationship[];
   created_at: string;
@@ -427,6 +466,7 @@ export interface SemanticBindingCreatePayload {
   binding_id?: string;
   domain_id: string;
   mappings: SemanticFieldMapping[];
+  metrics?: SemanticMetricDefinition[];
   primary_relation?: string | null;
   relationships?: SemanticRelationship[];
 }

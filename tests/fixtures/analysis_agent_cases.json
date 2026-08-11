@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "cases": [
-    {"id": "single_aggregate", "minimum_tool_calls": 3, "maximum_tool_calls": 3, "oracle_value": 35},
+    {"id": "single_aggregate", "minimum_tool_calls": 4, "maximum_tool_calls": 4, "oracle_value": 35},
     {"id": "multi_query_comparison", "minimum_tool_calls": 2, "maximum_tool_calls": 2},
     {"id": "trend_anomaly", "minimum_tool_calls": 5, "maximum_tool_calls": 5},
     {"id": "empty_result_replan", "minimum_tool_calls": 2, "maximum_tool_calls": 2},

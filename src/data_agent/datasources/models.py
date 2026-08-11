@@ -11,6 +11,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    field_validator,
     model_validator,
 )
 
@@ -78,6 +79,66 @@ class SemanticJoinType(StrEnum):
     LEFT = "left"
 
 
+class SemanticFieldMetadata(DataSourceModel):
+    display_name: NonBlankText | None = None
+    description: NonBlankText | None = None
+    semantic_role: Literal[
+        "identifier",
+        "dimension",
+        "measure",
+        "time",
+        "status",
+        "attribute",
+    ] | None = None
+    entity: NonBlankText | None = None
+    grain: NonBlankText | None = None
+    unit: NonBlankText | None = None
+    lifecycle_stage: NonBlankText | None = None
+    synonyms: tuple[NonBlankText, ...] = ()
+
+    @field_validator("synonyms")
+    @classmethod
+    def validate_unique_synonyms(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) != len(set(item.casefold() for item in values)):
+            raise ValueError("semantic field synonyms must be unique")
+        return values
+
+
+class SemanticMetricDefinition(DataSourceModel):
+    metric_ref: NonBlankText
+    display_name: NonBlankText
+    description: NonBlankText
+    operation: Literal[
+        "count",
+        "count_distinct",
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "median",
+    ]
+    field_ref: NonBlankText | None = None
+    unit: NonBlankText | None = None
+    grain: NonBlankText | None = None
+    synonyms: tuple[NonBlankText, ...] = ()
+
+    @field_validator("synonyms")
+    @classmethod
+    def validate_unique_metric_synonyms(
+        cls,
+        values: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        if len(values) != len(set(item.casefold() for item in values)):
+            raise ValueError("semantic metric synonyms must be unique")
+        return values
+
+    @model_validator(mode="after")
+    def validate_metric_shape(self) -> "SemanticMetricDefinition":
+        if self.operation != "count" and self.field_ref is None:
+            raise ValueError("non-count metrics require a logical field_ref")
+        return self
+
+
 class DataSourceDefinition(DataSourceModel):
     source_id: StableIdentifier
     tenant_id: StableIdentifier
@@ -142,7 +203,7 @@ class DataSourceSnapshot(DataSourceModel):
         return self
 
 
-class SemanticFieldMapping(DataSourceModel):
+class SemanticFieldMapping(SemanticFieldMetadata):
     logical_ref: NonBlankText
     physical_relation: NonBlankText
     physical_column: NonBlankText
@@ -173,6 +234,7 @@ class SemanticBindingRecord(DataSourceModel):
     version: int = Field(ge=1)
     status: SemanticBindingStatus = SemanticBindingStatus.DRAFT
     mappings: tuple[SemanticFieldMapping, ...] = Field(min_length=1)
+    metrics: tuple[SemanticMetricDefinition, ...] = ()
     primary_relation: NonBlankText | None = None
     relationships: tuple[SemanticRelationship, ...] = ()
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -183,6 +245,18 @@ class SemanticBindingRecord(DataSourceModel):
         logical_refs = tuple(item.logical_ref for item in self.mappings)
         if len(logical_refs) != len(set(logical_refs)):
             raise ValueError("semantic binding logical references must be unique")
+        metric_refs = tuple(item.metric_ref for item in self.metrics)
+        if len(metric_refs) != len(set(metric_refs)):
+            raise ValueError("semantic metric references must be unique")
+        if set(metric_refs).intersection(logical_refs):
+            raise ValueError("semantic metrics and fields must use different refs")
+        unknown_metric_fields = {
+            item.field_ref
+            for item in self.metrics
+            if item.field_ref is not None and item.field_ref not in logical_refs
+        }
+        if unknown_metric_fields:
+            raise ValueError("semantic metrics reference unknown logical fields")
         relationship_ids = tuple(
             item.relationship_id for item in self.relationships
         )
@@ -238,7 +312,7 @@ class SemanticBindingRecord(DataSourceModel):
         return self
 
 
-class SemanticGraphFieldMapping(DataSourceModel):
+class SemanticGraphFieldMapping(SemanticFieldMetadata):
     logical_ref: NonBlankText
     node_id: StableIdentifier
     column_id: NonBlankText
@@ -258,9 +332,29 @@ class SemanticGraphBindingRecord(DataSourceModel):
     status: SemanticBindingStatus = SemanticBindingStatus.DRAFT
     graph: "ActivatedRelationshipGraph"
     mappings: tuple[SemanticGraphFieldMapping, ...] = Field(min_length=1)
+    metrics: tuple[SemanticMetricDefinition, ...] = ()
     validation_report_digest: NonBlankText
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def validate_semantic_definitions(self) -> "SemanticGraphBindingRecord":
+        logical_refs = tuple(item.logical_ref for item in self.mappings)
+        if len(logical_refs) != len(set(logical_refs)):
+            raise ValueError("semantic graph logical references must be unique")
+        metric_refs = tuple(item.metric_ref for item in self.metrics)
+        if len(metric_refs) != len(set(metric_refs)):
+            raise ValueError("semantic metric references must be unique")
+        if set(metric_refs).intersection(logical_refs):
+            raise ValueError("semantic metrics and fields must use different refs")
+        if any(
+            item.field_ref is not None and item.field_ref not in logical_refs
+            for item in self.metrics
+        ):
+            raise ValueError("semantic metrics reference unknown logical fields")
+        if self.updated_at < self.created_at:
+            raise ValueError("updated_at cannot precede created_at")
+        return self
 
 
 class ConversationDataSourcePin(DataSourceModel):
@@ -293,6 +387,8 @@ __all__ = [
     "SemanticGraphFieldMapping",
     "SemanticBindingStatus",
     "SemanticFieldMapping",
+    "SemanticFieldMetadata",
+    "SemanticMetricDefinition",
     "SemanticJoinType",
     "SemanticRelationship",
 ]

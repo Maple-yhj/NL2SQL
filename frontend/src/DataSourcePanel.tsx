@@ -26,10 +26,19 @@ import type {
   CatalogRelation,
   AnySemanticBinding,
   SemanticBinding,
+  SemanticFieldMetadata,
   SemanticFieldMapping,
+  SemanticGraphBinding,
+  SemanticMetricDefinition,
   SemanticRelationship,
 } from "./types";
 import { RelationshipGraphEditor } from "./relationships/RelationshipGraphEditor";
+import {
+  compactSemanticFieldMetadata,
+  compactSemanticMetrics,
+  SemanticDefinitionEditor,
+  semanticMetricError,
+} from "./SemanticDefinitionEditor";
 
 interface DataSourcePanelProps {
   api: ApiClient;
@@ -42,7 +51,7 @@ interface DataSourcePanelProps {
 
 export function isGraphBinding(
   binding: AnySemanticBinding | null | undefined,
-): boolean {
+): binding is SemanticGraphBinding {
   return Boolean(
     binding &&
       "schema_version" in binding &&
@@ -94,6 +103,10 @@ export function DataSourcePanel({
   const [relationships, setRelationships] = useState<SemanticRelationship[]>([]);
   const [domainId, setDomainId] = useState("");
   const [logicalRefs, setLogicalRefs] = useState<Record<string, string>>({});
+  const [fieldMetadata, setFieldMetadata] = useState<
+    Record<string, SemanticFieldMetadata>
+  >({});
+  const [metrics, setMetrics] = useState<SemanticMetricDefinition[]>([]);
   const [name, setName] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -162,11 +175,22 @@ export function DataSourcePanel({
               ).filter(Boolean),
             );
             setRelationships(activeSemanticBinding.relationships ?? []);
+            setFieldMetadata(
+              Object.fromEntries(
+                activeSemanticBinding.mappings.map((mapping) => [
+                  mappingKey(mapping.physical_relation, mapping.physical_column),
+                  compactSemanticFieldMetadata(mapping),
+                ]),
+              ),
+            );
+            setMetrics(activeSemanticBinding.metrics ?? []);
           } else {
             const initialRelation = firstRelation?.relation ?? "";
             setPrimaryRelation(initialRelation);
             setSelectedRelations(initialRelation ? [initialRelation] : []);
             setRelationships([]);
+            setFieldMetadata({});
+            setMetrics([]);
           }
           setDomainId((current) => current || `dataset.${source.source_id}`);
           setLogicalRefs((current) => {
@@ -176,6 +200,15 @@ export function DataSourcePanel({
               for (const column of relation.columns) {
                 const key = mappingKey(relation.relation, column.name);
                 next[key] ||= `dataset.${entity}.${column.name}`;
+              }
+            }
+            if (
+              activeSemanticBinding &&
+              !("schema_version" in activeSemanticBinding && activeSemanticBinding.schema_version === 2)
+            ) {
+              for (const mapping of activeSemanticBinding.mappings) {
+                next[mappingKey(mapping.physical_relation, mapping.physical_column)] =
+                  mapping.logical_ref;
               }
             }
             return next;
@@ -198,6 +231,8 @@ export function DataSourcePanel({
   useEffect(() => {
     setDomainId(selectedId ? `dataset.${selectedId}` : "");
     setLogicalRefs({});
+    setFieldMetadata({});
+    setMetrics([]);
     setSelectedRelations([]);
     setPrimaryRelation("");
     setRelationships([]);
@@ -352,15 +387,26 @@ export function DataSourcePanel({
       return;
     }
     const mappings: SemanticFieldMapping[] = relations.flatMap((relation) =>
-      relation.columns.map((column) => ({
-        logical_ref:
-          logicalRefs[mappingKey(relation.relation, column.name)]?.trim() ?? "",
-        physical_relation: relation.relation,
-        physical_column: column.name,
-      })),
+      relation.columns.map((column) => {
+        const key = mappingKey(relation.relation, column.name);
+        return {
+          logical_ref: logicalRefs[key]?.trim() ?? "",
+          physical_relation: relation.relation,
+          physical_column: column.name,
+          ...compactSemanticFieldMetadata(fieldMetadata[key]),
+        };
+      }),
     );
     if (mappings.some((mapping) => !mapping.logical_ref)) {
       setError("逻辑字段名不能为空");
+      return;
+    }
+    const metricError = semanticMetricError(
+      metrics,
+      mappings.map((mapping) => mapping.logical_ref),
+    );
+    if (metricError) {
+      setError(metricError);
       return;
     }
     setBusy(true);
@@ -369,6 +415,7 @@ export function DataSourcePanel({
       const draft = await api.createDataSourceBinding(selectedId, {
         domain_id: domainId.trim(),
         mappings,
+        metrics: compactSemanticMetrics(metrics),
         primary_relation: primaryRelation,
         relationships,
       });
@@ -451,6 +498,16 @@ export function DataSourcePanel({
     catalog?.catalog.relations.filter((relation) =>
       selectedRelations.includes(relation.relation),
     ) ?? [];
+  const semanticEditorFields = selectedCatalogRelations.flatMap((relation) =>
+    relation.columns.map((column) => {
+      const key = mappingKey(relation.relation, column.name);
+      return {
+        key,
+        logicalRef: logicalRefs[key] ?? "",
+        sourceLabel: `${relation.relation}.${column.name}`,
+      };
+    }),
+  );
 
   return (
     <section className="datasource-page" aria-label="数据源管理">
@@ -717,7 +774,7 @@ export function DataSourcePanel({
                     <p>选择主表，逐张加入关联表；查询时仅连接问题实际需要的数据表。</p>
                   </div>
                 </div>
-                {selectedId && <RelationshipGraphEditor api={api} sourceId={selectedId} onActivated={(binding) => { setBindings((current) => [...current.filter((item) => item.binding_id !== binding.binding_id), binding]); onBindingSelect(binding); setJustActivated(true); }} />}
+                {selectedId && <RelationshipGraphEditor api={api} sourceId={selectedId} binding={isGraphBinding(activeBinding) ? activeBinding : null} onActivated={(binding) => { setBindings((current) => [...current.filter((item) => item.binding_id !== binding.binding_id), binding]); onBindingSelect(binding); setJustActivated(true); }} />}
                 {isGraphBinding(activeBinding) ? (
                   <div className="single-table-note" role="status">
                     <ShieldCheck size={16} />
@@ -949,6 +1006,19 @@ export function DataSourcePanel({
                       </div>
                     ))}
                   </div>
+                  <SemanticDefinitionEditor
+                    fields={semanticEditorFields}
+                    metadata={fieldMetadata}
+                    onMetadataChange={(fieldKey, value) =>
+                      setFieldMetadata((current) => ({
+                        ...current,
+                        [fieldKey]: value,
+                      }))
+                    }
+                    metrics={metrics}
+                    onMetricsChange={setMetrics}
+                    disabled={busy}
+                  />
                   <div className="binding-actions">
                     <span>
                       {activeBinding

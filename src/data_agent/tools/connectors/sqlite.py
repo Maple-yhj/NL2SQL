@@ -78,6 +78,26 @@ def _cell(value: object) -> CellValue:
     return str(value)
 
 
+class _MedianAggregate:
+    """Exact numeric median for governed SQLite query programs."""
+
+    def __init__(self) -> None:
+        self._values: list[float] = []
+
+    def step(self, value: object) -> None:
+        if value is not None:
+            self._values.append(float(value))
+
+    def finalize(self) -> float | None:
+        if not self._values:
+            return None
+        values = sorted(self._values)
+        middle = len(values) // 2
+        if len(values) % 2:
+            return values[middle]
+        return (values[middle - 1] + values[middle]) / 2
+
+
 class SQLiteConnector:
     """Execute compiler-produced SQLite queries against one immutable file."""
 
@@ -143,6 +163,7 @@ class SQLiteConnector:
             )
         connection.execute("PRAGMA query_only = ON")
         connection.execute("PRAGMA trusted_schema = OFF")
+        connection.create_aggregate("median", 1, _MedianAggregate)
         disable_extensions = getattr(connection, "enable_load_extension", None)
         if callable(disable_extensions):
             disable_extensions(False)

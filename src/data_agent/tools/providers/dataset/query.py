@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from data_agent.relationships.router import GraphRouteError
 from data_agent.runtime.models import AgentMode
-from data_agent.tools.models import ProviderContext, ToolSpec
+from data_agent.tools.models import ProviderContext, ToolErrorCode, ToolSpec
 
 from .base import (
+    DatasetProviderError,
     dataset_runtime,
     execution_authority,
     store_output,
@@ -106,15 +108,36 @@ class QueryCompileProvider:
         runtime = dataset_runtime(context)
         dialect = runtime.connector.capabilities().dialect
         if dialect not in {"postgres", "sqlite", "duckdb"}:
-            raise ValueError("unsupported dataset connector dialect")
-        prepared = runtime.compiler.compile(
-            plan=payload.plan,
-            binding=runtime.binding,
-            catalog=runtime.catalog,
-            dialect=dialect,
-            schema_fingerprint=runtime.authority.schema_fingerprint,
-            bundle_digest=runtime.bundle_digest,
-        )
+            raise DatasetProviderError(
+                ToolErrorCode.SQL_COMPILE_ERROR,
+                "the active dataset connector dialect is not supported",
+            )
+        try:
+            prepared = runtime.compiler.compile(
+                plan=payload.plan,
+                binding=runtime.binding,
+                catalog=runtime.catalog,
+                dialect=dialect,
+                schema_fingerprint=runtime.authority.schema_fingerprint,
+                bundle_digest=runtime.bundle_digest,
+            )
+        except GraphRouteError as exc:
+            graph_codes = {
+                "GRAPH_NO_PATH": ToolErrorCode.GRAPH_NO_PATH,
+                "GRAPH_AMBIGUOUS_PATH": ToolErrorCode.GRAPH_AMBIGUOUS_PATH,
+                "GRAPH_UNSAFE_FANOUT": ToolErrorCode.GRAPH_UNSAFE_FANOUT,
+            }
+            raw_code = str(getattr(exc.code, "value", exc.code))
+            raise DatasetProviderError(
+                graph_codes.get(raw_code, ToolErrorCode.LOGICAL_PLAN_INVALID),
+                f"query stage relationship route is invalid ({raw_code})",
+            ) from exc
+        except ValueError as exc:
+            raise DatasetProviderError(
+                ToolErrorCode.SQL_COMPILE_ERROR,
+                "governed query program could not be compiled because it references "
+                "unavailable logical fields or unsupported operations",
+            ) from exc
         validate_prepared_authority(prepared, context)
         stored = await store_output(
             context=context,

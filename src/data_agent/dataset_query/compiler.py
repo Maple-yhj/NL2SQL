@@ -37,13 +37,14 @@ from .models import (
     DatasetQueryPlan,
     Scalar,
 )
+from .program import DatasetQueryProgram
 
 
 class DatasetQueryCompiler:
     def compile(
         self,
         *,
-        plan: DatasetQueryPlan,
+        plan: DatasetQueryPlan | DatasetQueryProgram,
         binding: SemanticBindingRecord | SemanticGraphBindingRecord,
         dialect: Literal["postgres", "sqlite", "duckdb"],
         schema_fingerprint: str,
@@ -57,6 +58,19 @@ class DatasetQueryCompiler:
         | None = None,
         _alias_overrides: dict[str, str] | None = None,
     ) -> PreparedQuery:
+        if isinstance(plan, DatasetQueryProgram):
+            if catalog is None:
+                raise ValueError("dataset query program compilation requires a catalog snapshot")
+            from .program_compiler import DatasetQueryProgramCompiler
+
+            return DatasetQueryProgramCompiler().compile(
+                program=plan,
+                binding=binding,
+                catalog=catalog,
+                dialect=dialect,
+                schema_fingerprint=schema_fingerprint,
+                bundle_digest=bundle_digest,
+            )
         if isinstance(binding, SemanticGraphBindingRecord):
             if catalog is None:
                 raise ValueError("graph binding compilation requires a catalog snapshot")

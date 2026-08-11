@@ -1707,6 +1707,31 @@ button.account-row {
   background: var(--surface);
 }
 
+/* Keep conditional rows from changing the chat layout's auto-placement order. */
+.content > .chat-topbar {
+  grid-row: 1;
+}
+
+.content > .evidence-rail {
+  grid-row: 2;
+}
+
+.content > .error-banner {
+  grid-row: 3;
+}
+
+.content > .thread {
+  grid-row: 4;
+}
+
+.content > .composer-shell {
+  grid-row: 5;
+}
+
+.content > .datasource-page {
+  grid-row: 1 / -1;
+}
+
 .chat-topbar {
   min-height: 72px;
   display: flex;
@@ -4047,6 +4072,137 @@ details.evidence-section {
   color: var(--ink);
   background: var(--surface);
   font-size: 10px;
+}
+
+.semantic-definition-editor {
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.semantic-definition-editor > summary,
+.semantic-field-definition > summary {
+  cursor: pointer;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.semantic-definition-editor > summary small,
+.semantic-field-definition > summary small {
+  display: block;
+  margin: 3px 0 0 18px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 500;
+}
+
+.semantic-definition-fields,
+.semantic-metric-definitions {
+  margin-top: 12px;
+}
+
+.semantic-definition-fields h4,
+.semantic-metric-definitions h4 {
+  margin: 0;
+  font-size: 10px;
+}
+
+.semantic-definition-fields > p,
+.semantic-metric-definitions p {
+  margin: 3px 0 8px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.semantic-field-definition,
+.semantic-metric-card {
+  margin-top: 7px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.semantic-field-definition code {
+  font-size: 9px;
+}
+
+.semantic-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.semantic-field-grid label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.semantic-field-grid label.wide {
+  grid-column: 1 / -1;
+}
+
+.semantic-field-grid input,
+.semantic-field-grid select,
+.semantic-field-grid textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.semantic-field-grid textarea {
+  min-height: 58px;
+  resize: vertical;
+}
+
+.semantic-metric-heading,
+.semantic-metric-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.semantic-metric-heading button,
+.semantic-metric-card-heading button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  padding: 5px 7px;
+  color: var(--ink);
+  background: var(--surface);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.semantic-metric-card-heading button {
+  border: 0;
+  color: var(--danger);
+}
+
+.relationship-final-section .semantic-field-grid {
+  grid-template-columns: 1fr;
+}
+
+.relationship-final-section .semantic-field-grid label.wide {
+  grid-column: auto;
 }
 
 .binding-actions {

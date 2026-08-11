@@ -181,11 +181,11 @@ class AnalysisEvaluator:
         )
         if deterministic is not None:
             return deterministic
-        if observations and not evidence:
-            incomplete = any(
-                step.status not in {"completed", "skipped"}
-                for step in plan.steps
-            )
+        incomplete = any(
+            step.status not in {"completed", "skipped"}
+            for step in plan.steps
+        )
+        if observations and incomplete:
             return EvaluationDecision(
                 decision="continue",
                 evidence_sufficient=False,
@@ -195,9 +195,16 @@ class AnalysisEvaluator:
                 rationale_summary=(
                     "The latest governed tool succeeded and the finite plan still "
                     "has executable steps."
-                    if incomplete
-                    else "The governed result still requires evidence binding."
                 ),
+            )
+        if observations and not evidence:
+            return EvaluationDecision(
+                decision="continue",
+                evidence_sufficient=False,
+                completed_step_ids=completed_step_ids,
+                missing_evidence=tuple(required_evidence_keys),
+                contradictions=(),
+                rationale_summary="The governed result still requires evidence binding.",
             )
         return None
 

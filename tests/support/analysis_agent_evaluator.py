@@ -65,9 +65,11 @@ def assert_read_only_sql(
 ) -> str:
     tree = parse_one(sql, read="duckdb")
     testcase.assertFalse(any(tree.find_all(MUTATING_SQL)))
+    cte_aliases = {cte.alias_or_name for cte in tree.find_all(exp.CTE)}
     relations = {
         ".".join(filter(None, (table.db, table.name)))
         for table in tree.find_all(exp.Table)
+        if table.name not in cte_aliases
     }
     testcase.assertTrue(relations)
     testcase.assertLessEqual(relations, set(allowed_relations))

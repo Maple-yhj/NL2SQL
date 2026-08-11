@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import tempfile
 import unittest
@@ -139,6 +140,29 @@ class SQLiteConnectorTests(unittest.IsolatedAsyncioTestCase):
             )
         finally:
             verification.close()
+
+    async def test_executes_governed_exact_median_aggregate(self) -> None:
+        sql = (
+            'SELECT MEDIAN("price") AS "median_price" '
+            'FROM "public"."olist_order_items_dataset"'
+        )
+        prepared = self.prepared.model_copy(
+            update={
+                "logical_sql": sql,
+                "executable_sql": sql,
+                "parameters": (),
+                "sql_ast_hash": hashlib.sha256(sql.encode()).hexdigest(),
+            }
+        )
+
+        result = await self.connector.execute_readonly(
+            prepared,
+            self._grant(prepared_query_hash=prepared.sql_ast_hash),
+            self._lease(),
+        )
+
+        self.assertEqual(result.columns, ("median_price",))
+        self.assertEqual(result.rows[0].values, (30.0,))
 
     async def test_explain_and_catalog_introspection_use_safe_interfaces(self) -> None:
         explain = await self.connector.explain(

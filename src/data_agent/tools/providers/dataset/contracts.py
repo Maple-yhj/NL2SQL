@@ -15,7 +15,12 @@ from data_agent.analysis_agent.models import (
     EvidenceRef,
     Identifier,
 )
-from data_agent.dataset_query import DatasetQueryCompiler, DatasetQueryExecutor, DatasetQueryPlan
+from data_agent.dataset_query import (
+    DatasetQueryCompiler,
+    DatasetQueryExecutor,
+    DatasetQueryPlan,
+    DatasetQueryProgram,
+)
 from data_agent.datasources import SemanticBindingRecord, SemanticGraphBindingRecord
 from data_agent.dataset_query.contracts import PreparedQuery
 from data_agent.tools.connectors import DataSourceConnector
@@ -70,7 +75,7 @@ class RelationshipRouteInput(ToolModel):
 
 
 class QueryCompileInput(ToolModel):
-    plan: DatasetQueryPlan
+    plan: DatasetQueryPlan | DatasetQueryProgram
 
 
 class QueryRunInput(ToolModel):
@@ -145,7 +150,7 @@ class QueryCompileOutput(DatasetArtifactOutput):
 
 
 class PreparedQueryArtifactPayload(ToolModel):
-    plan: DatasetQueryPlan
+    plan: DatasetQueryPlan | DatasetQueryProgram
     prepared: PreparedQuery
 
 
@@ -161,7 +166,9 @@ def prepared_from_payload(payload: JsonValue) -> PreparedQuery:
     return PreparedQuery.model_validate(payload)
 
 
-def dataset_plan_from_payload(payload: JsonValue) -> DatasetQueryPlan | None:
+def dataset_plan_from_payload(
+    payload: JsonValue,
+) -> DatasetQueryPlan | DatasetQueryProgram | None:
     if not isinstance(payload, dict) or "prepared" not in payload:
         return None
     return PreparedQueryArtifactPayload.model_validate(payload).plan

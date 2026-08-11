@@ -320,8 +320,15 @@ class QueryParameter(PreparedQueryModel):
 
 
 def _statement_relations(statement: exp.Expression) -> tuple[str, ...]:
+    cte_names = {
+        cte.alias_or_name
+        for cte in statement.find_all(exp.CTE)
+        if cte.alias_or_name
+    }
     relations: list[str] = []
     for table in statement.find_all(exp.Table):
+        if not table.db and table.name in cte_names:
+            continue
         relation = f"{table.db}.{table.name}" if table.db else table.name
         if relation not in relations:
             relations.append(relation)

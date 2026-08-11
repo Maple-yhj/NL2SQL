@@ -10,6 +10,7 @@ from data_agent.runtime.models import AgentRow, ChartSpec
 from data_agent.tools.schemas import TabularResult
 
 from .models import DatasetQueryPlan
+from .program import DatasetQueryProgram, DatasetQueryStage, DatasetUnionStage
 
 
 def json_value(value: object):
@@ -39,12 +40,19 @@ def tabular_rows(result: TabularResult) -> tuple[AgentRow, ...]:
 def chart_for_result(
     result: TabularResult,
     *,
-    plan: DatasetQueryPlan,
+    plan: DatasetQueryPlan | DatasetQueryProgram,
     title: str,
 ) -> ChartSpec | None:
+    if isinstance(plan, DatasetQueryProgram):
+        stages = {item.stage_id: item for item in plan.stages}
+        output = stages.get(plan.output_stage_id or "")
+        if isinstance(output, DatasetUnionStage):
+            output = stages.get(output.input_stage_ids[0])
+        chartable = isinstance(output, DatasetQueryStage) and bool(output.group_by)
+    else:
+        chartable = plan.analysis_type == "aggregate" and bool(plan.group_by)
     if (
-        plan.analysis_type != "aggregate"
-        or not plan.group_by
+        not chartable
         or len(result.columns) < 2
         or not result.rows
     ):

@@ -508,7 +508,8 @@ async def activate_relationship_graph(
     try:
         return await service.activate_relationship_graph(
             tenant_id=principal.tenant_id, source_id=source_id, graph_id=graph_id,
-            domain_id=request.domain_id, mappings=request.mappings, binding_id=request.binding_id,
+            domain_id=request.domain_id, mappings=request.mappings,
+            metrics=request.metrics, binding_id=request.binding_id,
         )
     except DataSourceRegistryError as exc:
         raise _data_source_error(exc) from exc
@@ -553,6 +554,7 @@ async def create_data_source_binding(
             binding_id=request.binding_id,
             domain_id=request.domain_id,
             mappings=request.mappings,
+            metrics=request.metrics,
             primary_relation=request.primary_relation,
             relationships=request.relationships,
         )

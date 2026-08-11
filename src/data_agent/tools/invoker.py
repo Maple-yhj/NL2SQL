@@ -321,10 +321,14 @@ class ToolInvoker:
                 started_clock,
                 code,
                 (
-                    "credential broker could not issue a lease "
-                    f"(diagnostic_id={diagnostic_id})"
-                    if stage == "credential"
-                    else f"tool provider failed (diagnostic_id={diagnostic_id})"
+                    str(exc)
+                    if stage != "credential" and getattr(exc, "public_safe", False)
+                    else (
+                        "credential broker could not issue a lease "
+                        f"(diagnostic_id={diagnostic_id})"
+                        if stage == "credential"
+                        else f"tool provider failed (diagnostic_id={diagnostic_id})"
+                    )
                 ),
                 attempts=attempts,
                 policy_decision_id=grant.policy_decision_id,

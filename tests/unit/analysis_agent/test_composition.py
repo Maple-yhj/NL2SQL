@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 from data_agent.analysis_agent.composition import (
@@ -8,9 +9,30 @@ from data_agent.analysis_agent.composition import (
     _dataset_plan_refs,
 )
 from data_agent.analysis_agent.models import AnalysisGoal
-from data_agent.dataset_query import DatasetAggregation, DatasetOrdering, DatasetQueryPlan
+from data_agent.analysis_agent.models import ClarificationTurn
+from data_agent.dataset_query import (
+    DatasetAggregateExpression,
+    DatasetAggregation,
+    DatasetFieldExpression,
+    DatasetLiteralExpression,
+    DatasetOrdering,
+    DatasetProjection,
+    DatasetQueryPlan,
+    DatasetQueryProgram,
+    DatasetQueryStage,
+    DatasetRootSource,
+)
 
-from ._decision_support import artifact, authority, observation, plan
+from tests.unit.tools.dataset._support import DatasetToolHarness
+
+from ._decision_support import (
+    SequenceModel,
+    artifact,
+    authority,
+    evidence,
+    observation,
+    plan,
+)
 
 
 def _goal(question: str) -> AnalysisGoal:
@@ -38,6 +60,59 @@ def test_plan_mode_completion_explicitly_says_that_data_was_not_read() -> None:
         english.completion_summary or ""
     )
     assert all(step.status == "skipped" for step in chinese.plan.steps)
+
+
+def test_dataset_run_starts_with_a_deterministic_catalog_step() -> None:
+    resolver = _DatasetNextActionResolver(
+        model_client=object(),
+        binding=object(),
+        catalog=object(),
+    )
+
+    decision = resolver.initial_decision(
+        state={"run_id": "run-initial"},
+        allowed_tools=(SimpleNamespace(name="catalog.inspect"),),
+    )
+
+    assert decision.decision == "act"
+    assert decision.next_action is not None
+    assert decision.next_action.tool_name == "catalog.inspect"
+    assert decision.plan.steps[0].objective == "Inspect the pinned dataset catalog"
+
+
+def test_dataset_query_planning_uses_the_current_question_not_conversation_output() -> None:
+    harness = DatasetToolHarness()
+    try:
+        model = SequenceModel(
+            [
+                DatasetQueryProgram(
+                    status="needs_clarification",
+                    clarification_question="Which governed amount should be used?",
+                ).model_dump(mode="json")
+            ]
+        )
+        resolver = _DatasetNextActionResolver(
+            model_client=model,
+            binding=harness.binding,
+            catalog=harness.catalog,
+        )
+        goal = AnalysisGoal(
+            original_question="Count the selected records",
+            contextualized_question=(
+                "Conversation summary: a large prior answer and diagnostics\n"
+                "Current question: Count the selected records"
+            ),
+            requested_output="answer",
+            success_criteria=("Return a governed query plan",),
+        )
+
+        asyncio.run(resolver._plan_query(goal))
+
+        request = json.loads(str(model.calls[0]["prompt"]))
+        assert request["question"] == "Count the selected records"
+        assert "large prior answer" not in model.calls[0]["prompt"]
+    finally:
+        harness.close()
 
 
 def test_dataset_plan_refs_exclude_aggregation_aliases_from_relationship_routing() -> None:
@@ -107,3 +182,279 @@ def test_preview_result_appends_evidence_step_when_model_plan_omits_it() -> None
     assert decision.plan.revision == 2
     assert decision.plan.steps[-1].step_id == "bind_evidence"
     assert decision.plan.steps[-1].status == "pending"
+
+
+def test_metadata_question_collects_semantic_evidence_without_forcing_a_query() -> None:
+    semantic = artifact(
+        artifact_id="artifact-semantic",
+        kind="logical_plan",
+        row_count=None,
+        sensitivity="metadata",
+    )
+    inspected = observation(
+        action_id="action-semantic",
+        tool_name="semantic.inspect",
+        artifact_refs=(semantic,),
+        evidence_refs=(),
+        safe_preview=({"logical_ref": "dataset.orders.state"},),
+    )
+    harness = DatasetToolHarness()
+    try:
+        resolver = _DatasetNextActionResolver(
+            model_client=object(),
+            binding=harness.binding,
+            catalog=harness.catalog,
+        )
+        decision = asyncio.run(
+            resolver(
+                state={
+                    "run_id": "run-semantic-metadata",
+                    "plan": plan(status="completed"),
+                    "goal": _goal("What is the meaning of the state field?"),
+                    "authority": authority(mode="execute"),
+                    "observations": (inspected,),
+                    "artifact_refs": (semantic,),
+                    "evidence_refs": (),
+                    "clarification_turns": (),
+                },
+                allowed_tools=(SimpleNamespace(name="evidence.collect"),),
+            )
+        )
+
+        assert decision is not None
+        assert decision.decision == "act"
+        assert decision.next_action is not None
+        assert decision.next_action.tool_name == "evidence.collect"
+        assert decision.next_action.arguments["artifact_id"] == "artifact-semantic"
+        assert decision.next_action.arguments["claim_key"] == "semantic_definition"
+    finally:
+        harness.close()
+
+
+def test_result_evidence_is_collected_even_when_semantic_evidence_already_exists() -> None:
+    semantic = artifact(
+        artifact_id="artifact-semantic",
+        kind="logical_plan",
+        row_count=None,
+        sensitivity="metadata",
+    )
+    prepared = artifact(
+        artifact_id="artifact-prepared",
+        kind="prepared_query",
+        row_count=None,
+        sensitivity="metadata",
+    )
+    result = artifact(artifact_id="artifact-result", kind="query_result", row_count=1)
+    semantic_evidence = evidence(
+        evidence_id="evidence-semantic",
+        claim_key="semantic_definition",
+        artifact_id=semantic.artifact_id,
+        result_digest=semantic.digest,
+        field_refs=("dataset.orders.customer_id",),
+    )
+    resolver = _DatasetNextActionResolver(
+        model_client=object(),
+        binding=object(),
+        catalog=object(),
+    )
+    resolver._query_plan = DatasetQueryProgram(
+        stages=(
+            DatasetQueryStage(
+                stage_id="summary",
+                input=DatasetRootSource(anchor_ref="dataset.orders.customer_id"),
+                projections=tuple(
+                    DatasetProjection(
+                        alias=alias,
+                        expression=DatasetLiteralExpression(value=index),
+                    )
+                    for index, alias in enumerate(
+                        (
+                            "multi_product_orders",
+                            "multi_seller_orders",
+                            "max_product_count",
+                            "max_seller_count",
+                        ),
+                        start=1,
+                    )
+                ),
+            ),
+        ),
+        output_stage_id="summary",
+    )
+    latest = observation(
+        action_id="action-query",
+        tool_name="query.execute",
+        artifact_refs=(result,),
+        evidence_refs=(),
+        safe_preview=(
+            {
+                "multi_product_orders": 3236,
+                "multi_seller_orders": 1278,
+                "max_product_count": 8,
+                "max_seller_count": 5,
+            },
+        ),
+    )
+
+    decision = asyncio.run(
+        resolver(
+            state={
+                "run_id": "run-result-after-semantic",
+                "plan": plan(),
+                "goal": _goal("Return all four order summary values"),
+                "authority": authority(),
+                "observations": (latest,),
+                "artifact_refs": (semantic, prepared, result),
+                "evidence_refs": (semantic_evidence,),
+                "clarification_turns": (),
+            },
+            allowed_tools=(SimpleNamespace(name="evidence.collect"),),
+        )
+    )
+
+    assert decision is not None and decision.next_action is not None
+    assert decision.next_action.tool_name == "evidence.collect"
+    assert decision.next_action.arguments["artifact_id"] == result.artifact_id
+    assert decision.next_action.arguments["claim_key"] == "analysis_result"
+    assert decision.next_action.arguments["field_refs"] == [
+        "multi_product_orders",
+        "multi_seller_orders",
+        "max_product_count",
+        "max_seller_count",
+    ]
+
+
+def test_field_lifecycle_question_finishes_from_semantic_evidence() -> None:
+    semantic = artifact(
+        artifact_id="artifact-lifecycle",
+        kind="logical_plan",
+        row_count=None,
+        sensitivity="metadata",
+    )
+    semantic_evidence = evidence(
+        evidence_id="evidence-lifecycle",
+        claim_key="semantic_definition",
+        artifact_id=semantic.artifact_id,
+        result_digest=semantic.digest,
+        field_refs=("dataset.orders.created_at",),
+    )
+    inspected = observation(
+        action_id="action-lifecycle",
+        tool_name="semantic.inspect",
+        artifact_refs=(semantic,),
+        evidence_refs=(),
+        safe_preview=({"fields": []},),
+    )
+    resolver = _DatasetNextActionResolver(
+        model_client=object(),
+        binding=object(),
+        catalog=object(),
+    )
+
+    decision = asyncio.run(
+        resolver(
+            state={
+                "run_id": "run-lifecycle",
+                "plan": plan(),
+                "goal": _goal("预测时哪些字段会造成数据泄漏？"),
+                "authority": authority(),
+                "observations": (inspected,),
+                "artifact_refs": (semantic,),
+                "evidence_refs": (semantic_evidence,),
+                "clarification_turns": (),
+            },
+            allowed_tools=(SimpleNamespace(name="semantic.inspect"),),
+        )
+    )
+
+    assert decision is not None
+    assert decision.decision == "finish"
+    assert all(step.status in {"completed", "skipped"} for step in decision.plan.steps)
+
+
+def test_dataset_query_clarification_resumes_from_structured_history() -> None:
+    harness = DatasetToolHarness()
+    try:
+        needs_definition = DatasetQueryProgram(
+            status="needs_clarification",
+            clarification_question="Which amount definition should be used?",
+        )
+        ready = DatasetQueryProgram(
+            stages=(
+                DatasetQueryStage(
+                    stage_id="summary",
+                    input=DatasetRootSource(),
+                    projections=(
+                        DatasetProjection(
+                            alias="amount_total",
+                            expression=DatasetAggregateExpression(
+                                operation="sum",
+                                operand=DatasetFieldExpression(
+                                    ref="dataset.orders.amount"
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            output_stage_id="summary",
+        )
+        resolver = _DatasetNextActionResolver(
+            model_client=SequenceModel(
+                [
+                    needs_definition.model_dump(mode="json"),
+                    ready.model_dump(mode="json"),
+                ]
+            ),
+            binding=harness.binding,
+            catalog=harness.catalog,
+        )
+        base_state = {
+            "run_id": "run-structured-clarification",
+            "plan": plan(),
+            "goal": _goal("Compute the requested amount metric"),
+            "authority": authority(mode="execute"),
+            "observations": (observation(artifact_refs=(), evidence_refs=()),),
+            "artifact_refs": (),
+            "evidence_refs": (),
+            "clarification_turns": (),
+        }
+        first = asyncio.run(
+            resolver(
+                state=base_state,
+                allowed_tools=(SimpleNamespace(name="query.compile"),),
+            )
+        )
+        assert first is not None
+        assert first.decision == "clarify"
+        assert first.clarification is not None
+        assert first.clarification.origin == "dataset_query"
+
+        turn = ClarificationTurn(
+            request_fingerprint="a" * 64,
+            interrupt_id=first.clarification.interrupt_id,
+            reason=first.clarification.reason,
+            origin="dataset_query",
+            prompt=first.clarification.prompt,
+            response="Use the governed amount field",
+        )
+        resumed_state = {
+            **base_state,
+            "replan_requested": True,
+            "clarification_turns": (turn,),
+        }
+        assert resolver.requires_model_call(state=resumed_state)
+        second = asyncio.run(
+            resolver(
+                state=resumed_state,
+                allowed_tools=(SimpleNamespace(name="query.compile"),),
+            )
+        )
+
+        assert second is not None
+        assert second.decision == "act"
+        assert second.next_action is not None
+        assert second.next_action.tool_name == "query.compile"
+        assert second.next_action.arguments["plan"]["schema_version"] == 2
+    finally:
+        harness.close()

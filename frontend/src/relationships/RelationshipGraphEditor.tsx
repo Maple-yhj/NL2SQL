@@ -38,9 +38,17 @@ import type {
   RelationshipGraphNode,
   RelationshipRoutePreview,
   RelationshipValidationReport,
+  SemanticFieldMetadata,
   SemanticGraphBinding,
+  SemanticMetricDefinition,
 } from "../types";
 import { graphEditorReducer } from "./relationshipGraphState";
+import {
+  compactSemanticFieldMetadata,
+  compactSemanticMetrics,
+  SemanticDefinitionEditor,
+  semanticMetricError,
+} from "../SemanticDefinitionEditor";
 
 const id = (prefix: string) =>
   `${prefix}-${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
@@ -98,10 +106,12 @@ function relationshipErrorText(error: unknown, fallback: string): string {
 export function RelationshipGraphEditor({
   api,
   sourceId,
+  binding,
   onActivated,
 }: {
   api: ApiClient;
   sourceId: string;
+  binding?: SemanticGraphBinding | null;
   onActivated?: (binding: SemanticGraphBinding) => void;
 }) {
   const [state, dispatch] = useReducer(graphEditorReducer, null, () => ({
@@ -118,6 +128,11 @@ export function RelationshipGraphEditor({
   const [route, setRoute] = useState<RelationshipRoutePreview | null>(null);
   const [routeNodes, setRouteNodes] = useState<string[]>([]);
   const [domainId, setDomainId] = useState("");
+  const [fieldMetadata, setFieldMetadata] = useState<
+    Record<string, SemanticFieldMetadata>
+  >({});
+  const [metrics, setMetrics] = useState<SemanticMetricDefinition[]>([]);
+  const [logicalRefs, setLogicalRefs] = useState<Record<string, string>>({});
   const [fromNode, setFromNode] = useState("");
   const [toNode, setToNode] = useState("");
   const [fromColumn, setFromColumn] = useState("");
@@ -163,6 +178,34 @@ export function RelationshipGraphEditor({
     void loadGraph();
   }, [loadGraph]);
 
+  useEffect(() => {
+    if (!binding || binding.source_id !== sourceId) {
+      setFieldMetadata({});
+      setMetrics([]);
+      setLogicalRefs({});
+      setDomainId("");
+      return;
+    }
+    setDomainId(binding.domain_id);
+    setFieldMetadata(
+      Object.fromEntries(
+        binding.mappings.map((mapping) => [
+          `${mapping.node_id}\u0000${mapping.column_id}`,
+          compactSemanticFieldMetadata(mapping),
+        ]),
+      ),
+    );
+    setLogicalRefs(
+      Object.fromEntries(
+        binding.mappings.map((mapping) => [
+          `${mapping.node_id}\u0000${mapping.column_id}`,
+          mapping.logical_ref,
+        ]),
+      ),
+    );
+    setMetrics(binding.metrics ?? []);
+  }, [binding, sourceId]);
+
   const graph = state.graph;
   const relationById = useMemo(
     () => new Map(relations.map((relation) => [relation.relation_id, relation])),
@@ -173,6 +216,22 @@ export function RelationshipGraphEditor({
     [graph?.nodes],
   );
   const hasUnsavedChanges = state.undo.length > 0;
+  const semanticEditorFields = useMemo(
+    () =>
+      (graph?.nodes ?? []).flatMap((node) =>
+        (relationById.get(node.relation_id)?.columns ?? []).map((column) => {
+          const key = `${node.node_id}\u0000${column.column_id}`;
+          return {
+            key,
+            logicalRef:
+              logicalRefs[key] ??
+              `${domainId || "dataset"}.${node.logical_entity}.${column.name}`,
+            sourceLabel: `${node.role_name}.${column.name}`,
+          };
+        }),
+      ),
+    [domainId, graph?.nodes, logicalRefs, relationById],
+  );
 
   const columnsFor = (nodeId: string) =>
     relationById.get(nodeById.get(nodeId)?.relation_id ?? "")?.columns ?? [];
@@ -498,19 +557,36 @@ export function RelationshipGraphEditor({
       return;
     }
     const mappings = graph.nodes.flatMap((node) =>
-      (relationById.get(node.relation_id)?.columns ?? []).map((column) => ({
-        logical_ref: `${domainId}.${node.logical_entity}.${column.name}`,
-        node_id: node.node_id,
-        column_id: column.column_id,
-      })),
+      (relationById.get(node.relation_id)?.columns ?? []).map((column) => {
+        const key = `${node.node_id}\u0000${column.column_id}`;
+        return {
+          logical_ref:
+            logicalRefs[key] ?? `${domainId}.${node.logical_entity}.${column.name}`,
+          node_id: node.node_id,
+          column_id: column.column_id,
+          ...compactSemanticFieldMetadata(fieldMetadata[key]),
+        };
+      }),
     );
+    const metricError = semanticMetricError(
+      metrics,
+      mappings.map((mapping) => mapping.logical_ref),
+    );
+    if (metricError) {
+      setNotice({ tone: "warning", text: metricError });
+      return;
+    }
     setActiveAction("activate");
     setNotice(null);
     try {
       const binding = await api.activateRelationshipGraph(
         sourceId,
         graph.graph_id,
-        { domain_id: domainId.trim(), mappings },
+        {
+          domain_id: domainId.trim(),
+          mappings,
+          metrics: compactSemanticMetrics(metrics),
+        },
       );
       onActivated?.(binding);
       setNotice({
@@ -1208,6 +1284,19 @@ export function RelationshipGraphEditor({
               placeholder="例如 dataset.sales"
             />
           </label>
+          <SemanticDefinitionEditor
+            fields={semanticEditorFields}
+            metadata={fieldMetadata}
+            onMetadataChange={(fieldKey, value) =>
+              setFieldMetadata((current) => ({
+                ...current,
+                [fieldKey]: value,
+              }))
+            }
+            metrics={metrics}
+            onMetricsChange={setMetrics}
+            disabled={Boolean(activeAction)}
+          />
           <button
             className="relationship-button primary"
             type="button"

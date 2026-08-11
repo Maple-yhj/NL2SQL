@@ -167,12 +167,39 @@ class ApiDatasourceTests(unittest.TestCase):
                         "logical_ref": "dataset.Order.amount",
                         "physical_relation": "public.orders",
                         "physical_column": "amount",
+                        "display_name": "Order amount",
+                        "description": "Gross amount recorded for one order.",
+                        "semantic_role": "measure",
+                        "entity": "Order",
+                        "grain": "one row per order",
+                        "unit": "USD",
+                        "synonyms": ["gross order value"],
                     },
+                ],
+                "metrics": [
+                    {
+                        "metric_ref": "dataset.metrics.total_order_amount",
+                        "display_name": "Total order amount",
+                        "description": "Sum of gross order amount at order grain.",
+                        "operation": "sum",
+                        "field_ref": "dataset.Order.amount",
+                        "unit": "USD",
+                        "grain": "order",
+                        "synonyms": ["gross sales"],
+                    }
                 ],
             },
         )
         self.assertEqual(binding.status_code, 201, binding.text)
         self.assertEqual(binding.json()["status"], "draft")
+        self.assertEqual(
+            binding.json()["mappings"][1]["description"],
+            "Gross amount recorded for one order.",
+        )
+        self.assertEqual(
+            binding.json()["metrics"][0]["field_ref"],
+            "dataset.Order.amount",
+        )
 
         activated = self.client.post(
             (
@@ -342,6 +369,21 @@ class ApiDatasourceTests(unittest.TestCase):
                             "logical_ref": f"{domain_id}.Order.order_id",
                             "node_id": node["node_id"],
                             "column_id": column["column_id"],
+                            "display_name": "Order identifier",
+                            "description": "Stable identifier for one order.",
+                            "semantic_role": "identifier",
+                            "entity": "Order",
+                            "grain": "order",
+                        }
+                    ],
+                    "metrics": [
+                        {
+                            "metric_ref": f"{domain_id}.metrics.order_count",
+                            "display_name": "Order count",
+                            "description": "Number of order rows in scope.",
+                            "operation": "count",
+                            "grain": "order",
+                            "synonyms": ["orders"],
                         }
                     ],
                 },
@@ -357,6 +399,14 @@ class ApiDatasourceTests(unittest.TestCase):
         self.assertNotEqual(first.json()["binding_id"], second.json()["binding_id"])
         self.assertEqual(repeated.json()["binding_id"], second.json()["binding_id"])
         self.assertEqual(repeated.json()["version"], second.json()["version"])
+        self.assertEqual(
+            second.json()["mappings"][0]["description"],
+            "Stable identifier for one order.",
+        )
+        self.assertEqual(
+            second.json()["metrics"][0]["operation"],
+            "count",
+        )
 
     def test_multi_file_upload_error_names_the_invalid_file_and_reason(self) -> None:
         response = self.client.post(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -65,6 +66,7 @@ from .models import (
     AnalysisGoal,
     AnalysisPlan,
     AnalysisStep,
+    ClarificationTurn,
     DatasetAuthority,
     EvaluationDecision,
     FindingDraft,
@@ -75,7 +77,11 @@ from .planner import AnalysisPlanner
 from .prompts import bounded_text
 from .routing import AgentRoute
 from .state import AnalysisAgentState
-from .synthesizer import AnalysisSynthesizer
+from .synthesizer import (
+    AnalysisSynthesizer,
+    deterministic_evidence_answer,
+    validate_answer_values,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -263,6 +269,30 @@ def _entry_guard(
     )
 
 
+async def _await_before_deadline(
+    value: Awaitable[object],
+    *,
+    state: AnalysisAgentState,
+    context: AnalysisGraphContext,
+    operation: str,
+) -> object:
+    remaining = (state["budget"].deadline_at - context.clock()).total_seconds()
+    if remaining <= 0:
+        if inspect.iscoroutine(value):
+            value.close()
+        raise AgentGuardError(
+            ErrorCode.DEADLINE_EXCEEDED,
+            f"analysis deadline expired before {operation}",
+        )
+    try:
+        return await asyncio.wait_for(value, timeout=remaining)
+    except TimeoutError as exc:
+        raise AgentGuardError(
+            ErrorCode.DEADLINE_EXCEEDED,
+            f"analysis deadline expired during {operation}",
+        ) from exc
+
+
 def _failure(
     exc: BaseException,
     *,
@@ -363,6 +393,7 @@ async def initialize_run(
             "planner_decision": None,
             "evaluation_decision": None,
             "waiting_request": None,
+            "clarification_turns": [],
             "answer_draft": None,
             "final_response": None,
             "error": None,
@@ -430,8 +461,22 @@ async def plan_or_replan(
             spec for spec in context.tool_specs if spec.name in allowed_names
         )
         decision = None
+        if context.next_action_resolver is not None and state.get("plan") is None:
+            initial_decision = getattr(
+                context.next_action_resolver,
+                "initial_decision",
+                None,
+            )
+            if callable(initial_decision):
+                decision = initial_decision(
+                    state=state,
+                    allowed_tools=allowed_specs,
+                )
+                if inspect.isawaitable(decision):
+                    decision = await decision
         if (
-            context.next_action_resolver is not None
+            decision is None
+            and context.next_action_resolver is not None
             and state.get("plan") is not None
             and (state.get("observations") or state.get("replan_requested"))
         ):
@@ -442,22 +487,46 @@ async def plan_or_replan(
             )
             if callable(requires_model_call) and requires_model_call(state=state):
                 budget = consume_budget(budget, context.budget_limits, "model_calls")
-            decision = await context.next_action_resolver(
+            decision = await _await_before_deadline(
+                context.next_action_resolver(
+                    state=state,
+                    allowed_tools=allowed_specs,
+                ),
                 state=state,
-                allowed_tools=allowed_specs,
+                context=context,
+                operation="dataset query planning",
             )
         if decision is None:
             budget = consume_budget(budget, context.budget_limits, "model_calls")
-            decision = await context.planner.decide(
-                goal=state["goal"],
-                context=state["context"],
-                current_plan=state.get("plan"),
-                observations=tuple(state.get("observations", ())),
-                budget_remaining=_budget_remaining(budget, context.budget_limits),
-                allowed_tools=allowed_specs,
-                max_observation_cells=context.budget_limits.max_observation_cells_for_model,
-                replan_requested=bool(state.get("replan_requested")),
+            decision = await _await_before_deadline(
+                context.planner.decide(
+                    goal=state["goal"],
+                    context=state["context"],
+                    current_plan=state.get("plan"),
+                    observations=tuple(state.get("observations", ())),
+                    budget_remaining=_budget_remaining(budget, context.budget_limits),
+                    allowed_tools=allowed_specs,
+                    max_observation_cells=(
+                        context.budget_limits.max_observation_cells_for_model
+                    ),
+                    replan_requested=bool(state.get("replan_requested")),
+                ),
+                state=state,
+                context=context,
+                operation="analysis planning",
             )
+        assert isinstance(decision, PlannerDecision)
+        if decision.decision == "clarify":
+            assert decision.clarification is not None
+            fingerprint = _clarification_fingerprint(decision.clarification)
+            if any(
+                item.request_fingerprint == fingerprint
+                for item in state.get("clarification_turns", ())
+            ):
+                raise AgentGuardError(
+                    ErrorCode.AGENT_CLARIFICATION_LOOP,
+                    "analysis repeated a clarification that the user already answered",
+                )
         plan = decision.plan
         action_step_ids = dict(state.get("action_step_ids", {}))
         step_started: AnalysisStep | None = None
@@ -703,7 +772,13 @@ async def evaluate_progress(
         requires_model_call = getattr(context.evaluator, "requires_model_call", None)
         if not callable(requires_model_call) or requires_model_call(**evaluation_kwargs):
             budget = consume_budget(budget, context.budget_limits, "model_calls")
-        decision = await context.evaluator.evaluate(**evaluation_kwargs)
+        decision = await _await_before_deadline(
+            context.evaluator.evaluate(**evaluation_kwargs),
+            state=state,
+            context=context,
+            operation="analysis evaluation",
+        )
+        assert isinstance(decision, EvaluationDecision)
         route = {
             "continue": AgentRoute.PLAN_OR_REPLAN,
             "replan": AgentRoute.PLAN_OR_REPLAN,
@@ -748,18 +823,32 @@ async def request_input(
             )
         response = interrupt(request.model_dump(mode="json"))
         message = _resume_message(response)
-        goal = state["goal"].model_copy(
-            update={
-                "contextualized_question": (
-                    state["goal"].contextualized_question
-                    + "\nClarification response: "
-                    + message
-                )
-            }
+        clarification = ClarificationTurn(
+            request_fingerprint=_clarification_fingerprint(request),
+            interrupt_id=request.interrupt_id,
+            reason=request.reason,
+            origin=request.origin,
+            prompt=request.prompt,
+            response=message,
         )
+        goal = state["goal"]
+        if request.origin != "dataset_query":
+            goal = goal.model_copy(
+                update={
+                    "contextualized_question": (
+                        goal.contextualized_question
+                        + "\nClarification response: "
+                        + message
+                    )
+                }
+            )
         _emit(runtime, RunResumedPayload(interrupt_id=request.interrupt_id))
         return {
             "goal": goal,
+            "clarification_turns": [
+                *state.get("clarification_turns", ()),
+                clarification,
+            ],
             "waiting_request": None,
             "status": AgentStatus.RUNNING,
             "replan_requested": True,
@@ -800,17 +889,44 @@ async def synthesize_answer(
                 evidence_ids=(),
             )
         else:
-            budget = consume_budget(budget, context.budget_limits, "model_calls")
-            draft = await context.synthesizer.synthesize(
-                run_id=state["run_id"],
-                goal=state["goal"],
-                mode=state["authority"].mode,
-                authority=state["authority"],
-                observations=tuple(state.get("observations", ())),
-                artifacts=tuple(state.get("artifact_refs", ())),
-                evidence=evidence,
-                max_observation_cells=context.budget_limits.max_observation_cells_for_model,
-            )
+            observations = tuple(state.get("observations", ()))
+            artifacts = tuple(state.get("artifact_refs", ()))
+            remaining = (state["budget"].deadline_at - context.clock()).total_seconds()
+            # Reserve enough time for deterministic validation and persistence.
+            # If the answer model is slow, preserve the already validated result
+            # instead of turning a successful query into a deadline failure.
+            synthesis_timeout = min(30.0, max(0.0, remaining - 2.0))
+            if synthesis_timeout <= 0:
+                draft = deterministic_evidence_answer(
+                    observations=observations,
+                    artifacts=artifacts,
+                    evidence=evidence,
+                )
+            else:
+                budget = consume_budget(budget, context.budget_limits, "model_calls")
+                try:
+                    draft = await asyncio.wait_for(
+                        context.synthesizer.synthesize(
+                            run_id=state["run_id"],
+                            goal=state["goal"],
+                            mode=state["authority"].mode,
+                            authority=state["authority"],
+                            observations=observations,
+                            artifacts=artifacts,
+                            evidence=evidence,
+                            max_observation_cells=(
+                                context.budget_limits.max_observation_cells_for_model
+                            ),
+                        ),
+                        timeout=synthesis_timeout,
+                    )
+                except TimeoutError:
+                    draft = deterministic_evidence_answer(
+                        observations=observations,
+                        artifacts=artifacts,
+                        evidence=evidence,
+                    )
+                assert isinstance(draft, AgentAnswerDraft)
         return {
             "budget": budget,
             "answer_draft": draft,
@@ -840,6 +956,19 @@ async def validate_answer(
                 ErrorCode.AGENT_RESPONSE_UNGROUNDED,
                 "answer references evidence outside the current run",
             )
+        validate_answer_values(
+            draft=draft,
+            observations=tuple(state.get("observations", ())),
+            artifacts=tuple(state.get("artifact_refs", ())),
+            evidence=tuple(state.get("evidence_refs", ())),
+            contextual_values=(
+                state["goal"].original_question,
+                state["goal"].contextualized_question,
+                state["goal"].requested_output,
+                state["goal"].success_criteria,
+                state["goal"].constraints,
+            ),
+        )
         return {"answer_draft": draft, "next_route": "persist_turn"}
     except Exception as exc:
         return _failure(exc, node="validate_answer", run_id=state.get("run_id"))
@@ -1043,6 +1172,18 @@ def _budget_remaining(
 def stable_call_id(run_id: str, action_id: str, arguments: object) -> str:
     return "call-" + stable_digest(
         {"run_id": run_id, "action_id": action_id, "arguments": arguments}
+    )
+
+
+def _clarification_fingerprint(request: AgentInputRequest) -> str:
+    return stable_digest(
+        {
+            "reason": request.reason,
+            "origin": request.origin,
+            "prompt": " ".join(request.prompt.casefold().split()),
+            "choices": request.choices,
+            "allow_free_text": request.allow_free_text,
+        }
     )
 
 

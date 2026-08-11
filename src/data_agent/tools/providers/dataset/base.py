@@ -14,6 +14,8 @@ from .contracts import DatasetArtifactOutput, DatasetToolRuntime
 
 
 class DatasetProviderError(ValueError):
+    public_safe = True
+
     def __init__(self, code: ToolErrorCode, message: str) -> None:
         self.code = code
         super().__init__(message)

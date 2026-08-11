@@ -9,6 +9,12 @@ describe("ChatGPT-style chat layout contract", () => {
     expect(appSource).toContain('className="composer-shell"');
     expect(stylesSource).toMatch(/\.composer-shell\s*{[^}]*position:\s*sticky/s);
     expect(stylesSource).toMatch(/\.composer-shell\s*{[^}]*bottom:\s*0/s);
+    expect(stylesSource).toMatch(
+      /\.content\s*>\s*\.thread\s*{[^}]*grid-row:\s*4/s,
+    );
+    expect(stylesSource).toMatch(
+      /\.content\s*>\s*\.composer-shell\s*{[^}]*grid-row:\s*5/s,
+    );
   });
 
   it("uses a centered empty-chat greeting instead of a large card", () => {

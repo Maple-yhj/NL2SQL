@@ -76,6 +76,15 @@ class DatasetCatalogProviderTests(unittest.IsolatedAsyncioTestCase):
             run_id="run-1",
         )
         self.assertEqual({item.kind.value for item in refs}, {"catalog", "logical_plan"})
+        semantic_document = await runtime.artifacts.get_json(
+            tenant_id=self.harness.tenant_id,
+            user_id=self.harness.user_id,
+            run_id="run-1",
+            artifact_id=semantic.typed_data.artifact.artifact_id,
+        )
+        self.assertIn("fields", semantic_document)
+        self.assertNotIn("physical_relation", str(semantic_document))
+        self.assertNotIn("physical_column", str(semantic_document))
 
     async def test_relationship_route_serializes_graph_binding_result(self) -> None:
         runtime, invoker, context = self.harness.invocation(AgentMode.PLAN)

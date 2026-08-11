@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 
@@ -278,6 +280,70 @@ class NativeAnalysisGraphTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(waiting_events[-1].type, AgentEventType.RUN_WAITING)
         self.assertIsNone(waiting_events[-1].response)
+
+    async def test_repeated_answered_clarification_fails_with_typed_loop_error(
+        self,
+    ) -> None:
+        plan_value = analysis_plan("pending")
+        clarification = PlannerDecision(
+            plan=plan_value,
+            decision="clarify",
+            clarification=AgentInputRequest(
+                interrupt_id="interrupt-definition",
+                reason=AgentInputReason.CLARIFICATION,
+                prompt="Which definition should be used?",
+            ),
+            rationale_summary="A definition is required.",
+        )
+        saver = InMemorySaver()
+        graph = build_analysis_agent_graph(checkpointer=saver)
+        runtime_context = graph_context(
+            mode=AgentMode.PLAN,
+            planner=SequencePlanner([clarification, clarification]),
+        )
+        config = {"configurable": {"thread_id": "run-clarification-loop"}}
+        await graph.ainvoke(
+            graph_input(AgentMode.PLAN, run_id="run-clarification-loop"),
+            context=runtime_context,
+            config=config,
+        )
+
+        resumed = await graph.ainvoke(
+            Command(resume={"message": "Use the documented definition"}),
+            context=runtime_context,
+            config=config,
+        )
+
+        self.assertFalse(resumed["final_response"].ok)
+        self.assertEqual(
+            resumed["final_response"].error.code,
+            ErrorCode.AGENT_CLARIFICATION_LOOP,
+        )
+        self.assertEqual(len(resumed["clarification_turns"]), 1)
+
+    async def test_model_call_is_cancelled_at_the_run_deadline(self) -> None:
+        class SlowPlanner:
+            async def decide(self, **kwargs):
+                del kwargs
+                await asyncio.sleep(5)
+                raise AssertionError("deadline did not cancel the model call")
+
+        limits = AgentRunBudget(max_duration_seconds=1)
+        started = time.monotonic()
+        output = await build_analysis_agent_graph(budget_limits=limits).ainvoke(
+            graph_input(AgentMode.PLAN, run_id="run-model-deadline"),
+            context=graph_context(
+                mode=AgentMode.PLAN,
+                planner=SlowPlanner(),
+                budget_limits=limits,
+            ),
+        )
+
+        self.assertLess(time.monotonic() - started, 2.5)
+        self.assertEqual(
+            output["final_response"].error.code,
+            ErrorCode.DEADLINE_EXCEEDED,
+        )
 
     async def test_execute_mode_can_enter_full_query_tool_through_guard(self) -> None:
         output = await build_analysis_agent_graph().ainvoke(

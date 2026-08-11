@@ -314,6 +314,16 @@
             "title": "Interrupt Id",
             "type": "string"
           },
+          "origin": {
+            "default": "planner",
+            "enum": [
+              "planner",
+              "evaluation",
+              "dataset_query"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
           "prompt": {
             "minLength": 1,
             "title": "Prompt",
@@ -2393,6 +2403,8 @@
           "AGENT_WAITING_FOR_INPUT",
           "AGENT_INTERRUPT_STALE",
           "AGENT_RESUME_CONFLICT",
+          "AGENT_CLARIFICATION_LOOP",
+          "QUERY_UNSUPPORTED",
           "AGENT_ARTIFACT_NOT_FOUND",
           "AGENT_ARTIFACT_INTEGRITY_ERROR",
           "AGENT_CHECKPOINT_UNAVAILABLE",
@@ -3957,6 +3969,14 @@
             "minItems": 1,
             "title": "Mappings",
             "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticMetricDefinition"
+            },
+            "title": "Metrics",
+            "type": "array"
           }
         },
         "required": [
@@ -4693,6 +4713,14 @@
             "title": "Mappings",
             "type": "array"
           },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticMetricDefinition"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
           "primary_relation": {
             "anyOf": [
               {
@@ -4772,6 +4800,14 @@
             },
             "minItems": 1,
             "title": "Mappings",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticMetricDefinition"
+            },
+            "title": "Metrics",
             "type": "array"
           },
           "primary_relation": {
@@ -4858,6 +4894,66 @@
       "SemanticFieldMapping": {
         "additionalProperties": false,
         "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain"
+          },
+          "lifecycle_stage": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifecycle Stage"
+          },
           "logical_ref": {
             "minLength": 1,
             "title": "Logical Ref",
@@ -4872,6 +4968,46 @@
             "minLength": 1,
             "title": "Physical Relation",
             "type": "string"
+          },
+          "semantic_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "identifier",
+                  "dimension",
+                  "measure",
+                  "time",
+                  "status",
+                  "attribute"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Role"
+          },
+          "synonyms": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
           }
         },
         "required": [
@@ -4914,6 +5050,14 @@
             },
             "minItems": 1,
             "title": "Mappings",
+            "type": "array"
+          },
+          "metrics": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SemanticMetricDefinition"
+            },
+            "title": "Metrics",
             "type": "array"
           },
           "schema_fingerprint": {
@@ -4989,6 +5133,66 @@
             "title": "Column Id",
             "type": "string"
           },
+          "description": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entity"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain"
+          },
+          "lifecycle_stage": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lifecycle Stage"
+          },
           "logical_ref": {
             "minLength": 1,
             "title": "Logical Ref",
@@ -5000,6 +5204,46 @@
             "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
             "title": "Node Id",
             "type": "string"
+          },
+          "semantic_role": {
+            "anyOf": [
+              {
+                "enum": [
+                  "identifier",
+                  "dimension",
+                  "measure",
+                  "time",
+                  "status",
+                  "attribute"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semantic Role"
+          },
+          "synonyms": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
           }
         },
         "required": [
@@ -5017,6 +5261,92 @@
         ],
         "title": "SemanticJoinType",
         "type": "string"
+      },
+      "SemanticMetricDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "field_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field Ref"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain"
+          },
+          "metric_ref": {
+            "minLength": 1,
+            "title": "Metric Ref",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "count",
+              "count_distinct",
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "median"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "synonyms": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "metric_ref",
+          "display_name",
+          "description",
+          "operation"
+        ],
+        "title": "SemanticMetricDefinition",
+        "type": "object"
       },
       "SemanticRelationship": {
         "additionalProperties": false,

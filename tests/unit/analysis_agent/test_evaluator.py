@@ -91,6 +91,32 @@ class AnalysisEvaluatorTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("evidence binding", decision.rationale_summary)
         self.assertEqual(model.calls, [])
 
+    async def test_existing_semantic_evidence_does_not_block_deterministic_progress(self) -> None:
+        model = SequenceModel([])
+        current_plan = plan(status="completed").model_copy(
+            update={
+                "steps": (
+                    plan(status="completed").steps[0],
+                    plan(status="pending").steps[0].model_copy(
+                        update={"step_id": "compile_query"}
+                    ),
+                )
+            }
+        )
+
+        decision = await AnalysisEvaluator(model).evaluate(
+            run_id="run-1",
+            plan=current_plan,
+            authority=authority(),
+            observations=(observation(),),
+            artifacts=(artifact(),),
+            evidence=(evidence(),),
+            required_evidence_keys=("total_revenue",),
+        )
+
+        self.assertEqual(decision.decision, "continue")
+        self.assertEqual(model.calls, [])
+
     async def test_tool_failure_empty_result_and_mismatch_override_the_model(self) -> None:
         model = SequenceModel([])
         evaluator = AnalysisEvaluator(model)
@@ -154,7 +180,7 @@ class AnalysisEvaluatorTests(unittest.IsolatedAsyncioTestCase):
             run_id="run-1",
             plan=plan(),
             authority=authority(),
-            observations=(observation(),),
+            observations=(),
             artifacts=(artifact(),),
             evidence=(evidence(),),
             required_evidence_keys=("total_revenue",),

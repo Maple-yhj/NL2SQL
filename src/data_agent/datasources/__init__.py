@@ -17,8 +17,10 @@ from .models import (
     SemanticGraphBindingRecord,
     SemanticGraphFieldMapping,
     SemanticBindingStatus,
+    SemanticFieldMetadata,
     SemanticFieldMapping,
     SemanticJoinType,
+    SemanticMetricDefinition,
     SemanticRelationship,
 )
 from .registry import (
@@ -51,8 +53,10 @@ __all__ = [
     "SemanticGraphBindingRecord",
     "SemanticGraphFieldMapping",
     "SemanticBindingStatus",
+    "SemanticFieldMetadata",
     "SemanticFieldMapping",
     "SemanticJoinType",
+    "SemanticMetricDefinition",
     "SemanticRelationship",
     "SQLiteSnapshotImporter",
     "SQLiteSnapshotResult",

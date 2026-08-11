@@ -54,6 +54,7 @@ export type AgentRunAction =
   | { type: "hydrate"; events: AgentEvent[] }
   | { type: "event"; event: AgentEvent }
   | { type: "resume_requested" }
+  | { type: "stream_failed" }
   | { type: "cancelled" };
 
 export function createAgentRunState(): AgentRunState {
@@ -88,6 +89,13 @@ export function agentRunReducer(
     return terminateActiveWork({
       ...state,
       status: "cancelled",
+      inputRequest: null,
+    });
+  }
+  if (action.type === "stream_failed") {
+    return terminateActiveWork({
+      ...state,
+      status: "failed",
       inputRequest: null,
     });
   }

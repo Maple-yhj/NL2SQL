@@ -18,6 +18,7 @@ from .models import (
     AgentStatus,
     AnalysisGoal,
     AnalysisPlan,
+    ClarificationTurn,
     DatasetAuthority,
     EvaluationDecision,
     EvidenceRef,
@@ -145,6 +146,7 @@ class AnalysisAgentState(TypedDict, total=False):
     plan_revision_count: int
     status: AgentStatus
     waiting_request: AgentInputRequest | None
+    clarification_turns: list[ClarificationTurn]
     answer_draft: AgentAnswerDraft | None
     final_response: AgentResponse | None
     error: AgentError | None

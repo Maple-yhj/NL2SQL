@@ -15,6 +15,7 @@ from data_agent.analysis_agent.prompts import (
     build_planner_prompt,
 )
 from data_agent.analysis_agent.synthesizer import AnalysisSynthesizer
+from data_agent.analysis_agent.synthesizer import deterministic_evidence_answer
 from data_agent.public_contracts import AgentError, ErrorCode
 from data_agent.runtime.models import AgentMode
 from data_agent.tools.providers.dataset import build_dataset_tool_registry
@@ -35,13 +36,14 @@ def answer_document(
     *,
     evidence_ids: tuple[str, ...] = ("evidence-total",),
     finding_evidence: tuple[str, ...] = ("evidence-total",),
+    value: int = 42,
 ) -> dict[str, object]:
     return {
-        "answer": "Total revenue is 42.",
+        "answer": f"Total revenue is {value}.",
         "key_findings": [
             {
                 "finding_id": "total-revenue",
-                "claim": "Total revenue is 42.",
+                "claim": f"Total revenue is {value}.",
                 "evidence_ids": list(finding_evidence),
             }
         ],
@@ -119,6 +121,200 @@ class AnalysisSynthesizerTests(unittest.IsolatedAsyncioTestCase):
             evidence=(evidence(),),
         )
         self.assertIn("预览数据", result.limitations[-1])
+
+    async def test_numeric_values_must_match_cited_preview_and_fallback_is_exact(
+        self,
+    ) -> None:
+        corrected_model = SequenceModel(
+            [answer_document(value=41), answer_document(value=42)]
+        )
+        corrected = await AnalysisSynthesizer(
+            corrected_model,
+            max_attempts=2,
+        ).synthesize(
+            run_id="run-1",
+            goal=goal(),
+            mode=AgentMode.EXECUTE,
+            authority=authority(),
+            observations=(observation(),),
+            artifacts=(artifact(),),
+            evidence=(evidence(),),
+        )
+        self.assertIn("42", corrected.answer)
+        self.assertEqual(len(corrected_model.calls), 2)
+
+        fallback = await AnalysisSynthesizer(
+            SequenceModel([answer_document(value=41)]),
+            max_attempts=1,
+        ).synthesize(
+            run_id="run-1",
+            goal=goal(),
+            mode=AgentMode.EXECUTE,
+            authority=authority(),
+            observations=(observation(),),
+            artifacts=(artifact(),),
+            evidence=(evidence(),),
+        )
+        self.assertIn("total_revenue=42.00", fallback.answer)
+        self.assertNotIn("41", fallback.answer)
+
+    async def test_money_values_use_the_same_two_decimal_display_precision(self) -> None:
+        amount_evidence = evidence(field_refs=("average_amount",))
+        amount_observation = observation(
+            evidence_refs=(amount_evidence,),
+            safe_preview=({"average_amount": 137.75407637895364},),
+        )
+        answer = answer_document()
+        answer["answer"] = "The average amount is 137.75."
+        answer["key_findings"] = [
+            {
+                "finding_id": "average-amount",
+                "claim": "The average amount is 137.75.",
+                "evidence_ids": ["evidence-total"],
+            }
+        ]
+        model = SequenceModel([answer])
+
+        result = await AnalysisSynthesizer(model).synthesize(
+            run_id="run-1",
+            goal=goal(),
+            mode=AgentMode.EXECUTE,
+            authority=authority(),
+            observations=(amount_observation,),
+            artifacts=(artifact(),),
+            evidence=(amount_evidence,),
+        )
+
+        self.assertIn("137.75", result.answer)
+        self.assertEqual(len(model.calls), 1)
+
+    async def test_user_supplied_year_is_allowed_but_new_result_still_needs_evidence(
+        self,
+    ) -> None:
+        scenario = goal().model_copy(
+            update={
+                "original_question": "Can this dataset support a trustworthy 2019 forecast?",
+                "contextualized_question": "Assess whether a 2019 forecast is supportable.",
+            }
+        )
+        answer = answer_document()
+        answer["answer"] = "A trustworthy 2019 forecast is unsupported; the observed total is 42."
+        answer["key_findings"] = [
+            {
+                "finding_id": "forecast-boundary",
+                "claim": "2019 is outside the evidenced observation window; the observed total is 42.",
+                "evidence_ids": ["evidence-total"],
+            }
+        ]
+        model = SequenceModel([answer])
+
+        result = await AnalysisSynthesizer(model).synthesize(
+            run_id="run-1",
+            goal=scenario,
+            mode=AgentMode.EXECUTE,
+            authority=authority(),
+            observations=(observation(),),
+            artifacts=(artifact(),),
+            evidence=(evidence(),),
+        )
+
+        self.assertIn("2019", result.answer)
+        self.assertEqual(len(model.calls), 1)
+
+    async def test_undefined_high_risk_metric_cannot_be_replaced_by_a_proxy_field(
+        self,
+    ) -> None:
+        scenario = goal().model_copy(
+            update={
+                "original_question": "这个数据集能直接回答企业总收入是多少吗？",
+                "contextualized_question": "判断企业总收入是否有受治理口径。",
+            }
+        )
+        semantic_observation = observation().model_copy(
+            update={
+                "tool_name": "semantic.inspect",
+                "safe_preview": (
+                    {
+                        "fields": [
+                            {
+                                "logicalRef": "dataset.Transaction.amount",
+                                "description": None,
+                            }
+                        ],
+                        "metrics": [],
+                    },
+                ),
+            }
+        )
+        model = SequenceModel([])
+
+        result = await AnalysisSynthesizer(model).synthesize(
+            run_id="run-1",
+            goal=scenario,
+            mode=AgentMode.EXECUTE,
+            authority=authority(),
+            observations=(semantic_observation,),
+            artifacts=(artifact(),),
+            evidence=(evidence(),),
+        )
+
+        self.assertIn("没有", result.answer)
+        self.assertIn("受治理指标", result.answer)
+        self.assertEqual(model.calls, [])
+
+    async def test_prior_high_risk_context_does_not_contaminate_current_turn(self) -> None:
+        scenario = goal().model_copy(
+            update={
+                "original_question": "预测时哪些字段会造成数据泄漏？",
+                "contextualized_question": (
+                    "Earlier we discussed total revenue. Now classify field lifecycle."
+                ),
+            }
+        )
+        model = SequenceModel([answer_document()])
+
+        result = await AnalysisSynthesizer(model).synthesize(
+            run_id="run-1",
+            goal=scenario,
+            mode=AgentMode.EXECUTE,
+            authority=authority(),
+            observations=(observation(),),
+            artifacts=(artifact(),),
+            evidence=(evidence(),),
+        )
+
+        self.assertIn("42", result.answer)
+        self.assertEqual(len(model.calls), 1)
+
+    async def test_semantic_fallback_summarizes_missing_lifecycle_metadata(self) -> None:
+        semantic_evidence = evidence(
+            claim_key="semantic_definition",
+            field_refs=("dataset.orders.created_at",),
+        )
+        semantic_observation = observation(
+            tool_name="semantic.inspect",
+            evidence_refs=(semantic_evidence,),
+            safe_preview=(
+                {
+                    "fields": [
+                        {
+                            "logicalRef": "dataset.orders.created_at",
+                            "lifecycleStage": None,
+                        }
+                    ],
+                    "metrics": [],
+                },
+            ),
+        )
+
+        result = deterministic_evidence_answer(
+            observations=(semantic_observation,),
+            artifacts=(artifact(),),
+            evidence=(semantic_evidence,),
+        )
+
+        self.assertIn("没有提供 lifecycleStage", result.answer)
+        self.assertNotIn("logicalRef", result.answer)
 
     async def test_prompt_injection_stays_bounded_untrusted_and_secrets_are_removed(self) -> None:
         injection = (

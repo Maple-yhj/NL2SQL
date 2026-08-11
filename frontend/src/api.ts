@@ -22,6 +22,7 @@ import type {
   RunResumePayload,
   SemanticGraphFieldMapping,
   SemanticGraphBinding,
+  SemanticMetricDefinition,
   StoredSession,
 } from "./types";
 import { isAgentResponse } from "./agentResponseValidator";
@@ -237,7 +238,7 @@ export class ApiClient {
     return this.request<RelationshipRoutePreview>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/${encodeURIComponent(graphId)}/preview-route`, { method: "POST", body: JSON.stringify({ required_node_ids: requiredNodeIds }) });
   }
 
-  activateRelationshipGraph(sourceId: string, graphId: string, payload: { domain_id: string; mappings: SemanticGraphFieldMapping[]; binding_id?: string }): Promise<SemanticGraphBinding> {
+  activateRelationshipGraph(sourceId: string, graphId: string, payload: { domain_id: string; mappings: SemanticGraphFieldMapping[]; metrics?: SemanticMetricDefinition[]; binding_id?: string }): Promise<SemanticGraphBinding> {
     return this.request<SemanticGraphBinding>(`/api/data-sources/${encodeURIComponent(sourceId)}/relationship-graphs/${encodeURIComponent(graphId)}/activate`, { method: "POST", body: JSON.stringify(payload) });
   }
 
@@ -550,9 +551,15 @@ function validateEventPayload(
 }
 
 function validateAgentInputRequest(value: unknown): boolean {
-  return isExactRecord(value, ["interrupt_id", "reason", "prompt", "choices", "allow_free_text", "action_id"]) &&
+  const baseKeys = ["interrupt_id", "reason", "prompt", "choices", "allow_free_text", "action_id"];
+  const keys = isRecord(value) && Object.hasOwn(value, "origin")
+    ? [...baseKeys, "origin"]
+    : baseKeys;
+  return isExactRecord(value, keys) &&
     isNonBlankString(value.interrupt_id) &&
     ["clarification", "approval", "conflict_resolution"].includes(String(value.reason)) &&
+    (!Object.hasOwn(value, "origin") ||
+      ["planner", "evaluation", "dataset_query"].includes(String(value.origin))) &&
     isNonBlankString(value.prompt) && isStringArray(value.choices) &&
     typeof value.allow_free_text === "boolean" &&
     (value.action_id === null || isNonBlankString(value.action_id));

@@ -35,10 +35,49 @@ class SemanticInspectProvider:
     ) -> DatasetArtifactOutput:
         del payload
         runtime = dataset_runtime(context)
+        binding = runtime.binding
+        document = {
+            "schemaVersion": binding.schema_version,
+            "bindingId": binding.binding_id,
+            "bindingVersion": binding.version,
+            "domainId": binding.domain_id,
+            "fields": [
+                {
+                    "logicalRef": item.logical_ref,
+                    "displayName": item.display_name,
+                    "description": item.description,
+                    "semanticRole": item.semantic_role,
+                    "entity": item.entity,
+                    "grain": item.grain,
+                    "unit": item.unit,
+                    "lifecycleStage": item.lifecycle_stage,
+                    "synonyms": list(item.synonyms),
+                }
+                for item in binding.mappings
+            ],
+            "metrics": [
+                {
+                    "metricRef": item.metric_ref,
+                    "displayName": item.display_name,
+                    "description": item.description,
+                    "operation": item.operation,
+                    "fieldRef": item.field_ref,
+                    "unit": item.unit,
+                    "grain": item.grain,
+                    "synonyms": list(item.synonyms),
+                }
+                for item in binding.metrics
+            ],
+            "relationshipCount": (
+                len(binding.graph.edges)
+                if binding.schema_version == 2
+                else len(binding.relationships)
+            ),
+        }
         return await store_output(
             context=context,
             kind="logical_plan",
-            payload=runtime.binding.model_dump(mode="json"),
+            payload=document,
             summary=f"Semantic binding contains {len(runtime.binding.mappings)} logical fields",
             sensitivity="metadata",
             schema_digest=context.authority.schema_fingerprint,

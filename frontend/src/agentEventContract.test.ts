@@ -54,6 +54,25 @@ describe("Agent event contract", () => {
       },
       response: null,
     })).toBe(true);
+
+    expect(isAgentEvent({
+      type: "run_waiting",
+      run_id: "run-1",
+      sequence: 5,
+      data: {
+        kind: "run_waiting",
+        input_request: {
+          interrupt_id: "interrupt-2",
+          reason: "clarification",
+          origin: "dataset_query",
+          prompt: "Which date field?",
+          choices: [],
+          allow_free_text: true,
+          action_id: null,
+        },
+      },
+      response: null,
+    })).toBe(true);
   });
 
   it("rejects mismatched and untyped event payloads", () => {

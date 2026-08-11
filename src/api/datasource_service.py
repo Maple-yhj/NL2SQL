@@ -30,6 +30,7 @@ from data_agent.datasources import (
     SemanticBindingRecord,
     SemanticGraphBindingRecord,
     SemanticGraphFieldMapping,
+    SemanticMetricDefinition,
     SemanticBindingStatus,
     SemanticFieldMapping,
     SemanticRelationship,
@@ -349,7 +350,9 @@ class DataSourceService:
 
     async def activate_relationship_graph(
         self, *, tenant_id: str, source_id: str, graph_id: str, domain_id: str,
-        mappings: tuple[SemanticGraphFieldMapping, ...], binding_id: str | None = None,
+        mappings: tuple[SemanticGraphFieldMapping, ...],
+        metrics: tuple[SemanticMetricDefinition, ...] = (),
+        binding_id: str | None = None,
     ) -> SemanticGraphBindingRecord:
         snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
         graph = await self.get_relationship_draft(tenant_id=tenant_id, source_id=source_id)
@@ -391,6 +394,7 @@ class DataSourceService:
                 and current.schema_fingerprint == snapshot.fingerprint
                 and current.graph == activated_graph
                 and current.mappings == mappings
+                and current.metrics == metrics
                 and current.validation_report_digest == report.report_digest
             ):
                 return current
@@ -408,7 +412,8 @@ class DataSourceService:
             source_id=source_id, source_snapshot_version=snapshot.version, schema_fingerprint=snapshot.fingerprint,
             domain_id=domain_id, version=version,
             graph=activated_graph,
-            mappings=mappings, validation_report_digest=report.report_digest,
+            mappings=mappings, metrics=metrics,
+            validation_report_digest=report.report_digest,
         )
         return await self._registry.activate_graph_binding(binding)
 
@@ -798,6 +803,7 @@ class DataSourceService:
         binding_id: str | None,
         domain_id: str,
         mappings: tuple[SemanticFieldMapping, ...],
+        metrics: tuple[SemanticMetricDefinition, ...] = (),
         primary_relation: str | None = None,
         relationships: tuple[SemanticRelationship, ...] = (),
     ) -> SemanticBindingRecord:
@@ -823,6 +829,7 @@ class DataSourceService:
             domain_id=domain_id,
             version=version,
             mappings=mappings,
+            metrics=metrics,
             primary_relation=primary_relation,
             relationships=relationships,
         )

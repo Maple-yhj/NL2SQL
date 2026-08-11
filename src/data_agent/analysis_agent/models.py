@@ -361,6 +361,7 @@ class AgentObservation(PublicContractModel):
 class AgentInputRequest(PublicContractModel):
     interrupt_id: Identifier
     reason: AgentInputReason
+    origin: Literal["planner", "evaluation", "dataset_query"] = "planner"
     prompt: NonBlankText
     choices: tuple[NonBlankText, ...] = ()
     allow_free_text: bool = True
@@ -378,6 +379,15 @@ class AgentInputRequest(PublicContractModel):
         if self.reason == AgentInputReason.APPROVAL and self.action_id is None:
             raise ValueError("approval input requires an action_id")
         return self
+
+
+class ClarificationTurn(PublicContractModel):
+    request_fingerprint: Digest
+    interrupt_id: Identifier
+    reason: AgentInputReason
+    origin: Literal["planner", "evaluation", "dataset_query"]
+    prompt: NonBlankText
+    response: NonBlankText
 
 
 class PlannerDecision(PublicContractModel):
@@ -543,6 +553,7 @@ __all__ = [
     "AgentError",
     "AgentInputReason",
     "AgentInputRequest",
+    "ClarificationTurn",
     "AgentObservation",
     "AgentRunBudget",
     "AgentStatus",
