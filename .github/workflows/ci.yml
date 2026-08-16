@@ -35,3 +35,32 @@ jobs:
       - run: npm ci --prefix frontend
       - run: npm --prefix frontend test
       - run: npm --prefix frontend run build
+
+  docker:
+    runs-on: ubuntu-latest
+    env:
+      DATA_AGENT_ENV_FILE: .env.docker.example
+      POSTGRES_PASSWORD: ci-postgres-password
+      BOOTSTRAP_ADMIN_PASSWORD: ci-admin-password
+      JWT_SECRET_KEY: ci-jwt-secret-with-at-least-32-bytes
+      LLM_PROVIDER: openai
+      DEFAULT_MODEL_NAME: ci-model
+      LLM_API_KEY: ci-model-key
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --env-file .env.docker.example config --quiet
+      - run: >-
+          docker compose --env-file .env.docker.example
+          up --build --detach --wait --wait-timeout 300
+      - run: curl --fail --silent --show-error http://127.0.0.1:8080/health
+      - name: 验证初始管理员登录
+        run: >-
+          curl --fail --silent --show-error
+          --output /dev/null
+          --header 'Content-Type: application/json'
+          --data '{"tenant_id":"demo","username":"admin","password":"ci-admin-password"}'
+          http://127.0.0.1:8080/api/auth/login
+      - if: failure()
+        run: docker compose --env-file .env.docker.example logs
+      - if: always()
+        run: docker compose --env-file .env.docker.example down --volumes

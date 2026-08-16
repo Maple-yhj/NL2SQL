@@ -1,0 +1,107 @@
+name: ${COMPOSE_PROJECT_NAME:-data-agent}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-data_agent}
+      POSTGRES_USER: ${POSTGRES_USER:-data_agent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env.docker 中设置 POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - application
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ${DATA_AGENT_ENV_FILE:-.env.docker}
+    environment:
+      AUTH_DATABASE_HOST: postgres
+      AUTH_DATABASE_PORT: "5432"
+      AUTH_DATABASE_NAME: ${POSTGRES_DB:-data_agent}
+      AUTH_DATABASE_USER: ${POSTGRES_USER:-data_agent}
+      AUTH_DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env.docker 中设置 POSTGRES_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?请在 .env.docker 中设置 JWT_SECRET_KEY}
+      LLM_PROVIDER: ${LLM_PROVIDER:?请在 .env.docker 中设置 LLM_PROVIDER}
+      DEFAULT_MODEL_NAME: ${DEFAULT_MODEL_NAME:?请在 .env.docker 中设置 DEFAULT_MODEL_NAME}
+      LLM_API_KEY: ${LLM_API_KEY:?请在 .env.docker 中设置 LLM_API_KEY}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      BOOTSTRAP_ADMIN_TENANT_ID: ${BOOTSTRAP_ADMIN_TENANT_ID:-demo}
+      BOOTSTRAP_ADMIN_USER_ID: ${BOOTSTRAP_ADMIN_USER_ID:-docker-admin}
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?请在 .env.docker 中设置 BOOTSTRAP_ADMIN_PASSWORD}
+      BOOTSTRAP_ADMIN_ROLES: ${BOOTSTRAP_ADMIN_ROLES:-admin,user}
+      DATA_AGENT_STATE_DIR: /var/lib/data-agent
+    volumes:
+      - application-state:/var/lib/data-agent
+    ports:
+      - "${API_BIND_ADDRESS:-127.0.0.1}:${API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - application
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1/health
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - application
+
+volumes:
+  postgres-data:
+  application-state:
+
+networks:
+  application:
+    driver: bridge

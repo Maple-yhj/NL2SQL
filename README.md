@@ -49,13 +49,102 @@ flowchart LR
 
 ## 运行要求
 
+使用 Docker 部署时只需要：
+
+- Docker Engine 或 Docker Desktop
+- 支持 `docker compose` 命令的 Docker Compose v2
+- 至少一个受支持模型提供方的接口凭据
+
+本地开发需要：
+
 - Python `3.12` 或更高版本
 - Node.js `20.19.x`，或 `22.12.0` 及更高版本
 - npm
 - PostgreSQL，用于用户鉴权和刷新令牌
 - 至少一个受支持模型提供方的接口凭据
 
-## 快速开始
+## Docker 一键部署
+
+Compose 方案会启动以下服务：
+
+- PostgreSQL：保存用户、密码哈希和刷新令牌，仅在容器网络内可访问。
+- FastAPI 后端：自动初始化鉴权表、创建首个管理员，并将运行状态保存到命名卷。
+- Nginx 网页端：提供前端静态文件，并反向代理 API、接口文档和服务端事件流。
+
+### 1. 创建部署配置
+
+```bash
+cp .env.docker.example .env.docker
+```
+
+生成数据库密码和 JWT 密钥：
+
+```bash
+openssl rand -hex 32
+openssl rand -hex 48
+```
+
+编辑 `.env.docker`，至少填写以下变量：
+
+```dotenv
+POSTGRES_PASSWORD=<数据库密码>
+BOOTSTRAP_ADMIN_PASSWORD=<初始管理员密码>
+JWT_SECRET_KEY=<JWT 随机密钥>
+
+LLM_PROVIDER=openai
+DEFAULT_MODEL_NAME=<模型名称>
+LLM_API_KEY=<模型接口密钥>
+```
+
+`LLM_API_KEY` 是容器部署使用的通用凭据变量，适用于项目支持的全部模型提供方。使用兼容 OpenAI 协议的自定义服务时，还必须设置 `LLM_BASE_URL`。
+
+### 2. 一键启动
+
+Linux 或 macOS 可以执行：
+
+```bash
+./scripts/docker-deploy.sh
+```
+
+也可以在任意支持 Docker Compose 的系统中直接执行：
+
+```bash
+docker compose --env-file .env.docker \
+  up --build --detach --wait --wait-timeout 300
+```
+
+启动完成后可访问：
+
+- 网页端：<http://127.0.0.1:8080>
+- 接口文档：<http://127.0.0.1:8080/docs>
+- 后端直连地址：<http://127.0.0.1:8000>
+
+使用 `.env.docker` 中的 `BOOTSTRAP_ADMIN_TENANT_ID`、`BOOTSTRAP_ADMIN_USERNAME` 和 `BOOTSTRAP_ADMIN_PASSWORD` 登录。初始管理员只会在账号不存在时创建；容器重启不会覆盖其密码和角色。
+
+### 3. 常用运维命令
+
+```bash
+# 查看服务状态
+docker compose --env-file .env.docker ps
+
+# 跟踪日志
+docker compose --env-file .env.docker logs --follow
+
+# 拉取代码更新后重新构建
+docker compose --env-file .env.docker \
+  up --build --detach --wait --wait-timeout 300
+
+# 停止并删除容器，保留数据卷
+docker compose --env-file .env.docker down
+```
+
+PostgreSQL 数据和应用状态分别保存在两个 Docker 命名卷中。不要在需要保留数据时执行 `docker compose down --volumes`；该命令会永久删除鉴权数据、会话、数据快照、运行事件和分析制品。
+
+默认网页端监听所有网络接口的 `8080` 端口，后端 `8000` 端口仅绑定到本机。可以通过 `.env.docker` 中的 `WEB_BIND_ADDRESS`、`WEB_PORT`、`API_BIND_ADDRESS` 和 `API_PORT` 调整。公网部署还应在外层配置 HTTPS、访问控制、密钥管理、备份和监控。
+
+如需向容器传递 PostgreSQL 分析数据源凭据，直接在 `.env.docker` 中添加对应的 `DATA_SOURCE_SECRET_*` 变量即可。
+
+## 本地开发
 
 ### 1. 获取代码
 
@@ -275,7 +364,7 @@ langgraph dev
 - 默认组合使用 SQLite 保存会话与运行控制状态，PostgreSQL 仅用于鉴权。
 - 默认记忆管理器为无持久化实现，因此记忆提案接口不会形成跨进程的长期记忆。`db/data_agent_memory.sql` 和 PostgreSQL 记忆实现已存在，但尚未接入默认应用组合。
 - 网页端尚未提供 PostgreSQL 数据源注册表单。
-- 仓库目前没有容器编排或一键部署配置；生产部署需要自行补充反向代理、进程管理、密钥管理、数据库备份和可观测性方案。
+- Docker Compose 方案面向单机部署；生产环境仍需按照实际基础设施补充 HTTPS、集中式密钥管理、数据库备份和可观测性方案。
 
 ## 项目结构
 
@@ -291,10 +380,12 @@ NL2SQL/
 │   ├── runtime/                # 公共运行时契约、事件和组合入口
 │   └── tools/                  # 受控工具、连接器与数据集工具提供方
 ├── frontend/                   # React 网页端
+├── docker/                     # 前后端镜像、Nginx 和容器初始化入口
 ├── tests/                      # 单元、契约、接口和集成测试
 ├── db/                         # PostgreSQL 初始化脚本
 ├── scripts/                    # 用户创建、契约导出、迁移和仓库审计脚本
 ├── docs/                       # 架构记录、实现计划和测试报告
+├── compose.yaml                # 一键部署编排
 ├── pyproject.toml              # Python 包与依赖配置
 └── langgraph.json              # LangGraph 开发入口
 ```
@@ -319,6 +410,15 @@ npm run build
 
 ```bash
 python scripts/audit_repository_reachability.py
+```
+
+检查 Docker 启动器、Compose 配置和镜像构建：
+
+```bash
+pytest tests/test_docker_entrypoint.py
+sh -n scripts/docker-deploy.sh
+docker compose --env-file .env.docker config --quiet
+docker compose --env-file .env.docker build
 ```
 
 构建本地 Python 分发包：
