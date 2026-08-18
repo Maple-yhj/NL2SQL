@@ -33,6 +33,7 @@ import type {
   SemanticRelationship,
 } from "./types";
 import { RelationshipGraphEditor } from "./relationships/RelationshipGraphEditor";
+import { MetricGovernancePanel } from "./metrics/MetricGovernancePanel";
 import {
   compactSemanticFieldMetadata,
   compactSemanticMetrics,
@@ -44,6 +45,7 @@ interface DataSourcePanelProps {
   api: ApiClient;
   sources: DataSource[];
   selectedBinding: AnySemanticBinding | null;
+  conversationId?: string;
   onRefresh: () => Promise<DataSource[]>;
   onBindingSelect: (binding: AnySemanticBinding | null) => void;
   onClose: () => void;
@@ -88,6 +90,7 @@ export function DataSourcePanel({
   api,
   sources,
   selectedBinding,
+  conversationId,
   onRefresh,
   onBindingSelect,
   onClose,
@@ -775,6 +778,15 @@ export function DataSourcePanel({
                   </div>
                 </div>
                 {selectedId && <RelationshipGraphEditor api={api} sourceId={selectedId} binding={isGraphBinding(activeBinding) ? activeBinding : null} onActivated={(binding) => { setBindings((current) => [...current.filter((item) => item.binding_id !== binding.binding_id), binding]); onBindingSelect(binding); setJustActivated(true); }} />}
+
+                {selectedId && activeBinding && (
+                  <MetricGovernancePanel
+                    api={api}
+                    sourceId={selectedId}
+                    domainId={activeBinding.domain_id}
+                    conversationId={conversationId}
+                  />
+                )}
                 {isGraphBinding(activeBinding) ? (
                   <div className="single-table-note" role="status">
                     <ShieldCheck size={16} />

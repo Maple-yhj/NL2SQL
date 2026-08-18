@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import sqlite3
 from collections.abc import AsyncIterator, Callable
+from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -469,7 +470,7 @@ class SQLiteConversationRepository:
         )
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS conversations (
@@ -558,14 +559,14 @@ class SQLiteConversationRepository:
         self,
         operation: Callable[[sqlite3.Connection], _T],
     ) -> _T:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             return operation(connection)
 
     def _run_write(
         self,
         operation: Callable[[sqlite3.Connection], _T],
     ) -> _T:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             return operation(connection)
 

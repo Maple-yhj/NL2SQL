@@ -962,6 +962,7 @@ export function App() {
             api={api}
             sources={dataSources}
             selectedBinding={activeDataBinding}
+            conversationId={activeConversationId || undefined}
             onRefresh={loadDataSources}
             onBindingSelect={setActiveDataBinding}
             onClose={() => setDataSourcePanelOpen(false)}

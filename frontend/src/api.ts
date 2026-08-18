@@ -24,6 +24,11 @@ import type {
   SemanticGraphBinding,
   SemanticMetricDefinition,
   StoredSession,
+  ActiveMetricSetPointer,
+  MetricActivationResponse,
+  MetricProposal,
+  MetricProposalCandidate,
+  MetricValidationReport,
 } from "./types";
 import { isAgentResponse } from "./agentResponseValidator";
 
@@ -315,6 +320,66 @@ export class ApiClient {
     return this.request<SemanticBinding>(
       `/api/data-sources/${encodeURIComponent(sourceId)}/bindings/${encodeURIComponent(bindingId)}/activate`,
       { method: "POST" },
+    );
+  }
+
+  listMetricProposals(sourceId: string): Promise<{ items: MetricProposal[] }> {
+    return this.request<{ items: MetricProposal[] }>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/metric-proposals`,
+    );
+  }
+
+  getSemanticMetricFeatures(): Promise<{ domain_pack_discovery: boolean; web_discovery: boolean; provisional_overlays: boolean; auto_publish_alias: boolean }> {
+    return this.request<{ domain_pack_discovery: boolean; web_discovery: boolean; provisional_overlays: boolean; auto_publish_alias: boolean }>(
+      "/api/semantic-metrics/features",
+    );
+  }
+
+  discoverMetricProposal(sourceId: string, domainId: string, requestedTerm: string): Promise<MetricProposal> {
+    return this.request<MetricProposal>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/metric-proposals/discover`,
+      { method: "POST", body: JSON.stringify({ domain_id: domainId, requested_term: requestedTerm }) },
+    );
+  }
+
+  selectMetricCandidate(proposalId: string, candidateId: string, expectedRevision: number): Promise<MetricProposal> {
+    return this.request<MetricProposal>(
+      `/api/metric-proposals/${encodeURIComponent(proposalId)}/select`,
+      { method: "POST", body: JSON.stringify({ candidate_id: candidateId, expected_revision: expectedRevision }) },
+    );
+  }
+
+  reviseMetricCandidate(proposalId: string, candidate: MetricProposalCandidate, expectedRevision: number): Promise<MetricProposal> {
+    return this.request<MetricProposal>(
+      `/api/metric-proposals/${encodeURIComponent(proposalId)}/candidates/${encodeURIComponent(candidate.candidate_id)}`,
+      { method: "PATCH", body: JSON.stringify({ candidate, expected_revision: expectedRevision }) },
+    );
+  }
+
+  validateMetricProposal(proposalId: string, expectedRevision: number): Promise<{ proposal: MetricProposal; report: MetricValidationReport }> {
+    return this.request<{ proposal: MetricProposal; report: MetricValidationReport }>(
+      `/api/metric-proposals/${encodeURIComponent(proposalId)}/validate`,
+      { method: "POST", body: JSON.stringify({ expected_revision: expectedRevision }) },
+    );
+  }
+
+  createMetricOverlay(proposalId: string, validationReportId: string, conversationId: string): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>(
+      `/api/metric-proposals/${encodeURIComponent(proposalId)}/overlays`,
+      { method: "POST", body: JSON.stringify({ validation_report_id: validationReportId, scope: "conversation", conversation_id: conversationId }) },
+    );
+  }
+
+  approveAndActivateMetric(proposalId: string, validationReportId: string, expectedRevision: number, expectedPointerRevision: number): Promise<MetricActivationResponse> {
+    return this.request<MetricActivationResponse>(
+      `/api/metric-proposals/${encodeURIComponent(proposalId)}/approve-and-activate`,
+      { method: "POST", body: JSON.stringify({ validation_report_id: validationReportId, expected_revision: expectedRevision, expected_pointer_revision: expectedPointerRevision }) },
+    );
+  }
+
+  getActiveMetricSet(sourceId: string, domainId: string): Promise<{ active_pointer: ActiveMetricSetPointer | null }> {
+    return this.request<{ active_pointer: ActiveMetricSetPointer | null }>(
+      `/api/data-sources/${encodeURIComponent(sourceId)}/metric-sets/active?domain_id=${encodeURIComponent(domainId)}`,
     );
   }
 

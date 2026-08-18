@@ -560,6 +560,14 @@ const schema = {
     "DatasetRuntimeVersionPins": {
       "additionalProperties": false,
       "properties": {
+        "analysis_skill_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "analysis_skill_version": {
+          "minLength": 1,
+          "type": "string"
+        },
         "binding_id": {
           "minLength": 1,
           "type": "string"
@@ -567,6 +575,39 @@ const schema = {
         "binding_version": {
           "minimum": 1.0,
           "type": "integer"
+        },
+        "domain_pack_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "domain_pack_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "domain_pack_version": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "graph_digest": {
           "pattern": "^[0-9a-f]{64}$",
@@ -583,6 +624,61 @@ const schema = {
         "kind": {
           "const": "dataset",
           "type": "string"
+        },
+        "metric_overlay_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_overlay_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_set_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_set_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metric_set_version": {
+          "anyOf": [
+            {
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "model_versions": {
           "items": {
@@ -624,12 +720,22 @@ const schema = {
         }
       },
       "required": [
+        "analysis_skill_id",
+        "analysis_skill_version",
         "binding_id",
         "binding_version",
+        "domain_pack_digest",
+        "domain_pack_id",
+        "domain_pack_version",
         "graph_digest",
         "graph_id",
         "graph_version",
         "kind",
+        "metric_overlay_digest",
+        "metric_overlay_id",
+        "metric_set_digest",
+        "metric_set_id",
+        "metric_set_version",
         "model_versions",
         "relationship_graph_digest",
         "runtime_version",

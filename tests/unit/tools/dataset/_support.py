@@ -20,6 +20,7 @@ from data_agent.tools.providers.dataset import (
     build_dataset_tool_registry,
 )
 from data_agent.tools.schemas import CatalogColumn, CatalogRelation, CatalogSnapshot
+from data_agent.semantic_metrics import EffectiveMetricCatalog
 
 
 class DatasetToolHarness:
@@ -142,6 +143,7 @@ class DatasetToolHarness:
             authority=authority,
             catalog=self.catalog,
             binding=self.binding,
+            metric_catalog=EffectiveMetricCatalog.build(),
             connector=self.connector,
             connection_ref=self.connection_ref,
             bundle_digest=self.bundle_digest,

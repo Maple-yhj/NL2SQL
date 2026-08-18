@@ -10,6 +10,7 @@ import re
 import sqlite3
 import tempfile
 from collections.abc import Callable
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -233,7 +234,7 @@ class SQLiteArtifactStore:
             return await asyncio.to_thread(self._delete_expired_sync, boundary)
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS agent_artifacts (
@@ -294,7 +295,7 @@ class SQLiteArtifactStore:
         )
         destination = self._safe_payload_path(relative_path)
 
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 """
@@ -401,7 +402,7 @@ class SQLiteArtifactStore:
         run_id: str,
         artifact_id: str,
     ) -> JsonValue:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 """
                 SELECT relative_path, digest
@@ -431,7 +432,7 @@ class SQLiteArtifactStore:
         user_id: str,
         run_id: str,
     ) -> tuple[AgentArtifactRef, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 """
                 SELECT artifact_id, kind, digest, schema_digest, row_count,
@@ -445,7 +446,7 @@ class SQLiteArtifactStore:
         return tuple(self._row_to_ref(run_id, row) for row in rows)
 
     def _delete_expired_sync(self, now: datetime) -> tuple[str, ...]:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute(
                 """

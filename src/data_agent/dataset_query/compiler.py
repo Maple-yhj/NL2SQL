@@ -30,6 +30,7 @@ from data_agent.dataset_query.contracts import (
     ResultShape,
 )
 from data_agent.tools.schemas import CatalogSnapshot
+from data_agent.semantic_metrics import EffectiveMetricCatalog
 
 from .models import (
     DatasetFilterOperator,
@@ -50,6 +51,7 @@ class DatasetQueryCompiler:
         schema_fingerprint: str,
         bundle_digest: str,
         catalog: CatalogSnapshot | None = None,
+        metric_catalog: EffectiveMetricCatalog | None = None,
         _relation_table_overrides: dict[str, str] | None = None,
         _join_conditions_overrides: dict[
             str,
@@ -70,6 +72,7 @@ class DatasetQueryCompiler:
                 dialect=dialect,
                 schema_fingerprint=schema_fingerprint,
                 bundle_digest=bundle_digest,
+                metric_catalog=metric_catalog,
             )
         if isinstance(binding, SemanticGraphBindingRecord):
             if catalog is None:

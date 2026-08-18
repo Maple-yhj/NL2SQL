@@ -110,11 +110,21 @@ class DatasetRuntimeVersionPins(PublicContractModel):
     graph_version: NonBlankText
     graph_digest: Digest
     tool_registry_version: NonBlankText
+    analysis_skill_id: NonBlankText = "dataset.analytics"
+    analysis_skill_version: NonBlankText = "1.0.0"
+    domain_pack_id: NonBlankText | None = None
+    domain_pack_version: NonBlankText | None = None
+    domain_pack_digest: Digest | None = None
     model_versions: tuple[ComponentVersionPin, ...] = Field(min_length=1)
     source_id: NonBlankText
     source_version: int = Field(ge=1)
     binding_id: NonBlankText
     binding_version: int = Field(ge=1)
+    metric_set_id: NonBlankText | None = None
+    metric_set_version: int | None = Field(default=None, ge=1)
+    metric_set_digest: Digest | None = None
+    metric_overlay_id: NonBlankText | None = None
+    metric_overlay_digest: Digest | None = None
     schema_fingerprint: SchemaFingerprint
     relationship_graph_digest: Digest | None = None
 
@@ -123,6 +133,17 @@ class DatasetRuntimeVersionPins(PublicContractModel):
         components = tuple(item.component for item in self.model_versions)
         if len(components) != len(set(components)):
             raise ValueError("runtime version pin components must be unique")
+        domain_pack_values = (
+            self.domain_pack_id,
+            self.domain_pack_version,
+            self.domain_pack_digest,
+        )
+        if any(value is not None for value in domain_pack_values) and not all(
+            value is not None for value in domain_pack_values
+        ):
+            raise ValueError(
+                "domain pack id, version, and digest must be pinned together"
+            )
         return self
 
 

@@ -26,6 +26,7 @@ from data_agent.dataset_query.contracts import PreparedQuery
 from data_agent.tools.connectors import DataSourceConnector
 from data_agent.tools.models import CredentialLease, NonBlankText, ToolModel
 from data_agent.tools.schemas import CatalogSnapshot
+from data_agent.semantic_metrics import EffectiveMetricCatalog
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +34,7 @@ class DatasetToolRuntime:
     authority: DatasetAuthority
     catalog: CatalogSnapshot
     binding: SemanticBindingRecord | SemanticGraphBindingRecord
+    metric_catalog: EffectiveMetricCatalog
     connector: DataSourceConnector
     connection_ref: str
     bundle_digest: str

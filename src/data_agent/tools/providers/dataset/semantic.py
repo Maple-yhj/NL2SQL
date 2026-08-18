@@ -36,6 +36,7 @@ class SemanticInspectProvider:
         del payload
         runtime = dataset_runtime(context)
         binding = runtime.binding
+        metrics = tuple(item.definition for item in runtime.metric_catalog.entries)
         document = {
             "schemaVersion": binding.schema_version,
             "bindingId": binding.binding_id,
@@ -60,13 +61,19 @@ class SemanticInspectProvider:
                     "metricRef": item.metric_ref,
                     "displayName": item.display_name,
                     "description": item.description,
-                    "operation": item.operation,
-                    "fieldRef": item.field_ref,
+                    "formula": item.formula.model_dump(mode="json"),
+                    "defaultFilter": (
+                        item.default_filter.model_dump(mode="json")
+                        if item.default_filter is not None
+                        else None
+                    ),
+                    "defaultTimeRef": item.default_time_ref,
                     "unit": item.unit,
                     "grain": item.grain,
+                    "currency": item.currency,
                     "synonyms": list(item.synonyms),
                 }
-                for item in binding.metrics
+                for item in metrics
             ],
             "relationshipCount": (
                 len(binding.graph.edges)
@@ -78,7 +85,10 @@ class SemanticInspectProvider:
             context=context,
             kind="logical_plan",
             payload=document,
-            summary=f"Semantic binding contains {len(runtime.binding.mappings)} logical fields",
+            summary=(
+                f"Semantic binding contains {len(runtime.binding.mappings)} logical "
+                f"fields and {len(metrics)} effective metrics"
+            ),
             sensitivity="metadata",
             schema_digest=context.authority.schema_fingerprint,
         )

@@ -149,6 +149,36 @@
 .agent-input-choices button { border: 1px solid #cfd4dc; border-radius: 999px; background: #fff; padding: 6px 10px; }
 .agent-input-choices button.selected { border-color: #5b6cff; color: #3443bd; background: #eef0ff; }
 .agent-input-card textarea { width: 100%; min-height: 74px; resize: vertical; margin-top: 12px; padding: 9px 10px; border: 1px solid #cfd4dc; border-radius: 9px; font: inherit; }
+
+.metric-governance-panel { margin: 18px 0; padding: 18px; border: 1px solid #d8deea; border-radius: 14px; background: #fbfcff; }
+.metric-governance-panel > header, .metric-proposal-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.metric-governance-panel > header > div, .metric-validation-result strong, .success-copy { display: flex; align-items: center; gap: 7px; }
+.metric-governance-panel header span, .metric-proposal-heading > span:first-child { display: grid; gap: 2px; }
+.metric-governance-panel small { color: #6c7483; }
+.metric-discovery-form { display: flex; gap: 8px; margin: 14px 0; }
+.metric-discovery-form input { flex: 1; min-width: 0; }
+.metric-governance-error { margin: 10px 0; padding: 10px; border-radius: 8px; color: #a02a2a; background: #fff1f1; }
+.metric-proposal-list { display: grid; gap: 14px; }
+.metric-proposal { padding: 14px; border: 1px solid #e1e5ed; border-radius: 12px; background: white; }
+.metric-proposal-status { padding: 4px 8px; border-radius: 999px; background: #eef1f6; font-size: 12px; }
+.metric-proposal-status.pending_approval { color: #774d00; background: #fff2cf; }
+.metric-proposal-status.approved { color: #17643a; background: #ddf6e8; }
+.metric-candidate-grid { display: grid; gap: 10px; margin: 12px 0; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.metric-candidate { display: grid; align-content: start; gap: 9px; padding: 12px; border: 1px solid #e1e5ed; border-radius: 10px; }
+.metric-candidate.selected { border-color: #6578d5; box-shadow: 0 0 0 2px #e8ebff inset; }
+.metric-candidate > div:first-child { display: grid; gap: 3px; }
+.metric-candidate code { padding: 8px; border-radius: 7px; background: #f4f6fa; white-space: normal; overflow-wrap: anywhere; }
+.metric-scope-form { display: grid; gap: 8px; }
+.metric-scope-form > span { color: #775600; font-size: 12px; }
+.metric-scope-form label { display: grid; gap: 4px; font-size: 12px; color: #535c6b; }
+.metric-scope-form input, .metric-scope-form select, .metric-scope-form textarea, .metric-discovery-form input { padding: 8px 9px; border: 1px solid #cfd5df; border-radius: 7px; font: inherit; background: white; }
+.metric-scope-form textarea { min-height: 64px; resize: vertical; }
+.metric-scope-form .metric-confirm-check { display: flex; align-items: center; gap: 7px; }
+.metric-validation-result { display: grid; gap: 6px; padding: 10px; border-radius: 8px; background: #f5f7fb; font-size: 12px; }
+.metric-validation-result .error { color: #a02a2a; }
+.metric-validation-result .warning { color: #8b5d00; }
+.success-copy { color: #17643a; }
+.metric-proposal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .agent-input-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
 .agent-input-actions button { display: inline-flex; align-items: center; gap: 5px; }
 .agent-cancel { margin: 0 16px 14px auto; display: block; border: 0; background: transparent; color: #b42318; }

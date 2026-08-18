@@ -1,0 +1,37 @@
+[
+  {
+    "id": "commerce-gmv-en",
+    "question": "What was quarterly GMV?",
+    "domain_id": "commerce",
+    "expected_metric_ref": "commerce.gmv",
+    "expected_term": "GMV"
+  },
+  {
+    "id": "commerce-gmv-zh",
+    "question": "查询 2023 年第一季度成交总额",
+    "domain_id": "commerce",
+    "expected_metric_ref": "commerce.gmv",
+    "expected_term": "成交总额"
+  },
+  {
+    "id": "commerce-gmv-long-name",
+    "question": "Show Gross Merchandise Value by quarter",
+    "domain_id": "commerce",
+    "expected_metric_ref": "commerce.gmv",
+    "expected_term": "Gross Merchandise Value"
+  },
+  {
+    "id": "plain-amount-is-not-a-domain-metric",
+    "question": "Sum item price by category",
+    "domain_id": "commerce",
+    "expected_metric_ref": null,
+    "expected_term": null
+  },
+  {
+    "id": "finance-term-does-not-leak-into-commerce",
+    "question": "Show quarterly net income",
+    "domain_id": "commerce",
+    "expected_metric_ref": null,
+    "expected_term": null
+  }
+]

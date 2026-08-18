@@ -57,6 +57,101 @@
         "title": "ActivatedRelationshipGraph",
         "type": "object"
       },
+      "ActiveMetricSetPointer": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "metric_set_digest": {
+            "minLength": 1,
+            "title": "Metric Set Digest",
+            "type": "string"
+          },
+          "metric_set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Metric Set Id",
+            "type": "string"
+          },
+          "metric_set_version": {
+            "minimum": 1.0,
+            "title": "Metric Set Version",
+            "type": "integer"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "source_id",
+          "domain_id",
+          "binding_id",
+          "binding_version",
+          "metric_set_id",
+          "metric_set_version",
+          "metric_set_digest"
+        ],
+        "title": "ActiveMetricSetPointer",
+        "type": "object"
+      },
+      "ActiveMetricSetResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_pointer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActiveMetricSetPointer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ActiveMetricSetResponse",
+        "type": "object"
+      },
       "AgentArtifactKind": {
         "enum": [
           "catalog",
@@ -2110,6 +2205,18 @@
       "DatasetRuntimeVersionPins": {
         "additionalProperties": false,
         "properties": {
+          "analysis_skill_id": {
+            "default": "dataset.analytics",
+            "minLength": 1,
+            "title": "Analysis Skill Id",
+            "type": "string"
+          },
+          "analysis_skill_version": {
+            "default": "1.0.0",
+            "minLength": 1,
+            "title": "Analysis Skill Version",
+            "type": "string"
+          },
           "binding_id": {
             "minLength": 1,
             "title": "Binding Id",
@@ -2119,6 +2226,42 @@
             "minimum": 1.0,
             "title": "Binding Version",
             "type": "integer"
+          },
+          "domain_pack_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Pack Digest"
+          },
+          "domain_pack_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Pack Id"
+          },
+          "domain_pack_version": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domain Pack Version"
           },
           "graph_digest": {
             "pattern": "^[0-9a-f]{64}$",
@@ -2140,6 +2283,66 @@
             "default": "dataset",
             "title": "Kind",
             "type": "string"
+          },
+          "metric_overlay_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Overlay Digest"
+          },
+          "metric_overlay_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Overlay Id"
+          },
+          "metric_set_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Set Digest"
+          },
+          "metric_set_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Set Id"
+          },
+          "metric_set_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metric Set Version"
           },
           "model_versions": {
             "items": {
@@ -2239,6 +2442,43 @@
           "inputs"
         ],
         "title": "DerivedCalculation",
+        "type": "object"
+      },
+      "DomainPackIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "pack_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Pack Id",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pack_id",
+          "version",
+          "digest",
+          "domain_id"
+        ],
+        "title": "DomainPackIdentity",
         "type": "object"
       },
       "EnterpriseMemoryContent": {
@@ -3258,6 +3498,2763 @@
         },
         "title": "MemoryVersionPins",
         "type": "object"
+      },
+      "MetricActivationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_pointer": {
+            "$ref": "#/components/schemas/ActiveMetricSetPointer"
+          },
+          "metric_set": {
+            "$ref": "#/components/schemas/MetricSetRecord"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/MetricProposal"
+          }
+        },
+        "required": [
+          "proposal",
+          "metric_set",
+          "active_pointer"
+        ],
+        "title": "MetricActivationResponse",
+        "type": "object"
+      },
+      "MetricAggregateFormula-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "boolean": "#/components/schemas/MetricBooleanPredicate-Input",
+                    "comparison": "#/components/schemas/MetricComparisonPredicate-Input",
+                    "not": "#/components/schemas/MetricNotPredicate-Input",
+                    "null": "#/components/schemas/MetricNullPredicate-Input",
+                    "set": "#/components/schemas/MetricSetPredicate-Input"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MetricComparisonPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricSetPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNullPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricBooleanPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNotPredicate-Input"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "kind": {
+            "const": "aggregate",
+            "default": "aggregate",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                    "field": "#/components/schemas/MetricFieldExpression",
+                    "function": "#/components/schemas/MetricFunctionExpression-Input",
+                    "literal": "#/components/schemas/MetricLiteralExpression",
+                    "unary": "#/components/schemas/MetricUnaryExpression-Input"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MetricFieldExpression"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricLiteralExpression"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "enum": [
+              "count",
+              "count_distinct",
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "median"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "MetricAggregateFormula",
+        "type": "object"
+      },
+      "MetricAggregateFormula-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "boolean": "#/components/schemas/MetricBooleanPredicate-Output",
+                    "comparison": "#/components/schemas/MetricComparisonPredicate-Output",
+                    "not": "#/components/schemas/MetricNotPredicate-Output",
+                    "null": "#/components/schemas/MetricNullPredicate-Output",
+                    "set": "#/components/schemas/MetricSetPredicate-Output"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MetricComparisonPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricSetPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNullPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricBooleanPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNotPredicate-Output"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "kind": {
+            "const": "aggregate",
+            "default": "aggregate",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                    "field": "#/components/schemas/MetricFieldExpression",
+                    "function": "#/components/schemas/MetricFunctionExpression-Output",
+                    "literal": "#/components/schemas/MetricLiteralExpression",
+                    "unary": "#/components/schemas/MetricUnaryExpression-Output"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MetricFieldExpression"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricLiteralExpression"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "enum": [
+              "count",
+              "count_distinct",
+              "sum",
+              "avg",
+              "min",
+              "max",
+              "median"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "MetricAggregateFormula",
+        "type": "object"
+      },
+      "MetricBinaryExpression-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "binary",
+            "default": "binary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Left"
+          },
+          "operation": {
+            "enum": [
+              "add",
+              "subtract",
+              "multiply",
+              "divide"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "operation",
+          "left",
+          "right"
+        ],
+        "title": "MetricBinaryExpression",
+        "type": "object"
+      },
+      "MetricBinaryExpression-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "binary",
+            "default": "binary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Left"
+          },
+          "operation": {
+            "enum": [
+              "add",
+              "subtract",
+              "multiply",
+              "divide"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "operation",
+          "left",
+          "right"
+        ],
+        "title": "MetricBinaryExpression",
+        "type": "object"
+      },
+      "MetricBooleanPredicate-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "boolean",
+            "default": "boolean",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operands": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "boolean": "#/components/schemas/MetricBooleanPredicate-Input",
+                  "comparison": "#/components/schemas/MetricComparisonPredicate-Input",
+                  "not": "#/components/schemas/MetricNotPredicate-Input",
+                  "null": "#/components/schemas/MetricNullPredicate-Input",
+                  "set": "#/components/schemas/MetricSetPredicate-Input"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MetricComparisonPredicate-Input"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricSetPredicate-Input"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricNullPredicate-Input"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricBooleanPredicate-Input"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricNotPredicate-Input"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Operands",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "and",
+              "or"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "operands"
+        ],
+        "title": "MetricBooleanPredicate",
+        "type": "object"
+      },
+      "MetricBooleanPredicate-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "boolean",
+            "default": "boolean",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operands": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "boolean": "#/components/schemas/MetricBooleanPredicate-Output",
+                  "comparison": "#/components/schemas/MetricComparisonPredicate-Output",
+                  "not": "#/components/schemas/MetricNotPredicate-Output",
+                  "null": "#/components/schemas/MetricNullPredicate-Output",
+                  "set": "#/components/schemas/MetricSetPredicate-Output"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MetricComparisonPredicate-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricSetPredicate-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricNullPredicate-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricBooleanPredicate-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricNotPredicate-Output"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "minItems": 2,
+            "title": "Operands",
+            "type": "array"
+          },
+          "operation": {
+            "enum": [
+              "and",
+              "or"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "operands"
+        ],
+        "title": "MetricBooleanPredicate",
+        "type": "object"
+      },
+      "MetricCandidateReviseRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/MetricProposalCandidate-Input"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidate",
+          "expected_revision"
+        ],
+        "title": "MetricCandidateReviseRequest",
+        "type": "object"
+      },
+      "MetricCandidateSelectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "minLength": 1,
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "expected_revision"
+        ],
+        "title": "MetricCandidateSelectRequest",
+        "type": "object"
+      },
+      "MetricComparisonPredicate-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "comparison",
+            "default": "comparison",
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Left"
+          },
+          "operation": {
+            "enum": [
+              "eq",
+              "neq",
+              "gt",
+              "gte",
+              "lt",
+              "lte"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "operation",
+          "left",
+          "right"
+        ],
+        "title": "MetricComparisonPredicate",
+        "type": "object"
+      },
+      "MetricComparisonPredicate-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "comparison",
+            "default": "comparison",
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Left"
+          },
+          "operation": {
+            "enum": [
+              "eq",
+              "neq",
+              "gt",
+              "gte",
+              "lt",
+              "lte"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "operation",
+          "left",
+          "right"
+        ],
+        "title": "MetricComparisonPredicate",
+        "type": "object"
+      },
+      "MetricConstantFormula": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "constant",
+            "default": "constant",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "MetricConstantFormula",
+        "type": "object"
+      },
+      "MetricContextPin": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "metric_set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MetricSetIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "overlay_digest": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overlay Digest"
+          },
+          "overlay_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Overlay Id"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_version": {
+            "minimum": 1.0,
+            "title": "Source Version",
+            "type": "integer"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "source_id",
+          "source_version",
+          "binding_id",
+          "binding_version"
+        ],
+        "title": "MetricContextPin",
+        "type": "object"
+      },
+      "MetricFieldExpression": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "field",
+            "default": "field",
+            "title": "Kind",
+            "type": "string"
+          },
+          "ref": {
+            "minLength": 1,
+            "title": "Ref",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "MetricFieldExpression",
+        "type": "object"
+      },
+      "MetricFormulaBinary-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "formula_binary",
+            "default": "formula_binary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "aggregate": "#/components/schemas/MetricAggregateFormula-Input",
+                "constant": "#/components/schemas/MetricConstantFormula",
+                "formula_binary": "#/components/schemas/MetricFormulaBinary-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricAggregateFormula-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFormulaBinary-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricConstantFormula"
+              }
+            ],
+            "title": "Left"
+          },
+          "operation": {
+            "enum": [
+              "add",
+              "subtract",
+              "multiply",
+              "divide"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "aggregate": "#/components/schemas/MetricAggregateFormula-Input",
+                "constant": "#/components/schemas/MetricConstantFormula",
+                "formula_binary": "#/components/schemas/MetricFormulaBinary-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricAggregateFormula-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFormulaBinary-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricConstantFormula"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "operation",
+          "left",
+          "right"
+        ],
+        "title": "MetricFormulaBinary",
+        "type": "object"
+      },
+      "MetricFormulaBinary-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "formula_binary",
+            "default": "formula_binary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "discriminator": {
+              "mapping": {
+                "aggregate": "#/components/schemas/MetricAggregateFormula-Output",
+                "constant": "#/components/schemas/MetricConstantFormula",
+                "formula_binary": "#/components/schemas/MetricFormulaBinary-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricAggregateFormula-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFormulaBinary-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricConstantFormula"
+              }
+            ],
+            "title": "Left"
+          },
+          "operation": {
+            "enum": [
+              "add",
+              "subtract",
+              "multiply",
+              "divide"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "right": {
+            "discriminator": {
+              "mapping": {
+                "aggregate": "#/components/schemas/MetricAggregateFormula-Output",
+                "constant": "#/components/schemas/MetricConstantFormula",
+                "formula_binary": "#/components/schemas/MetricFormulaBinary-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricAggregateFormula-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFormulaBinary-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricConstantFormula"
+              }
+            ],
+            "title": "Right"
+          }
+        },
+        "required": [
+          "operation",
+          "left",
+          "right"
+        ],
+        "title": "MetricFormulaBinary",
+        "type": "object"
+      },
+      "MetricFunctionExpression-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                  "field": "#/components/schemas/MetricFieldExpression",
+                  "function": "#/components/schemas/MetricFunctionExpression-Input",
+                  "literal": "#/components/schemas/MetricLiteralExpression",
+                  "unary": "#/components/schemas/MetricUnaryExpression-Input"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MetricFieldExpression"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricLiteralExpression"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Arguments",
+            "type": "array"
+          },
+          "kind": {
+            "const": "function",
+            "default": "function",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "coalesce",
+              "nullif",
+              "cast_decimal",
+              "abs"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "maximum": 38.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "maximum": 38.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          }
+        },
+        "required": [
+          "operation",
+          "arguments"
+        ],
+        "title": "MetricFunctionExpression",
+        "type": "object"
+      },
+      "MetricFunctionExpression-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "arguments": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                  "field": "#/components/schemas/MetricFieldExpression",
+                  "function": "#/components/schemas/MetricFunctionExpression-Output",
+                  "literal": "#/components/schemas/MetricLiteralExpression",
+                  "unary": "#/components/schemas/MetricUnaryExpression-Output"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/MetricFieldExpression"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricLiteralExpression"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+                },
+                {
+                  "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+                }
+              ]
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Arguments",
+            "type": "array"
+          },
+          "kind": {
+            "const": "function",
+            "default": "function",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "coalesce",
+              "nullif",
+              "cast_decimal",
+              "abs"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "maximum": 38.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "maximum": 38.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          }
+        },
+        "required": [
+          "operation",
+          "arguments"
+        ],
+        "title": "MetricFunctionExpression",
+        "type": "object"
+      },
+      "MetricLiteralExpression": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "literal",
+            "default": "literal",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "MetricLiteralExpression",
+        "type": "object"
+      },
+      "MetricNotPredicate-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "not",
+            "default": "not",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "boolean": "#/components/schemas/MetricBooleanPredicate-Input",
+                "comparison": "#/components/schemas/MetricComparisonPredicate-Input",
+                "not": "#/components/schemas/MetricNotPredicate-Input",
+                "null": "#/components/schemas/MetricNullPredicate-Input",
+                "set": "#/components/schemas/MetricSetPredicate-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricComparisonPredicate-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricSetPredicate-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricNullPredicate-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBooleanPredicate-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricNotPredicate-Input"
+              }
+            ],
+            "title": "Operand"
+          }
+        },
+        "required": [
+          "operand"
+        ],
+        "title": "MetricNotPredicate",
+        "type": "object"
+      },
+      "MetricNotPredicate-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "not",
+            "default": "not",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "boolean": "#/components/schemas/MetricBooleanPredicate-Output",
+                "comparison": "#/components/schemas/MetricComparisonPredicate-Output",
+                "not": "#/components/schemas/MetricNotPredicate-Output",
+                "null": "#/components/schemas/MetricNullPredicate-Output",
+                "set": "#/components/schemas/MetricSetPredicate-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricComparisonPredicate-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricSetPredicate-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricNullPredicate-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBooleanPredicate-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricNotPredicate-Output"
+              }
+            ],
+            "title": "Operand"
+          }
+        },
+        "required": [
+          "operand"
+        ],
+        "title": "MetricNotPredicate",
+        "type": "object"
+      },
+      "MetricNullPolicy": {
+        "enum": [
+          "exclude",
+          "zero",
+          "error"
+        ],
+        "title": "MetricNullPolicy",
+        "type": "string"
+      },
+      "MetricNullPredicate-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "null",
+            "default": "null",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "enum": [
+              "is_null",
+              "is_not_null"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "operand"
+        ],
+        "title": "MetricNullPredicate",
+        "type": "object"
+      },
+      "MetricNullPredicate-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "null",
+            "default": "null",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "enum": [
+              "is_null",
+              "is_not_null"
+            ],
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "operand"
+        ],
+        "title": "MetricNullPredicate",
+        "type": "object"
+      },
+      "MetricOverlay": {
+        "additionalProperties": false,
+        "properties": {
+          "base_context": {
+            "$ref": "#/components/schemas/MetricContextPin"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SemanticMetricDefinitionV2-Output"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "overlay_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Overlay Id",
+            "type": "string"
+          },
+          "proposal_digest": {
+            "minLength": 1,
+            "title": "Proposal Digest",
+            "type": "string"
+          },
+          "proposal_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposal_revision": {
+            "minimum": 1.0,
+            "title": "Proposal Revision",
+            "type": "integer"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "enum": [
+              "run",
+              "conversation"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "minLength": 1,
+            "title": "User Id",
+            "type": "string"
+          },
+          "validation_report_digest": {
+            "minLength": 1,
+            "title": "Validation Report Digest",
+            "type": "string"
+          },
+          "validation_report_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Validation Report Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "overlay_id",
+          "tenant_id",
+          "user_id",
+          "scope",
+          "base_context",
+          "proposal_id",
+          "proposal_revision",
+          "proposal_digest",
+          "definition",
+          "validation_report_id",
+          "validation_report_digest",
+          "expires_at"
+        ],
+        "title": "MetricOverlay",
+        "type": "object"
+      },
+      "MetricOverlayCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scope": {
+            "enum": [
+              "run",
+              "conversation"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "default": 14400,
+            "maximum": 86400.0,
+            "minimum": 60.0,
+            "title": "Ttl Seconds",
+            "type": "integer"
+          },
+          "validation_report_id": {
+            "minLength": 1,
+            "title": "Validation Report Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "validation_report_id",
+          "scope"
+        ],
+        "title": "MetricOverlayCreateRequest",
+        "type": "object"
+      },
+      "MetricProposal": {
+        "additionalProperties": false,
+        "properties": {
+          "base_binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Base Binding Id",
+            "type": "string"
+          },
+          "base_binding_version": {
+            "minimum": 1.0,
+            "title": "Base Binding Version",
+            "type": "integer"
+          },
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/MetricProposalCandidate-Output"
+            },
+            "minItems": 1,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "minLength": 1,
+            "title": "Created By",
+            "type": "string"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "domain_pack": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DomainPackIdentity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "proposal_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "requested_term": {
+            "minLength": 1,
+            "title": "Requested Term",
+            "type": "string"
+          },
+          "revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "risk_tier": {
+            "$ref": "#/components/schemas/MetricRiskTier",
+            "default": "high"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "selected_candidate_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Candidate Id"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MetricProposalStatus",
+            "default": "draft"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proposal_id",
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "domain_id",
+          "base_binding_id",
+          "base_binding_version",
+          "requested_term",
+          "candidates",
+          "created_by"
+        ],
+        "title": "MetricProposal",
+        "type": "object"
+      },
+      "MetricProposalApproveRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_pointer_revision": {
+            "minimum": 0.0,
+            "title": "Expected Pointer Revision",
+            "type": "integer"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "validation_report_id": {
+            "minLength": 1,
+            "title": "Validation Report Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "validation_report_id",
+          "expected_revision",
+          "expected_pointer_revision"
+        ],
+        "title": "MetricProposalApproveRequest",
+        "type": "object"
+      },
+      "MetricProposalCandidate-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SemanticMetricDefinitionV2-Input"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "rationale": {
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "required_decisions": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Required Decisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "definition",
+          "label",
+          "rationale"
+        ],
+        "title": "MetricProposalCandidate",
+        "type": "object"
+      },
+      "MetricProposalCandidate-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "definition": {
+            "$ref": "#/components/schemas/SemanticMetricDefinitionV2-Output"
+          },
+          "label": {
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "rationale": {
+            "minLength": 1,
+            "title": "Rationale",
+            "type": "string"
+          },
+          "required_decisions": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Required Decisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "definition",
+          "label",
+          "rationale"
+        ],
+        "title": "MetricProposalCandidate",
+        "type": "object"
+      },
+      "MetricProposalCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/MetricProposalCandidate-Input"
+            },
+            "minItems": 1,
+            "title": "Candidates",
+            "type": "array"
+          },
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "requested_term": {
+            "minLength": 1,
+            "title": "Requested Term",
+            "type": "string"
+          },
+          "risk_tier": {
+            "$ref": "#/components/schemas/MetricRiskTier",
+            "default": "high"
+          }
+        },
+        "required": [
+          "domain_id",
+          "requested_term",
+          "candidates"
+        ],
+        "title": "MetricProposalCreateRequest",
+        "type": "object"
+      },
+      "MetricProposalDiscoverRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "domain_id": {
+            "minLength": 1,
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "requested_term": {
+            "minLength": 1,
+            "title": "Requested Term",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain_id",
+          "requested_term"
+        ],
+        "title": "MetricProposalDiscoverRequest",
+        "type": "object"
+      },
+      "MetricProposalListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MetricProposal"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MetricProposalListResponse",
+        "type": "object"
+      },
+      "MetricProposalStatus": {
+        "enum": [
+          "draft",
+          "needs_clarification",
+          "validated",
+          "pending_approval",
+          "approved",
+          "rejected",
+          "superseded",
+          "expired"
+        ],
+        "title": "MetricProposalStatus",
+        "type": "string"
+      },
+      "MetricProposalValidateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_revision"
+        ],
+        "title": "MetricProposalValidateRequest",
+        "type": "object"
+      },
+      "MetricProposalValidationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "proposal": {
+            "$ref": "#/components/schemas/MetricProposal"
+          },
+          "report": {
+            "$ref": "#/components/schemas/MetricValidationReport"
+          }
+        },
+        "required": [
+          "proposal",
+          "report"
+        ],
+        "title": "MetricProposalValidationResponse",
+        "type": "object"
+      },
+      "MetricProvenance": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Digest"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MetricProvenanceKind"
+          },
+          "reference": {
+            "minLength": 1,
+            "title": "Reference",
+            "type": "string"
+          },
+          "retrieved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved At"
+          }
+        },
+        "required": [
+          "kind",
+          "reference"
+        ],
+        "title": "MetricProvenance",
+        "type": "object"
+      },
+      "MetricProvenanceKind": {
+        "enum": [
+          "domain_pack",
+          "web",
+          "user",
+          "schema",
+          "profile",
+          "legacy_adapter"
+        ],
+        "title": "MetricProvenanceKind",
+        "type": "string"
+      },
+      "MetricRiskTier": {
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "MetricRiskTier",
+        "type": "string"
+      },
+      "MetricScopeConvention": {
+        "additionalProperties": false,
+        "properties": {
+          "excluded_statuses": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Excluded Statuses",
+            "type": "array"
+          },
+          "included_statuses": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Included Statuses",
+            "type": "array"
+          },
+          "includes_freight": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Includes Freight"
+          },
+          "includes_tax": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Includes Tax"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "refund_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refund Ref"
+          },
+          "refund_treatment": {
+            "default": "gross",
+            "enum": [
+              "gross",
+              "exclude_refunded",
+              "net_of_refunds",
+              "not_available"
+            ],
+            "title": "Refund Treatment",
+            "type": "string"
+          },
+          "status_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Ref"
+          }
+        },
+        "title": "MetricScopeConvention",
+        "type": "object"
+      },
+      "MetricSetIdentity": {
+        "additionalProperties": false,
+        "properties": {
+          "digest": {
+            "minLength": 1,
+            "title": "Digest",
+            "type": "string"
+          },
+          "metric_set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Metric Set Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "metric_set_id",
+          "version",
+          "digest"
+        ],
+        "title": "MetricSetIdentity",
+        "type": "object"
+      },
+      "MetricSetPredicate-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "set",
+            "default": "set",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "enum": [
+              "in",
+              "not_in"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation",
+          "operand",
+          "values"
+        ],
+        "title": "MetricSetPredicate",
+        "type": "object"
+      },
+      "MetricSetPredicate-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "set",
+            "default": "set",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "enum": [
+              "in",
+              "not_in"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "values": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operation",
+          "operand",
+          "values"
+        ],
+        "title": "MetricSetPredicate",
+        "type": "object"
+      },
+      "MetricSetRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "content_digest": {
+            "minLength": 1,
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "minLength": 1,
+            "title": "Created By",
+            "type": "string"
+          },
+          "definitions": {
+            "items": {
+              "$ref": "#/components/schemas/SemanticMetricDefinitionV2-Output"
+            },
+            "minItems": 1,
+            "title": "Definitions",
+            "type": "array"
+          },
+          "domain_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Domain Id",
+            "type": "string"
+          },
+          "metric_set_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Metric Set Id",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MetricSetStatus",
+            "default": "draft"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "domain_id",
+          "binding_id",
+          "binding_version",
+          "metric_set_id",
+          "version",
+          "definitions",
+          "content_digest",
+          "created_by"
+        ],
+        "title": "MetricSetRecord",
+        "type": "object"
+      },
+      "MetricSetStatus": {
+        "enum": [
+          "draft",
+          "published",
+          "deprecated",
+          "revoked"
+        ],
+        "title": "MetricSetStatus",
+        "type": "string"
+      },
+      "MetricUnaryExpression-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "unary",
+            "default": "unary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Input",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Input",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Input"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "const": "negate",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "operand"
+        ],
+        "title": "MetricUnaryExpression",
+        "type": "object"
+      },
+      "MetricUnaryExpression-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "unary",
+            "default": "unary",
+            "title": "Kind",
+            "type": "string"
+          },
+          "operand": {
+            "discriminator": {
+              "mapping": {
+                "binary": "#/components/schemas/MetricBinaryExpression-Output",
+                "field": "#/components/schemas/MetricFieldExpression",
+                "function": "#/components/schemas/MetricFunctionExpression-Output",
+                "literal": "#/components/schemas/MetricLiteralExpression",
+                "unary": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricFieldExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricLiteralExpression"
+              },
+              {
+                "$ref": "#/components/schemas/MetricUnaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricBinaryExpression-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFunctionExpression-Output"
+              }
+            ],
+            "title": "Operand"
+          },
+          "operation": {
+            "const": "negate",
+            "title": "Operation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "operand"
+        ],
+        "title": "MetricUnaryExpression",
+        "type": "object"
+      },
+      "MetricValidationIssue": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Code",
+            "type": "string"
+          },
+          "field_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Field Refs",
+            "type": "array"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "$ref": "#/components/schemas/MetricValidationSeverity"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "MetricValidationIssue",
+        "type": "object"
+      },
+      "MetricValidationReport": {
+        "additionalProperties": false,
+        "properties": {
+          "binding_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Binding Id",
+            "type": "string"
+          },
+          "binding_version": {
+            "minimum": 1.0,
+            "title": "Binding Version",
+            "type": "integer"
+          },
+          "candidate_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "definition_digest": {
+            "minLength": 1,
+            "title": "Definition Digest",
+            "type": "string"
+          },
+          "issues": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MetricValidationIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "preview_summary": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "propertyNames": {
+              "minLength": 1
+            },
+            "title": "Preview Summary",
+            "type": "object"
+          },
+          "proposal_digest": {
+            "minLength": 1,
+            "title": "Proposal Digest",
+            "type": "string"
+          },
+          "proposal_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Proposal Id",
+            "type": "string"
+          },
+          "proposal_revision": {
+            "minimum": 1.0,
+            "title": "Proposal Revision",
+            "type": "integer"
+          },
+          "report_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Report Id",
+            "type": "string"
+          },
+          "schema_fingerprint": {
+            "minLength": 1,
+            "title": "Schema Fingerprint",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_snapshot_version": {
+            "minimum": 1.0,
+            "title": "Source Snapshot Version",
+            "type": "integer"
+          },
+          "tenant_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]*$",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "validator_digest": {
+            "minLength": 1,
+            "title": "Validator Digest",
+            "type": "string"
+          }
+        },
+        "required": [
+          "report_id",
+          "tenant_id",
+          "proposal_id",
+          "proposal_revision",
+          "proposal_digest",
+          "candidate_id",
+          "definition_digest",
+          "source_id",
+          "source_snapshot_version",
+          "schema_fingerprint",
+          "binding_id",
+          "binding_version",
+          "validator_digest"
+        ],
+        "title": "MetricValidationReport",
+        "type": "object"
+      },
+      "MetricValidationSeverity": {
+        "enum": [
+          "info",
+          "warning",
+          "error"
+        ],
+        "title": "MetricValidationSeverity",
+        "type": "string"
       },
       "Nl2SqlRequest": {
         "additionalProperties": false,
@@ -5348,6 +8345,467 @@
         "title": "SemanticMetricDefinition",
         "type": "object"
       },
+      "SemanticMetricDefinitionV2-Input": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_time_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Allowed Time Refs",
+            "type": "array"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "currency_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Ref"
+          },
+          "default_filter": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "boolean": "#/components/schemas/MetricBooleanPredicate-Input",
+                    "comparison": "#/components/schemas/MetricComparisonPredicate-Input",
+                    "not": "#/components/schemas/MetricNotPredicate-Input",
+                    "null": "#/components/schemas/MetricNullPredicate-Input",
+                    "set": "#/components/schemas/MetricSetPredicate-Input"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MetricComparisonPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricSetPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNullPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricBooleanPredicate-Input"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNotPredicate-Input"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Filter"
+          },
+          "default_time_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Time Ref"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "entity_key_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Entity Key Refs",
+            "type": "array"
+          },
+          "formula": {
+            "discriminator": {
+              "mapping": {
+                "aggregate": "#/components/schemas/MetricAggregateFormula-Input",
+                "constant": "#/components/schemas/MetricConstantFormula",
+                "formula_binary": "#/components/schemas/MetricFormulaBinary-Input"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricAggregateFormula-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFormulaBinary-Input"
+              },
+              {
+                "$ref": "#/components/schemas/MetricConstantFormula"
+              }
+            ],
+            "title": "Formula"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metric_ref": {
+            "minLength": 1,
+            "title": "Metric Ref",
+            "type": "string"
+          },
+          "null_policy": {
+            "$ref": "#/components/schemas/MetricNullPolicy",
+            "default": "exclude"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "provenance": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MetricProvenance"
+            },
+            "title": "Provenance",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 2,
+            "default": 2,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MetricScopeConvention"
+          },
+          "synonyms": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "metric_ref",
+          "display_name",
+          "description",
+          "formula"
+        ],
+        "title": "SemanticMetricDefinitionV2",
+        "type": "object"
+      },
+      "SemanticMetricDefinitionV2-Output": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_time_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Allowed Time Refs",
+            "type": "array"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "currency_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency Ref"
+          },
+          "default_filter": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "boolean": "#/components/schemas/MetricBooleanPredicate-Output",
+                    "comparison": "#/components/schemas/MetricComparisonPredicate-Output",
+                    "not": "#/components/schemas/MetricNotPredicate-Output",
+                    "null": "#/components/schemas/MetricNullPredicate-Output",
+                    "set": "#/components/schemas/MetricSetPredicate-Output"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/MetricComparisonPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricSetPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNullPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricBooleanPredicate-Output"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MetricNotPredicate-Output"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Filter"
+          },
+          "default_time_ref": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Time Ref"
+          },
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "entity_key_refs": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Entity Key Refs",
+            "type": "array"
+          },
+          "formula": {
+            "discriminator": {
+              "mapping": {
+                "aggregate": "#/components/schemas/MetricAggregateFormula-Output",
+                "constant": "#/components/schemas/MetricConstantFormula",
+                "formula_binary": "#/components/schemas/MetricFormulaBinary-Output"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MetricAggregateFormula-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricFormulaBinary-Output"
+              },
+              {
+                "$ref": "#/components/schemas/MetricConstantFormula"
+              }
+            ],
+            "title": "Formula"
+          },
+          "grain": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grain"
+          },
+          "limitations": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "metric_ref": {
+            "minLength": 1,
+            "title": "Metric Ref",
+            "type": "string"
+          },
+          "null_policy": {
+            "$ref": "#/components/schemas/MetricNullPolicy",
+            "default": "exclude"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner"
+          },
+          "provenance": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/MetricProvenance"
+            },
+            "title": "Provenance",
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 2,
+            "default": 2,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MetricScopeConvention"
+          },
+          "synonyms": {
+            "default": [],
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "title": "Synonyms",
+            "type": "array"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          }
+        },
+        "required": [
+          "metric_ref",
+          "display_name",
+          "description",
+          "formula"
+        ],
+        "title": "SemanticMetricDefinitionV2",
+        "type": "object"
+      },
+      "SemanticMetricFeaturesResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_publish_alias": {
+            "title": "Auto Publish Alias",
+            "type": "boolean"
+          },
+          "domain_pack_discovery": {
+            "title": "Domain Pack Discovery",
+            "type": "boolean"
+          },
+          "provisional_overlays": {
+            "title": "Provisional Overlays",
+            "type": "boolean"
+          },
+          "web_discovery": {
+            "title": "Web Discovery",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "domain_pack_discovery",
+          "web_discovery",
+          "provisional_overlays",
+          "auto_publish_alias"
+        ],
+        "title": "SemanticMetricFeaturesResponse",
+        "type": "object"
+      },
       "SemanticRelationship": {
         "additionalProperties": false,
         "properties": {
@@ -6895,6 +10353,210 @@
         "summary": "Get Data Source Catalog"
       }
     },
+    "/api/data-sources/{source_id}/metric-proposals": {
+      "get": {
+        "operationId": "list_metric_proposals_api_data_sources__source_id__metric_proposals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricProposalListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Metric Proposals"
+      },
+      "post": {
+        "operationId": "create_metric_proposal_api_data_sources__source_id__metric_proposals_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricProposalCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Metric Proposal"
+      }
+    },
+    "/api/data-sources/{source_id}/metric-proposals/discover": {
+      "post": {
+        "operationId": "discover_metric_proposal_api_data_sources__source_id__metric_proposals_discover_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricProposalDiscoverRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Discover Metric Proposal"
+      }
+    },
+    "/api/data-sources/{source_id}/metric-sets/active": {
+      "get": {
+        "operationId": "get_active_metric_set_api_data_sources__source_id__metric_sets_active_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "domain_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Domain Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActiveMetricSetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Active Metric Set"
+      }
+    },
     "/api/data-sources/{source_id}/relationship-graphs/draft": {
       "get": {
         "operationId": "get_relationship_graph_draft_api_data_sources__source_id__relationship_graphs_draft_get",
@@ -7394,6 +11056,285 @@
         "summary": "Decide Memory Proposal"
       }
     },
+    "/api/metric-proposals/{proposal_id}/approve-and-activate": {
+      "post": {
+        "operationId": "approve_and_activate_metric_api_metric_proposals__proposal_id__approve_and_activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricProposalApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricActivationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Approve And Activate Metric"
+      }
+    },
+    "/api/metric-proposals/{proposal_id}/candidates/{candidate_id}": {
+      "patch": {
+        "operationId": "revise_metric_candidate_api_metric_proposals__proposal_id__candidates__candidate_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "candidate_id",
+            "required": true,
+            "schema": {
+              "title": "Candidate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricCandidateReviseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Revise Metric Candidate"
+      }
+    },
+    "/api/metric-proposals/{proposal_id}/overlays": {
+      "post": {
+        "operationId": "create_metric_overlay_api_metric_proposals__proposal_id__overlays_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricOverlayCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricOverlay"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Create Metric Overlay"
+      }
+    },
+    "/api/metric-proposals/{proposal_id}/select": {
+      "post": {
+        "operationId": "select_metric_candidate_api_metric_proposals__proposal_id__select_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricCandidateSelectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricProposal"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Select Metric Candidate"
+      }
+    },
+    "/api/metric-proposals/{proposal_id}/validate": {
+      "post": {
+        "operationId": "validate_metric_proposal_api_metric_proposals__proposal_id__validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "proposal_id",
+            "required": true,
+            "schema": {
+              "title": "Proposal Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MetricProposalValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricProposalValidationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Validate Metric Proposal"
+      }
+    },
     "/api/nl2sql": {
       "post": {
         "operationId": "nl2sql_api_nl2sql_post",
@@ -7713,6 +11654,29 @@
           }
         ],
         "summary": "Stream Resume Run"
+      }
+    },
+    "/api/semantic-metrics/features": {
+      "get": {
+        "operationId": "get_semantic_metric_features_api_semantic_metrics_features_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SemanticMetricFeaturesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Semantic Metric Features"
       }
     },
     "/health": {

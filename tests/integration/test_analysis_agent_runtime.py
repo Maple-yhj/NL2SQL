@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 import asyncio
+import os
 from io import BytesIO
 from pathlib import Path
 
@@ -391,7 +392,14 @@ class AnalysisAgentRuntimeIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 ]
                 self.assertEqual(events[-1].type, AgentEventType.RUN_WAITING)
                 self.assertTrue(factory.database_path.exists())
-                self.assertEqual(factory.database_path.stat().st_mode & 0o777, 0o600)
+                # Windows does not expose POSIX owner-only mode bits through
+                # stat even after chmod; the production chmod contract is
+                # asserted on platforms that can represent it.
+                if os.name != "nt":
+                    self.assertEqual(
+                        factory.database_path.stat().st_mode & 0o777,
+                        0o600,
+                    )
             finally:
                 await composition.close()
             checkpoint = factory.database_path.read_bytes()

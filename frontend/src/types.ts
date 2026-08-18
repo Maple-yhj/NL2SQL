@@ -411,6 +411,97 @@ export interface SemanticMetricDefinition {
   synonyms?: string[];
 }
 
+export type MetricScalar = string | number | boolean | null;
+export type MetricAstNode = {
+  kind: string;
+  [key: string]: unknown;
+};
+
+export interface SemanticMetricDefinitionV2 {
+  schema_version: 2;
+  metric_ref: string;
+  display_name: string;
+  description: string;
+  synonyms: string[];
+  formula: MetricAstNode;
+  default_filter: MetricAstNode | null;
+  default_time_ref: string | null;
+  allowed_time_refs: string[];
+  entity_key_refs: string[];
+  grain: string | null;
+  unit: string | null;
+  currency: string | null;
+  currency_ref: string | null;
+  null_policy: "exclude" | "zero" | "error";
+  scope: {
+    status_ref: string | null;
+    included_statuses: string[];
+    excluded_statuses: string[];
+    refund_treatment: "gross" | "exclude_refunded" | "net_of_refunds" | "not_available";
+    refund_ref: string | null;
+    includes_freight: boolean | null;
+    includes_tax: boolean | null;
+    notes: string | null;
+  };
+  limitations: string[];
+  owner: string | null;
+  provenance: Array<Record<string, unknown>>;
+}
+
+export interface MetricProposalCandidate {
+  candidate_id: string;
+  definition: SemanticMetricDefinitionV2;
+  label: string;
+  rationale: string;
+  required_decisions: string[];
+}
+
+export interface MetricProposal {
+  proposal_id: string;
+  revision: number;
+  tenant_id: string;
+  source_id: string;
+  source_snapshot_version: number;
+  schema_fingerprint: string;
+  domain_id: string;
+  base_binding_id: string;
+  base_binding_version: number;
+  requested_term: string;
+  status: "draft" | "needs_clarification" | "validated" | "pending_approval" | "approved" | "rejected" | "superseded" | "expired";
+  risk_tier: "low" | "medium" | "high";
+  domain_pack: { pack_id: string; version: string; digest: string; domain_id: string } | null;
+  candidates: MetricProposalCandidate[];
+  selected_candidate_id: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MetricValidationReport {
+  report_id: string;
+  proposal_id: string;
+  proposal_revision: number;
+  issues: Array<{ severity: "info" | "warning" | "error"; code: string; message: string; field_refs: string[] }>;
+  activation_allowed: boolean;
+}
+
+export interface ActiveMetricSetPointer {
+  metric_set_id: string;
+  metric_set_version: number;
+  metric_set_digest: string;
+  revision: number;
+  source_id: string;
+  domain_id: string;
+  binding_id: string;
+  binding_version: number;
+}
+
+export interface MetricActivationResponse {
+  proposal: MetricProposal;
+  metric_set: Record<string, unknown>;
+  active_pointer: ActiveMetricSetPointer;
+}
+
 export interface SemanticGraphFieldMapping extends SemanticFieldMetadata { logical_ref: string; node_id: string; column_id: string; }
 export interface SemanticGraphBinding { schema_version: 2; binding_id: string; tenant_id: string; source_id: string; source_snapshot_version: number; schema_fingerprint: string; domain_id: string; version: number; status: SemanticBindingStatus; mappings: SemanticGraphFieldMapping[]; metrics?: SemanticMetricDefinition[]; validation_report_digest: string; created_at: string; updated_at: string; }
 

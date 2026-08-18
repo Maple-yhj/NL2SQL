@@ -157,9 +157,29 @@ class DatasetAuthority(PublicContractModel):
     source_version: int = Field(ge=1)
     binding_id: NonBlankText
     binding_version: int = Field(ge=1)
+    metric_set_id: NonBlankText | None = None
+    metric_set_version: int | None = Field(default=None, ge=1)
+    metric_set_digest: Digest | None = None
+    metric_overlay_id: NonBlankText | None = None
+    metric_overlay_digest: Digest | None = None
     schema_fingerprint: SchemaFingerprint
     allowed_relation_ids: tuple[NonBlankText, ...] = Field(min_length=1)
     mode: AgentMode
+
+    @model_validator(mode="after")
+    def validate_metric_pins(self) -> Self:
+        metric_set_values = (
+            self.metric_set_id,
+            self.metric_set_version,
+            self.metric_set_digest,
+        )
+        if any(value is not None for value in metric_set_values) and not all(
+            value is not None for value in metric_set_values
+        ):
+            raise ValueError("metric set id, version, and digest must be pinned together")
+        if (self.metric_overlay_id is None) != (self.metric_overlay_digest is None):
+            raise ValueError("metric overlay id and digest must be pinned together")
+        return self
 
     @field_validator("allowed_relation_ids")
     @classmethod
@@ -532,6 +552,7 @@ class AgentContextSnapshot(PublicContractModel):
     catalog_digest: Digest
     binding_digest: Digest
     relationship_graph_digest: Digest | None = None
+    metric_catalog_digest: Digest | None = None
     catalog_summary: dict[NonBlankText, JsonValue] = Field(default_factory=dict)
     semantic_summary: dict[NonBlankText, JsonValue] = Field(default_factory=dict)
     conversation_summary: NonBlankText | None = None

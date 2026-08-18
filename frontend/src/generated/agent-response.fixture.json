@@ -72,12 +72,22 @@
     }
   ],
   "version_pins": {
+    "analysis_skill_id": "dataset.analytics",
+    "analysis_skill_version": "1.0.0",
     "binding_id": "sales-binding",
     "binding_version": 1,
+    "domain_pack_digest": null,
+    "domain_pack_id": null,
+    "domain_pack_version": null,
     "graph_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "graph_id": "dataset.analysis-agent",
     "graph_version": "1.0.0",
     "kind": "dataset",
+    "metric_overlay_digest": null,
+    "metric_overlay_id": null,
+    "metric_set_digest": null,
+    "metric_set_id": null,
+    "metric_set_version": null,
     "model_versions": [
       {
         "component": "planner",

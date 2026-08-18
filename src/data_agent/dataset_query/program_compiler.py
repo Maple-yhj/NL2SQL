@@ -17,6 +17,14 @@ from data_agent.relationships.router import (
     GraphRouteRequest,
     GraphRouteResolver,
 )
+from data_agent.semantic_metrics import (
+    EffectiveMetricCatalog,
+    LegacyMetricAdapter,
+    MetricCatalogEntry,
+    MetricCatalogOrigin,
+    SemanticMetricDefinitionV2,
+    SemanticMetricSqlCompiler,
+)
 from data_agent.tools.schemas import CatalogSnapshot
 
 from .contracts import AnalysisType, LogicalQueryPlan, PreparedQuery, QueryParameter, ResultShape
@@ -65,10 +73,12 @@ class DatasetQueryProgramCompiler:
         schema_fingerprint: str,
         bundle_digest: str,
         catalog: CatalogSnapshot,
+        metric_catalog: EffectiveMetricCatalog | None = None,
     ) -> PreparedQuery:
         if program.status != DatasetPlanStatus.READY:
             raise ValueError("non-ready dataset query programs cannot be compiled")
 
+        metric_catalog = metric_catalog or self._legacy_metric_catalog(binding)
         parameters: list[QueryParameter] = []
 
         def parameter(value: Scalar | None, purpose: str = "filter") -> exp.Expression:
@@ -104,20 +114,20 @@ class DatasetQueryProgramCompiler:
                     stage=stage,
                     binding=binding,
                     prior=stage_lineage,
+                    metric_catalog=metric_catalog,
                 )
                 scope = self._stage_scope(
                     stage=stage,
                     binding=binding,
                     catalog=catalog,
+                    metric_catalog=metric_catalog,
                 )
                 query, outputs = self._compile_query_stage(
                     stage=stage,
                     scope=scope,
                     dialect=dialect,
                     parameter=parameter,
-                    metric_definitions={
-                        item.metric_ref: item for item in binding.metrics
-                    },
+                    metric_catalog=metric_catalog,
                 )
                 allowed_relations.extend(scope.allowed_relations)
                 assumptions.extend(scope.assumptions)
@@ -187,18 +197,20 @@ class DatasetQueryProgramCompiler:
         stage: DatasetQueryStage,
         binding: SemanticBindingRecord | SemanticGraphBindingRecord,
         prior: dict[str, tuple[str, ...]],
+        metric_catalog: EffectiveMetricCatalog,
     ) -> tuple[str, ...]:
         if isinstance(stage.input, DatasetRootSource):
-            metric_definitions = {item.metric_ref: item for item in binding.metrics}
             return tuple(
                 dict.fromkeys(
                     (
                         *((stage.input.anchor_ref,) if stage.input.anchor_ref else ()),
                         *self._stage_field_refs(stage),
                         *(
-                            metric_definitions[ref].field_ref
+                            field_ref
                             for ref in self._stage_metric_refs(stage)
-                            if metric_definitions[ref].field_ref is not None
+                            for field_ref in self._metric_definition(
+                                metric_catalog, ref
+                            ).ast_field_refs
                         ),
                     )
                 )
@@ -238,21 +250,17 @@ class DatasetQueryProgramCompiler:
         stage: DatasetQueryStage,
         binding: SemanticBindingRecord | SemanticGraphBindingRecord,
         catalog: CatalogSnapshot,
+        metric_catalog: EffectiveMetricCatalog,
     ) -> _StageScope:
         if isinstance(stage.input, DatasetRootSource):
             refs = list(self._stage_field_refs(stage))
-            metric_definitions = {item.metric_ref: item for item in binding.metrics}
             metric_refs = self._stage_metric_refs(stage)
-            unknown_metrics = set(metric_refs) - set(metric_definitions)
-            if unknown_metrics:
-                raise ValueError(
-                    "query program references unknown semantic metrics: "
-                    + ", ".join(sorted(unknown_metrics))
-                )
             refs.extend(
-                metric_definitions[ref].field_ref
+                field_ref
                 for ref in metric_refs
-                if metric_definitions[ref].field_ref is not None
+                for field_ref in self._metric_definition(
+                    metric_catalog, ref
+                ).ast_field_refs
             )
             if stage.input.anchor_ref is not None:
                 refs.insert(0, stage.input.anchor_ref)
@@ -267,6 +275,7 @@ class DatasetQueryProgramCompiler:
                     refs=ordered_refs,
                     binding=binding,
                     catalog=catalog,
+                    metric_catalog=metric_catalog,
                 )
             return self._legacy_scope(stage=stage, refs=ordered_refs, binding=binding)
         if isinstance(stage.input, DatasetStageSource):
@@ -319,6 +328,7 @@ class DatasetQueryProgramCompiler:
         refs: tuple[str, ...],
         binding: SemanticGraphBindingRecord,
         catalog: CatalogSnapshot,
+        metric_catalog: EffectiveMetricCatalog,
     ) -> _StageScope:
         mappings = {item.logical_ref: item for item in binding.mappings}
         unknown = set(refs) - set(mappings)
@@ -335,13 +345,14 @@ class DatasetQueryProgramCompiler:
                 required_logical_refs=refs,
             ),
         )
-        metric_definitions = {item.metric_ref: item for item in binding.metrics}
         measure_refs = (
             *self._stage_measure_refs(stage),
             *(
-                metric_definitions[ref].field_ref
+                field_ref
                 for ref in self._stage_metric_refs(stage)
-                if metric_definitions[ref].field_ref is not None
+                for field_ref in self._metric_definition(
+                    metric_catalog, ref
+                ).ast_field_refs
             ),
         )
         fanout = FanoutGuard().require_safe(
@@ -489,7 +500,7 @@ class DatasetQueryProgramCompiler:
         scope: _StageScope,
         dialect: Dialect,
         parameter,
-        metric_definitions,
+        metric_catalog: EffectiveMetricCatalog,
     ) -> tuple[exp.Select, tuple[str, ...]]:
         scalar = lambda value: self._compile_scalar(
             value,
@@ -504,8 +515,9 @@ class DatasetQueryProgramCompiler:
             compiled = (
                 self._compile_metric(
                     expression,
-                    metric_definitions=metric_definitions,
+                    metric_catalog=metric_catalog,
                     scalar=scalar,
+                    parameter=parameter,
                     dialect=dialect,
                 )
                 if isinstance(expression, DatasetMetricExpression)
@@ -552,35 +564,46 @@ class DatasetQueryProgramCompiler:
     def _compile_metric(
         expression: DatasetMetricExpression,
         *,
-        metric_definitions,
+        metric_catalog: EffectiveMetricCatalog,
         scalar,
+        parameter,
         dialect: Dialect,
     ) -> exp.Expression:
-        try:
-            definition = metric_definitions[expression.ref]
-        except KeyError as exc:
-            raise ValueError(
-                f"semantic metric {expression.ref} is unavailable"
-            ) from exc
-        operand = (
-            scalar(DatasetFieldExpression(ref=definition.field_ref))
-            if definition.field_ref is not None
-            else None
+        definition = DatasetQueryProgramCompiler._metric_definition(
+            metric_catalog, expression.ref
         )
-        if definition.operation == "count":
-            return exp.Count(this=operand or exp.Star())
-        if definition.operation == "count_distinct":
-            assert operand is not None
-            return exp.Count(this=exp.Distinct(expressions=[operand]))
-        assert operand is not None
-        if definition.operation == "median":
-            return DatasetQueryProgramCompiler._median(operand, dialect)
-        return {
-            "sum": exp.Sum,
-            "avg": exp.Avg,
-            "min": exp.Min,
-            "max": exp.Max,
-        }[definition.operation](this=operand)
+        return SemanticMetricSqlCompiler().compile(
+            definition,
+            field=lambda ref: scalar(DatasetFieldExpression(ref=ref)),
+            parameter=parameter,
+            dialect=dialect,
+        )
+
+    @staticmethod
+    def _metric_definition(
+        metric_catalog: EffectiveMetricCatalog,
+        ref: str,
+    ) -> SemanticMetricDefinitionV2:
+        try:
+            return metric_catalog.require(ref).definition
+        except Exception as exc:
+            raise ValueError(f"semantic metric {ref} is unavailable") from exc
+
+    @staticmethod
+    def _legacy_metric_catalog(
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
+    ) -> EffectiveMetricCatalog:
+        authority = f"embedded-v1:{binding.binding_id}:{binding.version}"
+        return EffectiveMetricCatalog.build(
+            legacy=tuple(
+                MetricCatalogEntry.create(
+                    definition=LegacyMetricAdapter.to_v2(metric),
+                    origin=MetricCatalogOrigin.LEGACY,
+                    authority_ref=authority,
+                )
+                for metric in binding.metrics
+            )
+        )
 
     @staticmethod
     def _compile_union_stage(

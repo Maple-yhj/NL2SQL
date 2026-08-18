@@ -120,6 +120,7 @@ class QueryCompileProvider:
                 dialect=dialect,
                 schema_fingerprint=runtime.authority.schema_fingerprint,
                 bundle_digest=runtime.bundle_digest,
+                metric_catalog=runtime.metric_catalog,
             )
         except GraphRouteError as exc:
             graph_codes = {

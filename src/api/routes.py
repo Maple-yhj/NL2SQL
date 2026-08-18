@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 from uuid import uuid4
 
@@ -32,6 +32,7 @@ from api.auth import (
 from api.auth_store import create_auth_store, hash_refresh_token
 from api.schemas import (
     AuthUserResponse,
+    ActiveMetricSetResponse,
     ConversationCreateRequest,
     ConversationDataSourceBindingResponse,
     ConversationListResponse,
@@ -49,6 +50,16 @@ from api.schemas import (
     MemoryProposalDecisionRequest,
     MemoryProposalDecisionResponse,
     MemoryProposalListResponse,
+    MetricActivationResponse,
+    MetricCandidateSelectRequest,
+    MetricCandidateReviseRequest,
+    MetricOverlayCreateRequest,
+    MetricProposalApproveRequest,
+    MetricProposalCreateRequest,
+    MetricProposalDiscoverRequest,
+    MetricProposalListResponse,
+    MetricProposalValidateRequest,
+    MetricProposalValidationResponse,
     Nl2SqlRequest,
     PostgresDataSourceRequest,
     RefreshRequest,
@@ -60,6 +71,7 @@ from api.schemas import (
     RunWaitingResponse,
     SemanticBindingCreateRequest,
     SemanticBindingListResponse,
+    SemanticMetricFeaturesResponse,
     TokenResponse,
 )
 from api.datasource_service import DataSourceService
@@ -101,6 +113,14 @@ from data_agent.relationships.models import (
 from data_agent.relationships.router import GraphRouteError, GraphRouteRequest, GraphRouteResolver
 from data_agent.relationships.validator import validate_graph
 from data_agent.datasources import SemanticGraphBindingRecord
+from data_agent.semantic_metrics import (
+    MetricOverlay,
+    MetricProposal,
+    SemanticMetricActor,
+    SemanticMetricGovernanceService,
+    SemanticMetricServiceError,
+    SemanticMetricServiceErrorCode,
+)
 
 
 router = APIRouter()
@@ -238,6 +258,16 @@ def get_data_source_service(request: Request) -> DataSourceService:
     if service is None:
         raise RuntimeError("Datasource service is unavailable outside app lifespan")
     return service
+
+
+def get_semantic_metric_service(
+    service: DataSourceService = Depends(get_data_source_service),
+) -> SemanticMetricGovernanceService:
+    return SemanticMetricGovernanceService(
+        service.registry,
+        web_discovery=service.metric_web_discovery,
+        features=service.semantic_metric_features,
+    )
 
 
 def get_run_coordinator(request: Request) -> RunCoordinator:
@@ -414,6 +444,7 @@ async def rerun_relationship_recommendations(
     principal: AuthPrincipal = Depends(get_bearer_principal),
     service: DataSourceService = Depends(get_data_source_service),
 ):
+    _require_semantic_editor(principal)
     try:
         _, run = await service.ensure_relationship_discovery(
             tenant_id=principal.tenant_id, source_id=source_id
@@ -451,6 +482,7 @@ async def patch_relationship_graph(
     principal: AuthPrincipal = Depends(get_bearer_principal),
     service: DataSourceService = Depends(get_data_source_service),
 ):
+    _require_semantic_editor(principal)
     if draft.graph_id != graph_id or draft.source_id != source_id or draft.tenant_id != principal.tenant_id:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="graph identity cannot be changed")
     try:
@@ -505,11 +537,13 @@ async def activate_relationship_graph(
     principal: AuthPrincipal = Depends(get_bearer_principal),
     service: DataSourceService = Depends(get_data_source_service),
 ):
+    _require_semantic_admin(principal)
     try:
         return await service.activate_relationship_graph(
             tenant_id=principal.tenant_id, source_id=source_id, graph_id=graph_id,
             domain_id=request.domain_id, mappings=request.mappings,
             metrics=request.metrics, binding_id=request.binding_id,
+            assigned_by=principal.user_id,
         )
     except DataSourceRegistryError as exc:
         raise _data_source_error(exc) from exc
@@ -547,6 +581,7 @@ async def create_data_source_binding(
     principal: AuthPrincipal = Depends(get_bearer_principal),
     service: DataSourceService = Depends(get_data_source_service),
 ):
+    _require_semantic_editor(principal)
     try:
         return await service.create_binding(
             tenant_id=principal.tenant_id,
@@ -572,14 +607,240 @@ async def activate_data_source_binding(
     principal: AuthPrincipal = Depends(get_bearer_principal),
     service: DataSourceService = Depends(get_data_source_service),
 ):
+    _require_semantic_admin(principal)
     try:
         return await service.activate_binding(
             tenant_id=principal.tenant_id,
             source_id=source_id,
             binding_id=binding_id,
+            assigned_by=principal.user_id,
         )
     except (DataSourceRegistryError, FileSnapshotError, ValueError) as exc:
         raise _data_source_error(exc) from exc
+
+
+@router.get(
+    "/api/semantic-metrics/features",
+    response_model=SemanticMetricFeaturesResponse,
+)
+async def get_semantic_metric_features(
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: DataSourceService = Depends(get_data_source_service),
+):
+    del principal
+    features = service.semantic_metric_features
+    return SemanticMetricFeaturesResponse(
+        domain_pack_discovery=features.domain_pack_discovery,
+        web_discovery=features.web_discovery,
+        provisional_overlays=features.provisional_overlays,
+        auto_publish_alias=features.auto_publish_alias,
+    )
+
+
+@router.get(
+    "/api/data-sources/{source_id}/metric-proposals",
+    response_model=MetricProposalListResponse,
+)
+async def list_metric_proposals(
+    source_id: str,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        items = await service.list_proposals(
+            actor=_metric_actor(principal), source_id=source_id
+        )
+        return MetricProposalListResponse(items=list(items))
+    except SemanticMetricServiceError as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.get(
+    "/api/data-sources/{source_id}/metric-sets/active",
+    response_model=ActiveMetricSetResponse,
+)
+async def get_active_metric_set(
+    source_id: str,
+    domain_id: str = Query(min_length=1),
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        pointer = await service.get_active_pointer(
+            actor=_metric_actor(principal),
+            source_id=source_id,
+            domain_id=domain_id,
+        )
+        return ActiveMetricSetResponse(active_pointer=pointer)
+    except SemanticMetricServiceError as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.post(
+    "/api/data-sources/{source_id}/metric-proposals",
+    response_model=MetricProposal,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_metric_proposal(
+    source_id: str,
+    request: MetricProposalCreateRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        return await service.create_proposal(
+            actor=_metric_actor(principal),
+            source_id=source_id,
+            domain_id=request.domain_id,
+            requested_term=request.requested_term,
+            candidates=request.candidates,
+            risk_tier=request.risk_tier,
+        )
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.post(
+    "/api/data-sources/{source_id}/metric-proposals/discover",
+    response_model=MetricProposal,
+    status_code=status.HTTP_201_CREATED,
+)
+async def discover_metric_proposal(
+    source_id: str,
+    request: MetricProposalDiscoverRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        return await service.discover_proposal(
+            actor=_metric_actor(principal),
+            source_id=source_id,
+            domain_id=request.domain_id,
+            requested_term=request.requested_term,
+        )
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.post(
+    "/api/metric-proposals/{proposal_id}/select",
+    response_model=MetricProposal,
+)
+async def select_metric_candidate(
+    proposal_id: str,
+    request: MetricCandidateSelectRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        return await service.select_candidate(
+            actor=_metric_actor(principal),
+            proposal_id=proposal_id,
+            candidate_id=request.candidate_id,
+            expected_revision=request.expected_revision,
+        )
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.patch(
+    "/api/metric-proposals/{proposal_id}/candidates/{candidate_id}",
+    response_model=MetricProposal,
+)
+async def revise_metric_candidate(
+    proposal_id: str,
+    candidate_id: str,
+    request: MetricCandidateReviseRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    if request.candidate.candidate_id != candidate_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="candidate identity cannot be changed",
+        )
+    try:
+        return await service.revise_candidate(
+            actor=_metric_actor(principal),
+            proposal_id=proposal_id,
+            candidate=request.candidate,
+            expected_revision=request.expected_revision,
+        )
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.post(
+    "/api/metric-proposals/{proposal_id}/validate",
+    response_model=MetricProposalValidationResponse,
+)
+async def validate_metric_proposal(
+    proposal_id: str,
+    request: MetricProposalValidateRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        proposal, report = await service.validate_proposal(
+            actor=_metric_actor(principal),
+            proposal_id=proposal_id,
+            expected_revision=request.expected_revision,
+        )
+        return MetricProposalValidationResponse(proposal=proposal, report=report)
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.post(
+    "/api/metric-proposals/{proposal_id}/overlays",
+    response_model=MetricOverlay,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_metric_overlay(
+    proposal_id: str,
+    request: MetricOverlayCreateRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        return await service.create_overlay(
+            actor=_metric_actor(principal),
+            proposal_id=proposal_id,
+            validation_report_id=request.validation_report_id,
+            scope=request.scope,
+            run_id=request.run_id,
+            conversation_id=request.conversation_id,
+            ttl=timedelta(seconds=request.ttl_seconds),
+        )
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
+
+
+@router.post(
+    "/api/metric-proposals/{proposal_id}/approve-and-activate",
+    response_model=MetricActivationResponse,
+)
+async def approve_and_activate_metric(
+    proposal_id: str,
+    request: MetricProposalApproveRequest,
+    principal: AuthPrincipal = Depends(get_bearer_principal),
+    service: SemanticMetricGovernanceService = Depends(get_semantic_metric_service),
+):
+    try:
+        proposal, metric_set, pointer = await service.approve_and_activate(
+            actor=_metric_actor(principal),
+            proposal_id=proposal_id,
+            validation_report_id=request.validation_report_id,
+            expected_revision=request.expected_revision,
+            expected_pointer_revision=request.expected_pointer_revision,
+        )
+        return MetricActivationResponse(
+            proposal=proposal,
+            metric_set=metric_set,
+            active_pointer=pointer,
+        )
+    except (SemanticMetricServiceError, DataSourceRegistryError) as exc:
+        raise _semantic_metric_error(exc) from exc
 
 
 @router.post("/api/nl2sql", response_model=AgentResponse | RunWaitingResponse)
@@ -1476,6 +1737,65 @@ def _data_source_error(
             detail={"code": error.code.value, "message": str(error)},
         )
     return HTTPException(status_code=status_code, detail=str(error))
+
+
+def _metric_actor(principal: AuthPrincipal) -> SemanticMetricActor:
+    return SemanticMetricActor(
+        tenant_id=principal.tenant_id,
+        user_id=principal.user_id,
+        roles=tuple(principal.roles),
+    )
+
+
+def _require_semantic_editor(principal: AuthPrincipal) -> None:
+    allowed = {
+        "analyst",
+        "data_analyst",
+        "semantic_editor",
+        "data_admin",
+        "semantic_admin",
+        "admin",
+        "enterprise_admin",
+    }
+    if not ({role.casefold() for role in principal.roles} & allowed):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "METRIC_PERMISSION_DENIED",
+                "message": "semantic editor role is required",
+            },
+        )
+
+
+def _require_semantic_admin(principal: AuthPrincipal) -> None:
+    allowed = {"data_admin", "semantic_admin", "admin", "enterprise_admin"}
+    if not ({role.casefold() for role in principal.roles} & allowed):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "METRIC_PERMISSION_DENIED",
+                "message": "semantic administrator role is required",
+            },
+        )
+
+
+def _semantic_metric_error(
+    error: SemanticMetricServiceError | DataSourceRegistryError,
+) -> HTTPException:
+    if isinstance(error, DataSourceRegistryError):
+        return _data_source_error(error)
+    status_code = {
+        SemanticMetricServiceErrorCode.PERMISSION_DENIED: status.HTTP_403_FORBIDDEN,
+        SemanticMetricServiceErrorCode.NOT_FOUND: status.HTTP_404_NOT_FOUND,
+        SemanticMetricServiceErrorCode.CONFLICT: status.HTTP_409_CONFLICT,
+        SemanticMetricServiceErrorCode.STALE_AUTHORITY: status.HTTP_409_CONFLICT,
+        SemanticMetricServiceErrorCode.INVALID_STATE: status.HTTP_422_UNPROCESSABLE_CONTENT,
+        SemanticMetricServiceErrorCode.VALIDATION_FAILED: status.HTTP_422_UNPROCESSABLE_CONTENT,
+    }[error.code]
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": error.code.value, "message": str(error)},
+    )
 
 
 def _principal_from_user(user: dict, token_id: str) -> AuthPrincipal:

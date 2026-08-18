@@ -22,6 +22,13 @@ from data_agent.dataset_query import (
     DatasetQueryStage,
     DatasetRootSource,
 )
+from data_agent.semantic_metrics import (
+    MetricAggregateFormula,
+    MetricFieldExpression,
+    MetricProposal,
+    MetricProposalCandidate,
+    SemanticMetricDefinitionV2,
+)
 
 from tests.unit.tools.dataset._support import DatasetToolHarness
 
@@ -78,6 +85,58 @@ def test_dataset_run_starts_with_a_deterministic_catalog_step() -> None:
     assert decision.next_action is not None
     assert decision.next_action.tool_name == "catalog.inspect"
     assert decision.plan.steps[0].objective == "Inspect the pinned dataset catalog"
+
+
+def test_unknown_gmv_creates_and_reuses_agent_governance_draft() -> None:
+    calls: list[str] = []
+    proposal = MetricProposal(
+        proposal_id="proposal-agent-gmv",
+        tenant_id="tenant-1",
+        source_id="olist",
+        source_snapshot_version=1,
+        schema_fingerprint="sha256:olist",
+        domain_id="commerce",
+        base_binding_id="olist-binding",
+        base_binding_version=1,
+        requested_term="GMV",
+        created_by="analyst",
+        candidates=(
+            MetricProposalCandidate(
+                candidate_id="gmv-price",
+                label="商品价格 GMV",
+                rationale="汇总商品价格",
+                required_decisions=("季度时间字段", "退款处理"),
+                definition=SemanticMetricDefinitionV2(
+                    metric_ref="commerce.gmv",
+                    display_name="GMV",
+                    description="Gross merchandise value",
+                    formula=MetricAggregateFormula(
+                        operation="sum",
+                        operand=MetricFieldExpression(ref="item.price"),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    async def discover(term: str) -> MetricProposal:
+        calls.append(term)
+        return proposal
+
+    resolver = _DatasetNextActionResolver(
+        model_client=object(),
+        binding=object(),
+        catalog=object(),
+        domain_id="commerce",
+        metric_proposal_discovery=discover,
+    )
+
+    first = asyncio.run(resolver._discover_unresolved_metric("查询季度 GMV"))
+    second = asyncio.run(resolver._discover_unresolved_metric("查询季度 GMV"))
+
+    assert first == proposal
+    assert second == proposal
+    assert calls == ["GMV"]
 
 
 def test_dataset_query_planning_uses_the_current_question_not_conversation_output() -> None:

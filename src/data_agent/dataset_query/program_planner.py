@@ -15,6 +15,14 @@ from data_agent.relationships.router import (
     GraphRouteResolver,
 )
 from data_agent.tools.schemas import CatalogSnapshot
+from data_agent.semantic_metrics import (
+    DomainPackRegistry,
+    EffectiveMetricCatalog,
+    LegacyMetricAdapter,
+    MetricCatalogEntry,
+    MetricCatalogOrigin,
+    SemanticMetricDefinitionV2,
+)
 
 from .models import DatasetPlanStatus
 from .program import (
@@ -83,13 +91,6 @@ _SYSTEM_PROMPT = (
     "similarly named field. Prefer the smallest sufficient program."
 )
 _FENCED_JSON = re.compile(r"```(?:json)?\s*(\{.*\})\s*```", re.DOTALL | re.IGNORECASE)
-_GOVERNED_BUSINESS_METRIC = re.compile(
-    r"(?:总收入|企业收入|会计收入|净收入|营收|利润|毛利|净利|佣金收入)"
-    r"|\b(?:revenue|income|profit|margin|commission revenue)\b",
-    re.IGNORECASE,
-)
-
-
 def _consume_background_task_result(task: asyncio.Task[str]) -> None:
     try:
         task.result()
@@ -123,32 +124,57 @@ class DatasetQueryProgramPlanner:
         binding: SemanticBindingRecord | SemanticGraphBindingRecord,
         catalog: CatalogSnapshot,
         clarification_history: tuple[dict[str, str], ...] = (),
+        metric_catalog: EffectiveMetricCatalog | None = None,
+        domain_packs: DomainPackRegistry | None = None,
     ) -> DatasetProgramPlanningResult:
+        metric_catalog = metric_catalog or self._legacy_metric_catalog(binding)
+        metric_definitions = {
+            item.definition.metric_ref: item.definition
+            for item in metric_catalog.entries
+        }
         logical_catalog = self._logical_catalog(binding=binding, catalog=catalog)
         logical_metrics = [
             {
                 "ref": item.metric_ref,
                 "displayName": item.display_name,
                 "description": item.description,
-                "operation": item.operation,
-                "fieldRef": item.field_ref,
+                "formula": item.formula.model_dump(mode="json"),
+                "defaultFilter": (
+                    item.default_filter.model_dump(mode="json")
+                    if item.default_filter is not None
+                    else None
+                ),
+                "defaultTimeRef": item.default_time_ref,
                 "unit": item.unit,
                 "grain": item.grain,
+                "currency": item.currency,
                 "synonyms": item.synonyms,
             }
-            for item in binding.metrics
+            for item in metric_definitions.values()
         ]
         policy_input = policy_question or question
-        if _GOVERNED_BUSINESS_METRIC.search(policy_input) and not any(
-            self._metric_matches_question(policy_input, item) for item in binding.metrics
-        ):
+        unresolved_templates = tuple(
+            item
+            for item in (domain_packs or DomainPackRegistry()).detect_templates(
+                policy_input,
+            )
+            if item[1].metric_ref not in metric_definitions
+        )
+        if unresolved_templates:
+            manifest, template, matched_term = unresolved_templates[0]
             return DatasetProgramPlanningResult(
                 program=DatasetQueryProgram(
-                    status=DatasetPlanStatus.UNSUPPORTED,
+                    status=(
+                        DatasetPlanStatus.NEEDS_CLARIFICATION
+                        if manifest.domain_id == binding.domain_id
+                        else DatasetPlanStatus.UNSUPPORTED
+                    ),
                     clarification_question=(
                         "The requested business metric has no governed semantic "
-                        "definition in this dataset. Define its source field, "
-                        "aggregation, unit, grain, and accounting scope before querying."
+                        f"definition in this dataset（检测到“{matched_term}”）。"
+                        "请先在指标候选中确认金额基数、状态范围、时间字段、"
+                        "退款处理和币种；确认后的临时口径可用于本次查询，"
+                        f"管理员批准后会发布为 {template.metric_ref}。"
                     ),
                 ),
                 contextualized_question=question,
@@ -181,6 +207,7 @@ class DatasetQueryProgramPlanner:
                     logical_refs=tuple(item["ref"] for item in logical_catalog),
                     metric_refs=tuple(item["ref"] for item in logical_metrics),
                     binding=binding,
+                    metric_definitions=metric_definitions,
                 )
                 return DatasetProgramPlanningResult(
                     program=program,
@@ -306,6 +333,7 @@ class DatasetQueryProgramPlanner:
         logical_refs: tuple[str, ...],
         metric_refs: tuple[str, ...],
         binding: SemanticBindingRecord | SemanticGraphBindingRecord,
+        metric_definitions: dict[str, SemanticMetricDefinitionV2],
     ) -> None:
         if program.status != DatasetPlanStatus.READY:
             return
@@ -336,11 +364,10 @@ class DatasetQueryProgramPlanner:
             if isinstance(stage.input, DatasetRootSource):
                 if stage.input.anchor_ref is not None and stage.input.anchor_ref not in allowed:
                     raise ValueError("root stage anchor_ref is outside logicalCatalog")
-                metric_by_ref = {item.metric_ref: item for item in binding.metrics}
                 if (
                     stage.input.anchor_ref is None
                     and not refs
-                    and not any(metric_by_ref[ref].field_ref for ref in metrics)
+                    and not any(metric_definitions[ref].ast_field_refs for ref in metrics)
                 ):
                     raise ValueError(
                         "root stage count metrics without a field require anchor_ref"
@@ -352,9 +379,9 @@ class DatasetQueryProgramPlanner:
                             ((stage.input.anchor_ref,) if stage.input.anchor_ref else ())
                             + refs
                             + tuple(
-                                metric_by_ref[ref].field_ref
+                                field_ref
                                 for ref in metrics
-                                if metric_by_ref[ref].field_ref is not None
+                                for field_ref in metric_definitions[ref].ast_field_refs
                             )
                         )
                     )
@@ -375,6 +402,23 @@ class DatasetQueryProgramPlanner:
                             f"relationship route ({exc.code})"
                         ) from exc
             outputs[stage.stage_id] = {item.alias for item in stage.projections}
+
+    @staticmethod
+    def _legacy_metric_catalog(
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
+    ) -> EffectiveMetricCatalog:
+        return EffectiveMetricCatalog.build(
+            legacy=tuple(
+                MetricCatalogEntry.create(
+                    definition=LegacyMetricAdapter.to_v2(metric),
+                    origin=MetricCatalogOrigin.LEGACY,
+                    authority_ref=(
+                        f"embedded-v1:{binding.binding_id}:{binding.version}"
+                    ),
+                )
+                for metric in binding.metrics
+            )
+        )
 
     @classmethod
     def _validate_output_refs(

@@ -46,6 +46,15 @@ from data_agent.tools.providers.dataset.contracts import (
     PreparedQueryArtifactPayload,
 )
 from data_agent.tools.schemas import TabularResult
+from data_agent.semantic_metrics import (
+    DomainPackRegistry,
+    EffectiveMetricCatalog,
+    LegacyMetricAdapter,
+    MetricCatalogEntry,
+    MetricCatalogOrigin,
+    MetricProposal,
+    SemanticMetricServiceError,
+)
 
 from .checkpoints import (
     CheckpointerFactory,
@@ -86,11 +95,16 @@ class DataSourceAuthorityService(Protocol):
 
     async def pin_conversation(self, **kwargs: object) -> object: ...
 
+    async def resolve_metric_context(self, **kwargs: object) -> object: ...
+
+    async def discover_metric_proposal(self, **kwargs: object) -> object: ...
+
 
 ConversationSummaryLoader = Callable[
     [AgentRequest, PrincipalContext],
     str | None | Awaitable[str | None],
 ]
+MetricProposalDiscovery = Callable[[str], Awaitable[MetricProposal]]
 
 
 async def _no_conversation_summary(
@@ -104,10 +118,29 @@ async def _no_conversation_summary(
 class _DatasetNextActionResolver:
     """Translate a high-level Agent plan into schema-valid dataset tool actions."""
 
-    def __init__(self, *, model_client: object, binding: object, catalog: object) -> None:
+    def __init__(
+        self,
+        *,
+        model_client: object,
+        binding: object,
+        catalog: object,
+        metric_catalog: EffectiveMetricCatalog | None = None,
+        domain_id: str = "dataset",
+        domain_packs: DomainPackRegistry | None = None,
+        metric_proposal_discovery: MetricProposalDiscovery | None = None,
+    ) -> None:
         self._logical_planner = DatasetQueryProgramPlanner(model_client)  # type: ignore[arg-type]
         self._binding = binding
         self._catalog = catalog
+        self._metric_catalog = metric_catalog or (
+            _legacy_metric_catalog(binding)
+            if hasattr(binding, "metrics")
+            else EffectiveMetricCatalog.build()
+        )
+        self._domain_id = domain_id
+        self._domain_packs = domain_packs or DomainPackRegistry()
+        self._metric_proposal_discovery = metric_proposal_discovery
+        self._metric_proposal: MetricProposal | None = None
         self._query_plan: DatasetQueryPlan | DatasetQueryProgram | None = None
 
     def initial_decision(
@@ -359,6 +392,28 @@ class _DatasetNextActionResolver:
                         ErrorCode.QUERY_UNSUPPORTED,
                         prompt,
                     )
+                proposal = await self._discover_unresolved_metric(
+                    goal.original_question
+                )
+                if proposal is not None:
+                    candidate_lines = "\n".join(
+                        f"- {item.label}: {item.rationale}"
+                        for item in proposal.candidates
+                    )
+                    decisions = tuple(
+                        dict.fromkeys(
+                            decision
+                            for item in proposal.candidates
+                            for decision in item.required_decisions
+                        )
+                    )
+                    prompt = (
+                        f"已自动创建指标口径草案 {proposal.proposal_id}，但不会在本次"
+                        "运行中静默激活。请在数据源的指标治理面板确认候选、完成验证"
+                        "并由管理员发布，然后重新发起查询。\n"
+                        f"候选口径：\n{candidate_lines}\n"
+                        f"待确认：{'、'.join(decisions) or '无'}"
+                    )
                 return PlannerDecision(
                     plan=plan,
                     decision="clarify",
@@ -431,6 +486,40 @@ class _DatasetNextActionResolver:
             return self._finish_evidence_mode(plan, goal=goal)
         return None
 
+    async def _discover_unresolved_metric(
+        self,
+        question: str,
+    ) -> MetricProposal | None:
+        """Ground a same-domain unknown term into a draft, never an activation."""
+
+        if self._metric_proposal is not None:
+            return self._metric_proposal
+        active_refs = {
+            entry.definition.metric_ref for entry in self._metric_catalog.entries
+        }
+        unresolved = next(
+            (
+                match
+                for match in self._domain_packs.detect_templates(
+                    question,
+                    domain_id=self._domain_id,
+                )
+                if match[1].metric_ref not in active_refs
+            ),
+            None,
+        )
+        if unresolved is None or self._metric_proposal_discovery is None:
+            return None
+        _, _, matched_term = unresolved
+        try:
+            self._metric_proposal = await self._metric_proposal_discovery(matched_term)
+        except SemanticMetricServiceError:
+            # Discovery is an enhancement to fail-closed clarification. A pack
+            # that cannot ground to this schema must not turn clarification
+            # into a runtime failure or substitute another metric.
+            return None
+        return self._metric_proposal
+
     async def _plan_query(
         self,
         goal: AnalysisGoal,
@@ -456,6 +545,8 @@ class _DatasetNextActionResolver:
                     for item in clarification_turns
                     if item.origin == "dataset_query"
                 ),
+                metric_catalog=self._metric_catalog,
+                domain_packs=self._domain_packs,
             )
             self._query_plan = result.program
         return self._query_plan
@@ -945,7 +1036,6 @@ class DatasetAnalysisRunResolver:
         principal: PrincipalContext,
         run_id: str,
     ) -> ResolvedAnalysisRun:
-        del run_id
         if (
             request.source_id is None
             or request.source_version is None
@@ -974,6 +1064,22 @@ class DatasetAnalysisRunResolver:
                     conversation_id=request.conversation_id,
                     binding=execution.binding,
                 )
+            resolve_metrics = getattr(
+                self._data_sources, "resolve_metric_context", None
+            )
+            metric_execution = (
+                await resolve_metrics(
+                    tenant_id=principal.tenant_id,
+                    user_id=principal.user_id,
+                    conversation_id=request.conversation_id,
+                    run_id=run_id,
+                    source_id=request.source_id,
+                    domain_id=request.domain_id,
+                    binding=execution.binding,
+                )
+                if callable(resolve_metrics)
+                else None
+            )
         except DataSourceRegistryError as exc:
             raise AnalysisRuntimeError(
                 AgentError(
@@ -985,6 +1091,14 @@ class DatasetAnalysisRunResolver:
         snapshot = execution.snapshot
         binding = execution.binding
         catalog = snapshot.catalog
+        metric_catalog = (
+            metric_execution.catalog
+            if metric_execution is not None
+            else _legacy_metric_catalog(binding)
+        )
+        metric_context = (
+            metric_execution.context if metric_execution is not None else None
+        )
         relations = tuple(item.relation for item in catalog.relations)
         authority = DatasetAuthority(
             tenant_id=principal.tenant_id,
@@ -993,6 +1107,30 @@ class DatasetAnalysisRunResolver:
             source_version=request.source_version,
             binding_id=request.binding_id,
             binding_version=request.binding_version,
+            metric_set_id=(
+                metric_context.metric_set.metric_set_id
+                if metric_context is not None and metric_context.metric_set is not None
+                else None
+            ),
+            metric_set_version=(
+                metric_context.metric_set.version
+                if metric_context is not None and metric_context.metric_set is not None
+                else None
+            ),
+            metric_set_digest=(
+                metric_context.metric_set.digest.removeprefix("sha256:")
+                if metric_context is not None and metric_context.metric_set is not None
+                else None
+            ),
+            metric_overlay_id=(
+                metric_context.overlay_id if metric_context is not None else None
+            ),
+            metric_overlay_digest=(
+                metric_context.overlay_digest.removeprefix("sha256:")
+                if metric_context is not None
+                and metric_context.overlay_digest is not None
+                else None
+            ),
             schema_fingerprint=snapshot.fingerprint,
             allowed_relation_ids=relations,
             mode=request.mode,
@@ -1001,12 +1139,14 @@ class DatasetAnalysisRunResolver:
             (
                 f"{authority.source_id}:{authority.source_version}:"
                 f"{authority.binding_id}:{authority.binding_version}"
+                f":{metric_catalog.digest}"
             ).encode("utf-8")
         ).hexdigest()
         tool_runtime = DatasetToolRuntime(
             authority=authority,
             catalog=catalog,
             binding=binding,
+            metric_catalog=metric_catalog,
             connector=execution.connector,
             connection_ref=execution.connection_ref,
             bundle_digest=bundle_digest,
@@ -1015,6 +1155,35 @@ class DatasetAnalysisRunResolver:
             executor=DatasetQueryExecutor(),
         )
         registry = build_dataset_tool_registry()
+        domain_pack_identity = (
+            metric_execution.domain_pack if metric_execution is not None else None
+        )
+        installed_domain_packs = DomainPackRegistry()
+        domain_manifest = (
+            installed_domain_packs.get(
+                domain_pack_identity.pack_id,
+                domain_pack_identity.version,
+            )
+            if domain_pack_identity is not None
+            else None
+        )
+        if (
+            domain_pack_identity is not None
+            and (
+                domain_manifest is None
+                or domain_manifest.digest != domain_pack_identity.digest
+            )
+        ):
+            raise AnalysisRuntimeError(
+                AgentError(
+                    code=ErrorCode.BINDING_STALE,
+                    message="assigned domain pack is unavailable or stale",
+                    retryable=True,
+                )
+            )
+        selected_domain_packs = DomainPackRegistry(
+            (domain_manifest,) if domain_manifest is not None else ()
+        )
         invoker = ToolInvoker(
             registry,
             credential_broker=DatasetCredentialBroker(tool_runtime),
@@ -1024,6 +1193,16 @@ class DatasetAnalysisRunResolver:
             invoker=invoker,
             principal=principal,
             runtime_resources=tool_runtime,
+            skill_id=(
+                domain_manifest.analysis_skill_id
+                if domain_manifest is not None
+                else "dataset.analytics"
+            ),
+            skill_version=(
+                domain_manifest.analysis_skill_version
+                if domain_manifest is not None
+                else "1.0.0"
+            ),
             max_rows=self._budget_limits.max_result_rows,
         )
         conversation = self._conversation_summary_loader(request, principal)
@@ -1045,14 +1224,46 @@ class DatasetAnalysisRunResolver:
             catalog_digest=catalog_digest,
             binding_digest=binding_digest,
             relationship_graph_digest=relationship_digest,
+            metric_catalog_digest=metric_catalog.digest.removeprefix("sha256:"),
             catalog_summary=_catalog_summary(catalog),
-            semantic_summary=_semantic_summary(binding),
+            semantic_summary=_semantic_summary(binding, metric_catalog),
             conversation_summary=conversation,
             allowed_tool_names=allowed_names,
         )
 
         async def load_context(_state):
             return snapshot_context
+
+        async def discover_metric_proposal(requested_term: str) -> MetricProposal:
+            discover = getattr(
+                self._data_sources,
+                "discover_metric_proposal",
+                None,
+            )
+            if not callable(discover):
+                raise RuntimeError("metric proposal discovery is unavailable")
+            proposal = await discover(
+                tenant_id=principal.tenant_id,
+                user_id=principal.user_id,
+                roles=principal.roles,
+                source_id=request.source_id,
+                domain_id=request.domain_id,
+                requested_term=requested_term,
+            )
+            return MetricProposal.model_validate(proposal)
+
+        semantic_features = getattr(
+            self._data_sources,
+            "semantic_metric_features",
+            None,
+        )
+        discovery_callback = (
+            discover_metric_proposal
+            if semantic_features is None
+            or bool(getattr(semantic_features, "domain_pack_discovery", False))
+            or bool(getattr(semantic_features, "web_discovery", False))
+            else None
+        )
 
         model_id = str(getattr(self._model_client, "model_id", "unknown-model"))
         model_version = str(getattr(self._model_client, "version", "unknown-version"))
@@ -1064,6 +1275,27 @@ class DatasetAnalysisRunResolver:
                 for component in ("planner", "evaluator", "synthesizer")
             ),
             relationship_graph_digest=relationship_digest,
+            analysis_skill_id=(
+                domain_manifest.analysis_skill_id
+                if domain_manifest is not None
+                else "dataset.analytics"
+            ),
+            analysis_skill_version=(
+                domain_manifest.analysis_skill_version
+                if domain_manifest is not None
+                else "1.0.0"
+            ),
+            domain_pack_id=(
+                domain_manifest.pack_id if domain_manifest is not None else None
+            ),
+            domain_pack_version=(
+                domain_manifest.version if domain_manifest is not None else None
+            ),
+            domain_pack_digest=(
+                domain_manifest.digest.removeprefix("sha256:")
+                if domain_manifest is not None
+                else None
+            ),
         )
         context_values: dict[str, Any] = {
             "planner": AnalysisPlanner(self._model_client),
@@ -1078,6 +1310,10 @@ class DatasetAnalysisRunResolver:
                 model_client=self._model_client,
                 binding=binding,
                 catalog=catalog,
+                metric_catalog=metric_catalog,
+                domain_id=request.domain_id,
+                domain_packs=selected_domain_packs,
+                metric_proposal_discovery=discovery_callback,
             ),
         }
         if self._response_builder is not None:
@@ -1235,7 +1471,10 @@ def _catalog_summary(catalog) -> dict[str, object]:
     }
 
 
-def _semantic_summary(binding) -> dict[str, object]:
+def _semantic_summary(
+    binding,
+    metric_catalog: EffectiveMetricCatalog,
+) -> dict[str, object]:
     return {
         "bindingId": binding.binding_id,
         "bindingVersion": binding.version,
@@ -1258,13 +1497,21 @@ def _semantic_summary(binding) -> dict[str, object]:
                 "ref": metric.metric_ref,
                 "displayName": metric.display_name,
                 "description": metric.description,
-                "operation": metric.operation,
-                "fieldRef": metric.field_ref,
+                "formula": metric.formula.model_dump(mode="json"),
+                "defaultFilter": (
+                    metric.default_filter.model_dump(mode="json")
+                    if metric.default_filter is not None
+                    else None
+                ),
+                "defaultTimeRef": metric.default_time_ref,
                 "unit": metric.unit,
                 "grain": metric.grain,
+                "currency": metric.currency,
                 "synonyms": list(metric.synonyms),
             }
-            for metric in binding.metrics[:200]
+            for metric in tuple(
+                item.definition for item in metric_catalog.entries
+            )[:200]
         ],
         "relationshipCount": (
             len(binding.graph.edges)
@@ -1272,6 +1519,19 @@ def _semantic_summary(binding) -> dict[str, object]:
             else len(binding.relationships)
         ),
     }
+
+
+def _legacy_metric_catalog(binding) -> EffectiveMetricCatalog:
+    return EffectiveMetricCatalog.build(
+        legacy=tuple(
+            MetricCatalogEntry.create(
+                definition=LegacyMetricAdapter.to_v2(metric),
+                origin=MetricCatalogOrigin.LEGACY,
+                authority_ref=f"embedded-v1:{binding.binding_id}:{binding.version}",
+            )
+            for metric in binding.metrics
+        )
+    )
 
 
 async def _build_dataset_response(

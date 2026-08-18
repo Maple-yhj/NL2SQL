@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from collections.abc import AsyncIterator, Callable
+from contextlib import closing
 from pathlib import Path
 from typing import TypeVar
 
@@ -314,7 +315,7 @@ class RunEventStore:
         await self._read(operation)
 
     def _initialize(self) -> None:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runs (
@@ -377,14 +378,14 @@ class RunEventStore:
         self,
         operation: Callable[[sqlite3.Connection], _T],
     ) -> _T:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             return operation(connection)
 
     def _run_write(
         self,
         operation: Callable[[sqlite3.Connection], _T],
     ) -> _T:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute("BEGIN IMMEDIATE")
             return operation(connection)
 

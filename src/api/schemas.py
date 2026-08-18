@@ -26,6 +26,15 @@ from data_agent.datasources import (
     SemanticMetricDefinition,
 )
 from data_agent.tools.schemas import CatalogSnapshot
+from data_agent.semantic_metrics import (
+    ActiveMetricSetPointer,
+    MetricOverlay,
+    MetricProposal,
+    MetricProposalCandidate,
+    MetricRiskTier,
+    MetricSetRecord,
+    MetricValidationReport,
+)
 
 
 def _strip_required_text(value: str) -> str:
@@ -248,6 +257,91 @@ class RelationshipGraphActivateRequest(StrictApiModel):
 
 class SemanticBindingListResponse(StrictApiModel):
     items: list[SemanticBindingRecord | SemanticGraphBindingRecord]
+
+
+class MetricProposalCreateRequest(StrictApiModel):
+    domain_id: str = Field(min_length=1)
+    requested_term: str = Field(min_length=1)
+    candidates: tuple[MetricProposalCandidate, ...] = Field(min_length=1)
+    risk_tier: MetricRiskTier = MetricRiskTier.HIGH
+
+    @field_validator("domain_id", "requested_term")
+    @classmethod
+    def strip_metric_text(cls, value: str) -> str:
+        return _strip_required_text(value)
+
+
+class MetricProposalDiscoverRequest(StrictApiModel):
+    domain_id: str = Field(min_length=1)
+    requested_term: str = Field(min_length=1)
+
+    @field_validator("domain_id", "requested_term")
+    @classmethod
+    def strip_metric_text(cls, value: str) -> str:
+        return _strip_required_text(value)
+
+
+class MetricProposalListResponse(StrictApiModel):
+    items: list[MetricProposal]
+
+
+class MetricCandidateSelectRequest(StrictApiModel):
+    candidate_id: str = Field(min_length=1)
+    expected_revision: int = Field(ge=1)
+
+
+class MetricCandidateReviseRequest(StrictApiModel):
+    candidate: MetricProposalCandidate
+    expected_revision: int = Field(ge=1)
+
+
+class MetricProposalValidateRequest(StrictApiModel):
+    expected_revision: int = Field(ge=1)
+
+
+class MetricProposalValidationResponse(StrictApiModel):
+    proposal: MetricProposal
+    report: MetricValidationReport
+
+
+class MetricOverlayCreateRequest(StrictApiModel):
+    validation_report_id: str = Field(min_length=1)
+    scope: Literal["run", "conversation"]
+    run_id: str | None = None
+    conversation_id: str | None = None
+    ttl_seconds: int = Field(default=14400, ge=60, le=86400)
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> "MetricOverlayCreateRequest":
+        if self.scope == "run":
+            if self.run_id is None or self.conversation_id is not None:
+                raise ValueError("run overlays require only run_id")
+        elif self.conversation_id is None or self.run_id is not None:
+            raise ValueError("conversation overlays require only conversation_id")
+        return self
+
+
+class MetricProposalApproveRequest(StrictApiModel):
+    validation_report_id: str = Field(min_length=1)
+    expected_revision: int = Field(ge=1)
+    expected_pointer_revision: int = Field(ge=0)
+
+
+class MetricActivationResponse(StrictApiModel):
+    proposal: MetricProposal
+    metric_set: MetricSetRecord
+    active_pointer: ActiveMetricSetPointer
+
+
+class ActiveMetricSetResponse(StrictApiModel):
+    active_pointer: ActiveMetricSetPointer | None = None
+
+
+class SemanticMetricFeaturesResponse(StrictApiModel):
+    domain_pack_discovery: bool
+    web_discovery: bool
+    provisional_overlays: bool
+    auto_publish_alias: bool
 
 
 class ConversationDataSourceBindingResponse(StrictApiModel):

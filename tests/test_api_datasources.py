@@ -206,7 +206,7 @@ class ApiDatasourceTests(unittest.TestCase):
                 "/api/data-sources/orders-file/bindings/"
                 f"{binding.json()['binding_id']}/activate"
             ),
-            headers=self.headers,
+            headers=_auth_headers(roles=["semantic_admin"]),
         )
         self.assertEqual(activated.status_code, 200, activated.text)
         self.assertEqual(activated.json()["status"], "active")
@@ -323,7 +323,7 @@ class ApiDatasourceTests(unittest.TestCase):
                 "/api/data-sources/regional-sales/bindings/"
                 f"{binding.json()['binding_id']}/activate"
             ),
-            headers=self.headers,
+            headers=_auth_headers(roles=["semantic_admin"]),
         )
         self.assertEqual(activated.status_code, 200, activated.text)
         self.assertEqual(activated.json()["status"], "active")
@@ -361,7 +361,7 @@ class ApiDatasourceTests(unittest.TestCase):
                     "/api/data-sources/graph-domains/relationship-graphs/"
                     f"{graph['graph_id']}/activate"
                 ),
-                headers=self.headers,
+                headers=_auth_headers(roles=["semantic_admin"]),
                 json={
                     "domain_id": domain_id,
                     "mappings": [

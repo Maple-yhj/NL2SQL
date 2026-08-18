@@ -8,9 +8,11 @@ import json
 import os
 import re
 import shutil
+import stat
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -62,6 +64,23 @@ from data_agent.relationships.recommender import RelationshipRecommender
 from data_agent.relationships.models import ActivatedRelationshipGraph, validate_graph_catalog
 from data_agent.relationships.validator import validate_graph
 from data_agent.model_client import ModelClient
+from data_agent.semantic_metrics import (
+    ConversationMetricPin,
+    EffectiveMetricCatalog,
+    LegacyMetricAdapter,
+    MetricCatalogEntry,
+    MetricCatalogOrigin,
+    MetricContextPin,
+    MetricSetIdentity,
+    MetricSetStatus,
+    MetricProposal,
+    DomainPackAssignment,
+    DomainPackIdentity,
+    DomainPackRegistry,
+    SemanticMetricActor,
+    SemanticMetricGovernanceService,
+    SemanticMetricFeatures,
+)
 
 
 _SOURCE_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$")
@@ -79,6 +98,13 @@ class DataSourceExecutionContext:
     binding: SemanticBindingRecord | SemanticGraphBindingRecord
     connector: DataSourceConnector
     connection_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class SemanticMetricExecutionContext:
+    catalog: EffectiveMetricCatalog
+    context: MetricContextPin
+    domain_pack: DomainPackIdentity | None = None
 
 
 async def _default_postgres_pool_factory(dsn: str) -> Any:
@@ -119,6 +145,8 @@ class DataSourceService:
         postgres_pool_factory: PostgresPoolFactory | None = None,
         secret_resolver: SecretResolver | None = None,
         relationship_model_client: ModelClient | None = None,
+        metric_web_discovery: Any | None = None,
+        semantic_metric_features: SemanticMetricFeatures | None = None,
         max_upload_bytes: int = 64 * 1024 * 1024,
     ) -> None:
         configured_root = state_root or os.environ.get("DATA_AGENT_STATE_DIR")
@@ -135,6 +163,10 @@ class DataSourceService:
         self._source_resources: dict[tuple[str, str], list[Any]] = {}
         self._max_upload_bytes = max_upload_bytes
         self._relationship_model_client = relationship_model_client
+        self._metric_web_discovery = metric_web_discovery
+        self._semantic_metric_features = (
+            semantic_metric_features or SemanticMetricFeatures.from_environment()
+        )
         self._relationship_tasks: set[asyncio.Task[None]] = set()
         self._latest_relationship_runs: dict[
             tuple[str, str, int], RelationshipRecommendationRun
@@ -151,6 +183,42 @@ class DataSourceService:
     @property
     def state_root(self) -> Path:
         return self._state_root
+
+    @property
+    def metric_web_discovery(self) -> Any | None:
+        return self._metric_web_discovery
+
+    @property
+    def semantic_metric_features(self) -> SemanticMetricFeatures:
+        return self._semantic_metric_features
+
+    async def discover_metric_proposal(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        roles: tuple[str, ...],
+        source_id: str,
+        domain_id: str,
+        requested_term: str,
+    ) -> MetricProposal:
+        """Create or reuse an unresolved-metric draft for an Agent run."""
+
+        governance = SemanticMetricGovernanceService(
+            self._registry,
+            web_discovery=self._metric_web_discovery,
+            features=self._semantic_metric_features,
+        )
+        return await governance.discover_or_reuse_proposal(
+            actor=SemanticMetricActor(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                roles=roles,
+            ),
+            source_id=source_id,
+            domain_id=domain_id,
+            requested_term=requested_term,
+        )
 
     async def ensure_relationship_discovery(
         self, *, tenant_id: str, source_id: str
@@ -348,11 +416,216 @@ class DataSourceService:
             tenant_id=tenant_id, source_id=source_id, source_snapshot_version=snapshot.version
         )
 
+    async def resolve_metric_context(
+        self,
+        *,
+        tenant_id: str,
+        user_id: str,
+        conversation_id: str | None,
+        run_id: str | None = None,
+        source_id: str,
+        domain_id: str,
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
+    ) -> SemanticMetricExecutionContext:
+        """Resolve and optionally conversation-pin the effective metric authority."""
+
+        snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
+        pin = (
+            await self._registry.get_conversation_metric_pin(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
+            if conversation_id is not None
+            else None
+        )
+        run_overlay = (
+            await self._registry.get_run_metric_overlay(
+                tenant_id=tenant_id,
+                user_id=user_id,
+                run_id=run_id,
+            )
+            if run_id is not None
+            else None
+        )
+        if run_overlay is not None:
+            context = run_overlay.base_context
+            if (
+                context.source_id != source_id
+                or context.source_version != snapshot.version
+                or context.binding_id != binding.binding_id
+                or context.binding_version != binding.version
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                    "run metric overlay is stale for the selected binding",
+                )
+            if pin is not None and self._metric_authority_key(pin.context) != self._metric_authority_key(context):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                    "run metric overlay conflicts with the conversation metric pin",
+                )
+            context = context.model_copy(
+                update={
+                    "overlay_id": run_overlay.overlay_id,
+                    "overlay_digest": run_overlay.content_digest,
+                    "revision": context.revision + 1,
+                }
+            )
+        elif pin is not None:
+            context = pin.context
+            if (
+                pin.domain_id != domain_id
+                or context.source_id != source_id
+                or context.source_version != snapshot.version
+                or context.binding_id != binding.binding_id
+                or context.binding_version != binding.version
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                    "conversation metric pin is stale for the selected binding",
+                )
+        else:
+            pointer = await self._registry.get_active_metric_set(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                domain_id=domain_id,
+            )
+            identity = None
+            if pointer is not None:
+                if (
+                    pointer.binding_id != binding.binding_id
+                    or pointer.binding_version != binding.version
+                ):
+                    raise DataSourceRegistryError(
+                        DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                        "active metric set is stale for the selected binding",
+                    )
+                identity = MetricSetIdentity(
+                    metric_set_id=pointer.metric_set_id,
+                    version=pointer.metric_set_version,
+                    digest=pointer.metric_set_digest,
+                )
+            context = MetricContextPin(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                source_version=snapshot.version,
+                binding_id=binding.binding_id,
+                binding_version=binding.version,
+                metric_set=identity,
+            )
+            if conversation_id is not None:
+                await self._registry.put_conversation_metric_pin(
+                    ConversationMetricPin(
+                        tenant_id=tenant_id,
+                        user_id=user_id,
+                        conversation_id=conversation_id,
+                        domain_id=domain_id,
+                        context=context,
+                    ),
+                    expected_revision=0,
+                )
+
+        governed: tuple[MetricCatalogEntry, ...] = ()
+        if context.metric_set is not None:
+            metric_set = await self._registry.get_metric_set(
+                tenant_id=tenant_id,
+                metric_set_id=context.metric_set.metric_set_id,
+                version=context.metric_set.version,
+            )
+            if (
+                metric_set is None
+                or metric_set.content_digest != context.metric_set.digest
+                or metric_set.status == MetricSetStatus.REVOKED
+                or metric_set.binding_id != binding.binding_id
+                or metric_set.binding_version != binding.version
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                    "pinned metric set is unavailable, revoked, or stale",
+                )
+            governed = tuple(
+                MetricCatalogEntry.create(
+                    definition=definition,
+                    origin=MetricCatalogOrigin.GOVERNED,
+                    authority_ref=metric_set.content_digest,
+                )
+                for definition in metric_set.definitions
+            )
+        overlays: tuple[MetricCatalogEntry, ...] = ()
+        if context.overlay_id is not None:
+            overlay = await self._registry.get_metric_overlay(
+                tenant_id=tenant_id,
+                overlay_id=context.overlay_id,
+            )
+            if (
+                overlay is None
+                or overlay.content_digest != context.overlay_digest
+                or overlay.user_id != user_id
+                or overlay.revoked_at is not None
+                or overlay.expires_at <= datetime.now(UTC)
+                or (
+                    overlay.scope == "run"
+                    and (run_id is None or overlay.run_id != run_id)
+                )
+                or (
+                    overlay.scope == "conversation"
+                    and (
+                        conversation_id is None
+                        or overlay.conversation_id != conversation_id
+                    )
+                )
+            ):
+                raise DataSourceRegistryError(
+                    DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                    "pinned metric overlay is unavailable or expired",
+                )
+            overlays = (
+                MetricCatalogEntry.create(
+                    definition=overlay.definition,
+                    origin=MetricCatalogOrigin.OVERLAY,
+                    authority_ref=overlay.content_digest,
+                ),
+            )
+        legacy = tuple(
+            MetricCatalogEntry.create(
+                definition=LegacyMetricAdapter.to_v2(metric),
+                origin=MetricCatalogOrigin.LEGACY,
+                authority_ref=f"embedded-v1:{binding.binding_id}:{binding.version}",
+            )
+            for metric in binding.metrics
+        )
+        return SemanticMetricExecutionContext(
+            catalog=EffectiveMetricCatalog.build(
+                governed=governed,
+                overlays=overlays,
+                legacy=legacy,
+            ),
+            context=context,
+            domain_pack=await self._active_domain_pack(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                domain_id=domain_id,
+            ),
+        )
+
+    @staticmethod
+    def _metric_authority_key(context: MetricContextPin) -> tuple[object, ...]:
+        return (
+            context.tenant_id,
+            context.source_id,
+            context.source_version,
+            context.binding_id,
+            context.binding_version,
+            context.metric_set,
+        )
+
     async def activate_relationship_graph(
         self, *, tenant_id: str, source_id: str, graph_id: str, domain_id: str,
         mappings: tuple[SemanticGraphFieldMapping, ...],
         metrics: tuple[SemanticMetricDefinition, ...] = (),
         binding_id: str | None = None,
+        assigned_by: str = "system",
     ) -> SemanticGraphBindingRecord:
         snapshot = await self.get_snapshot(tenant_id=tenant_id, source_id=source_id)
         graph = await self.get_relationship_draft(tenant_id=tenant_id, source_id=source_id)
@@ -397,6 +670,10 @@ class DataSourceService:
                 and current.metrics == metrics
                 and current.validation_report_digest == report.report_digest
             ):
+                await self._ensure_domain_pack_assignment(
+                    binding=current,
+                    assigned_by=assigned_by,
+                )
                 return current
         version = max(
             (item.version for item in (*existing, *graph_bindings) if item.domain_id == domain_id),
@@ -415,7 +692,12 @@ class DataSourceService:
             mappings=mappings, metrics=metrics,
             validation_report_digest=report.report_digest,
         )
-        return await self._registry.activate_graph_binding(binding)
+        activated = await self._registry.activate_graph_binding(binding)
+        await self._ensure_domain_pack_assignment(
+            binding=activated,
+            assigned_by=assigned_by,
+        )
+        return activated
 
     @staticmethod
     def _source_id(value: str | None) -> str:
@@ -584,7 +866,7 @@ class DataSourceService:
             if not snapshot_root.is_relative_to(snapshot_base):
                 raise ValueError("datasource snapshot path is outside the storage root")
             if snapshot_root.exists():
-                shutil.rmtree(snapshot_root)
+                self._remove_snapshot_tree(snapshot_root)
         for key in tuple(self._latest_relationship_runs):
             if key[:2] == (tenant_id, source_id):
                 self._latest_relationship_runs.pop(key, None)
@@ -841,6 +1123,7 @@ class DataSourceService:
         tenant_id: str,
         source_id: str,
         binding_id: str,
+        assigned_by: str = "system",
     ) -> SemanticBindingRecord:
         bindings = await self._registry.list_bindings(
             tenant_id=tenant_id,
@@ -851,10 +1134,73 @@ class DataSourceService:
                 DataSourceRegistryErrorCode.NOT_FOUND,
                 "semantic binding was not found for this datasource",
             )
-        return await self._registry.activate_binding(
+        activated = await self._registry.activate_binding(
             tenant_id=tenant_id,
             binding_id=binding_id,
         )
+        await self._ensure_domain_pack_assignment(
+            binding=activated,
+            assigned_by=assigned_by,
+        )
+        return activated
+
+    async def _ensure_domain_pack_assignment(
+        self,
+        *,
+        binding: SemanticBindingRecord | SemanticGraphBindingRecord,
+        assigned_by: str,
+    ) -> DomainPackAssignment | None:
+        manifests = DomainPackRegistry().for_domain(binding.domain_id)
+        if not manifests:
+            return None
+        existing = await self._registry.get_domain_pack_assignment(
+            tenant_id=binding.tenant_id,
+            source_id=binding.source_id,
+            domain_id=binding.domain_id,
+        )
+        if existing is not None:
+            return existing
+        manifest = manifests[0]
+        return await self._registry.put_domain_pack_assignment(
+            DomainPackAssignment(
+                tenant_id=binding.tenant_id,
+                source_id=binding.source_id,
+                domain_id=binding.domain_id,
+                pack=DomainPackIdentity(
+                    pack_id=manifest.pack_id,
+                    version=manifest.version,
+                    digest=manifest.digest,
+                    domain_id=manifest.domain_id,
+                ),
+                assigned_by=assigned_by,
+            ),
+            expected_revision=0,
+        )
+
+    async def _active_domain_pack(
+        self,
+        *,
+        tenant_id: str,
+        source_id: str,
+        domain_id: str,
+    ) -> DomainPackIdentity | None:
+        assignment = await self._registry.get_domain_pack_assignment(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            domain_id=domain_id,
+        )
+        if assignment is None or not assignment.enabled:
+            return None
+        manifest = DomainPackRegistry().get(
+            assignment.pack.pack_id,
+            assignment.pack.version,
+        )
+        if manifest is None or manifest.digest != assignment.pack.digest:
+            raise DataSourceRegistryError(
+                DataSourceRegistryErrorCode.INVALID_METRIC_STATE,
+                "assigned domain pack is unavailable or its digest changed",
+            )
+        return assignment.pack
 
     async def list_bindings(
         self,
@@ -1245,6 +1591,17 @@ class DataSourceService:
         if inspect.isawaitable(value):
             await value
 
+    @staticmethod
+    def _remove_snapshot_tree(snapshot_root: Path) -> None:
+        """Remove an already-authorized snapshot tree, including read-only files."""
+
+        def clear_readonly_and_retry(function, path, error) -> None:
+            target = Path(path)
+            target.chmod(stat.S_IWRITE | stat.S_IREAD)
+            function(path)
+
+        shutil.rmtree(snapshot_root, onexc=clear_readonly_and_retry)
+
     def _track_resource(self, source: DataSourceDefinition, resource: Any) -> None:
         self._resources.append(resource)
         self._source_resources.setdefault(
@@ -1253,4 +1610,8 @@ class DataSourceService:
         ).append(resource)
 
 
-__all__ = ["DataSourceExecutionContext", "DataSourceService"]
+__all__ = [
+    "DataSourceExecutionContext",
+    "DataSourceService",
+    "SemanticMetricExecutionContext",
+]
